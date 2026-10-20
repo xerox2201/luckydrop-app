@@ -1,16 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLottery } from '../context/LotteryContext.tsx';
 
 export const FooterAndChat: React.FC = () => {
   const { navigateTo, aiChatOpen, setAiChatOpen } = useLottery();
   const [prompt, setPrompt] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
   const [messages, setMessages] = useState<{ sender: 'AI' | 'USER'; text: string }[]>([
     {
       sender: 'AI',
       text: 'سلام! من پشتیبان هوشمند ۲۴ ساعته زرین لاتاری هستم. هر سوالی درباره نحوه واریز تتر (TRC-20) و تون‌کوین (TON)، الگوریتم اثبات‌پذیر منصفانه SHA-256 یا محاسبه ضریب برد دارید بپرسید.',
     },
   ]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY =
+        window.scrollY ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0;
+      setShowScrollTop(currentScrollY > 300);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const handleAskAi = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,22 +90,22 @@ export const FooterAndChat: React.FC = () => {
             <h4 className="font-black text-white text-sm mb-2">دسترسی سریع به بخش‌ها</h4>
             <ul className="space-y-1.5">
               <li>
-                <button type="button" onClick={() => navigateTo('lobby')} className="hover:text-amber-400">
+                <button type="button" onClick={() => navigateTo('lobby')} className="hover:text-amber-400 cursor-pointer">
                   • لابی اصلی و جک‌پات ۱۵.۲ میلیاردی
                 </button>
               </li>
               <li>
-                <button type="button" onClick={() => navigateTo('play')} className="hover:text-amber-400">
+                <button type="button" onClick={() => navigateTo('play')} className="hover:text-amber-400 cursor-pointer">
                   • ترمینال انتخاب اعداد و خرید بلیط
                 </button>
               </li>
               <li>
-                <button type="button" onClick={() => navigateTo('status')} className="hover:text-amber-400">
+                <button type="button" onClick={() => navigateTo('status')} className="hover:text-amber-400 cursor-pointer">
                   • رهگیری زنده ممپول و تایید بلاکچین
                 </button>
               </li>
               <li>
-                <button type="button" onClick={() => navigateTo('transparency')} className="hover:text-amber-400">
+                <button type="button" onClick={() => navigateTo('transparency')} className="hover:text-amber-400 cursor-pointer">
                   • ماشین‌حساب احتمال دوجمله‌ای و شفافیت
                 </button>
               </li>
@@ -171,6 +191,23 @@ export const FooterAndChat: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* Floating Scroll-to-Top Button for Mobile & Desktop */}
+      <button
+        type="button"
+        data-testid="scroll-to-top-btn"
+        onClick={scrollToTop}
+        aria-label="بازگشت به بالای صفحه"
+        title="بازگشت به بالای صفحه"
+        className={`fixed bottom-5 left-5 z-40 min-w-[44px] min-h-[44px] px-3.5 py-2.5 rounded-2xl bg-[#181c24]/95 border border-amber-500/45 text-amber-300 hover:bg-amber-500 hover:text-[#241300] shadow-[0_12px_32px_rgba(0,0,0,0.75)] backdrop-blur-md flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer ${
+          showScrollTop && !aiChatOpen
+            ? 'opacity-100 translate-y-0 pointer-events-auto'
+            : 'opacity-0 translate-y-3 pointer-events-none'
+        }`}
+      >
+        <span className="material-symbols-outlined text-lg leading-none">keyboard_arrow_up</span>
+        <span className="hidden sm:inline text-xs font-bold whitespace-nowrap">بالای صفحه</span>
+      </button>
 
       {/* 24/7 Gemini Flash AI Concierge Drawer (Triggered via Top Bar, CTA, or Footer) */}
       {aiChatOpen && (

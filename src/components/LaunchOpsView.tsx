@@ -261,7 +261,7 @@ export const LaunchOpsView: React.FC = () => {
   );
 
   return (
-    <div className="relative w-full overflow-hidden pb-12">
+    <div className="relative w-full overflow-x-clip pb-12">
       {/* Ambient Atmospheric Backdrops */}
       <div className="absolute -top-32 left-1/4 w-[550px] h-[550px] bg-amber-500/10 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute top-80 right-10 w-[420px] h-[420px] bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none"></div>

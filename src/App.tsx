@@ -22,7 +22,7 @@ const MainRouter: React.FC = () => {
   const { activeRoute } = useLottery();
 
   return (
-    <div className="min-h-screen w-full overflow-x-hidden flex flex-col bg-[#0a0e16] text-[#dfe2ef] selection:bg-amber-500 selection:text-slate-950">
+    <div className="min-h-screen w-full overflow-x-clip flex flex-col bg-[#0a0e16] text-[#dfe2ef] selection:bg-amber-500 selection:text-slate-950">
       <Navbar />
       <main className="flex-1">
         {activeRoute === 'lobby' && <LobbyView />}
