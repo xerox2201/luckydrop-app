@@ -1,0 +1,6 @@
+{
+  "name": "LuckyDrop — زرین لاتاری VIP",
+  "description": "سامانه قرعه‌کشی‌های میلیاردی و لاتاری غیرمتمرکز Web3 با الگوریتم اثبات‌پذیر منصفانه (Provably Fair SHA-256) و تسویه آنی کریپتو.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

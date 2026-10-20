@@ -1,0 +1,250 @@
+---
+name: Sovereign Gold Lottery
+colors:
+  surface: '#0f131c'
+  surface-dim: '#0f131c'
+  surface-bright: '#353942'
+  surface-container-lowest: '#0a0e16'
+  surface-container-low: '#181c24'
+  surface-container: '#1c2028'
+  surface-container-high: '#262a33'
+  surface-container-highest: '#31353e'
+  on-surface: '#dfe2ee'
+  on-surface-variant: '#d8c3ad'
+  inverse-surface: '#dfe2ee'
+  inverse-on-surface: '#2c3039'
+  outline: '#a08e7a'
+  outline-variant: '#534434'
+  surface-tint: '#ffb95f'
+  primary: '#ffc174'
+  on-primary: '#472a00'
+  primary-container: '#f59e0b'
+  on-primary-container: '#613b00'
+  inverse-primary: '#855300'
+  secondary: '#4edea3'
+  on-secondary: '#003824'
+  secondary-container: '#00a572'
+  on-secondary-container: '#00311f'
+  tertiary: '#d5c3ff'
+  on-tertiary: '#3c0091'
+  tertiary-container: '#bda2ff'
+  on-tertiary-container: '#520fbb'
+  error: '#ffb4ab'
+  on-error: '#690005'
+  error-container: '#93000a'
+  on-error-container: '#ffdad6'
+  primary-fixed: '#ffddb8'
+  primary-fixed-dim: '#ffb95f'
+  on-primary-fixed: '#2a1700'
+  on-primary-fixed-variant: '#653e00'
+  secondary-fixed: '#6ffbbe'
+  secondary-fixed-dim: '#4edea3'
+  on-secondary-fixed: '#002113'
+  on-secondary-fixed-variant: '#005236'
+  tertiary-fixed: '#e9ddff'
+  tertiary-fixed-dim: '#d0bcff'
+  on-tertiary-fixed: '#23005c'
+  on-tertiary-fixed-variant: '#5516be'
+  background: '#0f131c'
+  on-background: '#dfe2ee'
+  surface-variant: '#31353e'
+typography:
+  display-hero:
+    fontFamily: Outfit
+    fontSize: 64px
+    fontWeight: '800'
+    lineHeight: 72px
+    letterSpacing: -0.02em
+  display-hero-mobile:
+    fontFamily: Outfit
+    fontSize: 40px
+    fontWeight: '800'
+    lineHeight: 48px
+    letterSpacing: -0.01em
+  jackpot-counter:
+    fontFamily: Space Grotesk
+    fontSize: 56px
+    fontWeight: '700'
+    lineHeight: 60px
+    letterSpacing: 0.04em
+  jackpot-counter-mobile:
+    fontFamily: Space Grotesk
+    fontSize: 36px
+    fontWeight: '700'
+    lineHeight: 40px
+    letterSpacing: 0.02em
+  headline-xl:
+    fontFamily: Outfit
+    fontSize: 36px
+    fontWeight: '700'
+    lineHeight: 44px
+    letterSpacing: -0.01em
+  headline-xl-mobile:
+    fontFamily: Outfit
+    fontSize: 28px
+    fontWeight: '700'
+    lineHeight: 34px
+  headline-lg:
+    fontFamily: Outfit
+    fontSize: 24px
+    fontWeight: '600'
+    lineHeight: 32px
+  headline-sm:
+    fontFamily: Outfit
+    fontSize: 18px
+    fontWeight: '600'
+    lineHeight: 24px
+  body-lg:
+    fontFamily: Plus Jakarta Sans
+    fontSize: 16px
+    fontWeight: '400'
+    lineHeight: 24px
+  body-md:
+    fontFamily: Plus Jakarta Sans
+    fontSize: 14px
+    fontWeight: '400'
+    lineHeight: 20px
+  body-sm:
+    fontFamily: Plus Jakarta Sans
+    fontSize: 12px
+    fontWeight: '400'
+    lineHeight: 16px
+  label-numeric:
+    fontFamily: Space Grotesk
+    fontSize: 14px
+    fontWeight: '600'
+    lineHeight: 18px
+    letterSpacing: 0.05em
+  label-caps:
+    fontFamily: Space Grotesk
+    fontSize: 11px
+    fontWeight: '700'
+    lineHeight: 14px
+    letterSpacing: 0.08em
+rounded:
+  sm: 0.25rem
+  DEFAULT: 0.5rem
+  md: 0.75rem
+  lg: 1rem
+  xl: 1.5rem
+  full: 9999px
+spacing:
+  gutter: 1.5rem
+  gutter-mobile: 0.75rem
+  margin: 2rem
+  margin-mobile: 1rem
+  space-xs: 0.25rem
+  space-sm: 0.5rem
+  space-md: 1rem
+  space-lg: 1.5rem
+  space-xl: 2.5rem
+---
+
+## Brand & Style
+
+This design system expresses high-stakes tension, elite exclusivity, and opulent digital craftsmanship. Designed specifically for an international clientele demanding prestige, privacy, and theatrical adrenaline, it marries the aesthetic of private Monte Carlo VIP salons with ultra-modern fintech precision and Middle Eastern luxury aesthetics.
+
+The visual style blends **Dark Luxury Glassmorphism** with **Atmospheric Ambient Light**:
+- **Deep Onyx Base**: Absolute depth established through layered obsidian, slate, and charcoal surfaces.
+- **Precious Metal Accents**: Gold leaf gradients, reflective metallic trims, and luminous aura glows.
+- **Neon Emerald Telemetry**: High-frequency emerald illumination reserved strictly for live states, confirmations, payouts, and jackpot windfalls.
+- **Bilingual & RTL-First Harmony**: Balanced structural logic designed to switch between Persian (RTL) and Latin (LTR) typographies with identical optical weight and gravitas.
+
+## Colors
+
+The palette leverages high-contrast luminescence against void-like obsidian backgrounds to mirror the ambience of an exclusive private casino suite.
+
+### Primary Palette (Imperial Gold)
+- **Primary Accent (`#F59E0B`)**: Main brand gold for active toggles, primary triggers, and jackpot indicators.
+- **Gold Light (`#FBBF24`)**: Top-edge specular highlights, active ball selections, and illuminated numbers.
+- **Gold Deep (`#D97706`)**: Grounding borders, inactive jackpot meters, and pressed states.
+- **Gradient Gold**: Linear gradient `135deg, #FDE68A 0%, #F59E0B 50%, #B45309 100%` for primary CTA fills, crown badges, and ticket seal stamps.
+
+### Secondary Palette (Emerald Neon / Wins & Live Draws)
+- **Emerald Glow (`#10B981`)**: Applied exclusively to live draw badges, successful bets, odds increases, and total payout calculations.
+- **Emerald Dark (`#059669`)**: Border framing for winning ticket stubs and positive transactional feedback.
+
+### Tertiary & Atmospheric Accents (Mythic Violet & Amber)
+- **Atmospheric Violet (`#8B5CF6`)**: Radial back-glows behind major progressive jackpot banners to add cinematic depth.
+- **Ambient Amber Glow (`rgba(245, 158, 11, 0.15)`)**: Soft lighting applied behind high-tier interactive modules.
+
+### Neutral & Surface Hierarchy
+- **Canvas (`#070A0F`)**: Deepest background underlay.
+- **Surface Level 1 (`#0B0F17`)**: Base module panels and structural page layout containers.
+- **Surface Level 2 (`#111827`)**: Standard card containers, lottery row items, and inactive selection pads.
+- **Surface Level 3 (`#1E293B`)**: Hover states, interactive ball trays, input backings, and dropdowns.
+- **Surface Border (`rgba(245, 158, 11, 0.2)`)**: 1px translucent gold borders for structural clarity without visual clutter.
+
+## Typography
+
+The typography system supports seamless bilingual rendering between Persian (Farsi) and English/Latin scripts:
+
+- **Latin Headline & Body**: `Outfit` delivers modern luxury with subtle geometric curvature, while `Plus Jakarta Sans` provides high legibility for transactional rules and fine print. `Space Grotesk` handles all numerical expressions, countdowns, and odds ratios.
+- **Persian / RTL Fallback Pairing**: Integrate `Vazirmatn` (or `Yekan Bakh`) as the universal Persian engine.
+  - Set CSS font-stack: `font-family: 'Space Grotesk', 'Vazirmatn', sans-serif;` for metrics and numbers.
+  - Set CSS font-stack: `font-family: 'Outfit', 'Vazirmatn', sans-serif;` for headlines.
+  - Set CSS font-stack: `font-family: 'Plus Jakarta Sans', 'Vazirmatn', sans-serif;` for narrative text.
+- **Persian Numeral Handling**: All jackpot totals and countdown timers default to Persian numerals (`۰-۹`) when the interface is toggled to RTL, using tabular lining figures (`font-variant-numeric: tabular-nums`) to prevent layout shifts during live ticker animations.
+- **Kerning and Tracking**: Headings in Persian must maintain `letter-spacing: normal`, while Latin display titles utilize a slight negative tracking for punchy high-stakes presence.
+
+## Layout & Spacing
+
+The layout employs a responsive 12-column fluid grid system bounded by a maximum viewport width of `1440px` for desktop sessions, adapting to 8 columns on tablet and 4 columns on mobile.
+
+- **Desktop (1024px+)**: 12 columns, `1.5rem` (`24px`) gutters, `2rem` (`32px`) exterior margin. Lottery ball pickers and live draw monitors operate in multi-column modular grids.
+- **Tablet (768px - 1023px)**: 8 columns, `1rem` (`16px`) gutters, `1.5rem` (`24px`) margins. Side-by-side odds metrics collapse into 2-by-2 clusters.
+- **Mobile (< 768px)**: 4 columns, `0.75rem` (`12px`) gutters, `1rem` (`16px`) margin. Jackpot counters, timer clocks, and ball selector trays switch to single-column vertical stacks.
+- **RTL Geometry Mirroring**: Flexbox and CSS Grid containers use logical properties (`margin-inline-start`, `padding-inline`, `inset-inline`) to automatically mirror drawers, quick-buy sidebars, and timer modules without visual discrepancies between English and Persian layouts.
+
+## Elevation & Depth
+
+Visual hierarchy uses layered dark surfaces, directional glass reflections, and controlled illumination glows:
+
+- **Level 0 (Floor)**: Canvas background `#070A0F` paired with subtle radial background gradients in deep violet (`rgba(139, 92, 246, 0.05)`) and warm amber (`rgba(245, 158, 11, 0.04)`).
+- **Level 1 (Panels & Cards)**: Obsidian fill `#111827` at `80%` opacity with `backdrop-filter: blur(16px)`, bordered by a 1px solid hairline `rgba(245, 158, 11, 0.15)`. Drop shadow: `0 10px 30px -10px rgba(0, 0, 0, 0.7)`.
+- **Level 2 (Active Modals & Live Draw Widgets)**: Charcoal surface `#1E293B` at `90%` opacity with a distinct gold rim light (`box-shadow: inset 0 1px 1px rgba(251, 191, 36, 0.3), 0 20px 40px rgba(0, 0, 0, 0.8)`).
+- **Level 3 (Winning States & Active Overlays)**: Emerald or gold ambient aura blur (`box-shadow: 0 0 40px rgba(16, 185, 129, 0.25)` or `0 0 50px rgba(245, 158, 11, 0.2)`).
+
+## Shapes
+
+The design system uses a controlled curvature balance:
+
+- **Structural Containers & Cards**: Medium roundedness (`0.5rem` / `8px` to `1rem` / `16px`) delivers a sophisticated architectural presence suited for high-stakes finance and gaming.
+- **Lottery Selection Balls**: Strictly circular (`50%` / `9999px`) across all screen sizes, ensuring consistent ball-tray layouts.
+- **Interactive Action Buttons & Pills**: `0.75rem` (`12px`) for standard controls, and full pill capsules (`9999px`) for draw filter chips, live tags, and multiplier indicators.
+- **Ticket Stubs**: Notched perimeter cutouts at the receipt seams created via radial CSS mask-images to reproduce physical high-roller lottery slips.
+
+## Components
+
+### 1. Jackpot Ticker & Digital Counters
+- **Display**: Split-flap digit cards or tabular numeral tickers set inside a container of `#0B0F17` with a gold border.
+- **Visuals**: Digits rendered in `Space Grotesk` (or `Vazirmatn` numerals for RTL) with an inner vertical drop shadow and text shadow: `0 0 16px rgba(245, 158, 11, 0.6)`. Includes animated currency prefixes (e.g., `$`, `€`, or `تومان`).
+
+### 2. Lottery Number Balls & Interactive Pick Grids
+- **Default Ball**: 44px x 44px circle with an obsidian finish (`#1E293B`), 1px gold border (`rgba(245, 158, 11, 0.2)`), and neutral-white numerals.
+- **Hover**: Subtle scale expansion (`transform: scale(1.08)`) with ambient gold glow.
+- **Selected Ball**: Radial gradient from `#FDE68A` to `#D97706` with obsidian text (`#0B0F17`, weight 700) and an elevated drop shadow (`0 4px 14px rgba(245, 158, 11, 0.4)`).
+- **Special/Power Ball**: Violet gradient (`#C084FC` to `#7C3AED`) with white bold text.
+
+### 3. High-Stakes CTA & Glowing Buttons
+- **Primary Action (Buy Ticket / Enter Draw)**: Gradient fill from `#FBBF24` to `#D97706`, high-contrast obsidian typography, 12px border radius. Hover introduces an energetic outward glow: `box-shadow: 0 0 25px rgba(245, 158, 11, 0.6)`.
+- **Secondary Action**: Translucent dark fill (`rgba(17, 24, 39, 0.8)`), gold hairline border (`#F59E0B`), and gold text.
+- **RTL Icon Positioning**: Accessory icons (such as dice, lightning bolts, or purchase chevrons) reverse positions using logical layout margins (`margin-inline-end`).
+
+### 4. Live Draw Badge & Status Indicators
+- **Live State**: Emerald green capsule pill (`#064E3B` background, `#10B981` border). Includes a pulsing 8px emerald light with a continuous CSS beacon animation (`box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7)`).
+- **Upcoming Draw Countdown**: Split pill display separating remaining days, hours, minutes, and seconds inside bordered obsidian cells.
+
+### 5. Glassmorphism Odds Cards
+- Translucent backdrop container (`#111827`, 75% opacity, 20px blur).
+- Displays odds ratio (e.g., `1:150,000`), calculated payout pool, and entry fee.
+- Top-right corner includes a metallic badge indicating the jackpot multiplier (`2X`, `5X`, `10X`).
+
+### 6. Ticket Receipt Modal (High-Roller Voucher)
+- Dark-slate receipt stub with perforated decorative edges along the bottom separation seam.
+- Watermarked with the platform seal in gold foil transparency.
+- Contains the unique cryptographic draw seed, chosen balls array, entry timestamp, and dynamic QR verification code.
+
+### 7. Form Fields & Steppers
+- Input containers feature a 1px border that shifts from subtle gold (`rgba(245, 158, 11, 0.2)`) to brilliant gold (`#F59E0B`) on focus, with a slight amber blur highlight.
+- Ticket quantity counter features plus/minus buttons flanking a centered, bold tabular numeral input.

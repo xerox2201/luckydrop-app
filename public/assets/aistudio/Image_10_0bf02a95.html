@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+
+<html class="dark" dir="rtl" lang="fa"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_standard" name="shell-type"/><title>زرین لاتاری | سامانه قرعه‌کشی‌های میلیاردی VIP</title><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@600;700&amp;family=Vazirmatn:wght@400;500;700;800;900&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;font-family:'Vazirmatn','Plus Jakarta Sans',sans-serif;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"surface-tint":"#ffb95f","surface-dim":"#0f131c","secondary-container":"#00a572","secondary":"#4edea3","on-secondary-fixed-variant":"#005236","on-tertiary":"#3c0091","on-tertiary-container":"#520fbb","error-container":"#93000a","tertiary-fixed-dim":"#d0bcff","outline":"#a08e7a","surface-container-highest":"#31353e","on-primary-container":"#613b00","on-secondary-container":"#00311f","surface-bright":"#353942","secondary-fixed":"#6ffbbe","primary-container":"#f59e0b","on-secondary":"#003824","primary":"#ffc174","on-surface":"#dfe2ee","inverse-on-surface":"#2c3039","tertiary-container":"#bda2ff","on-primary":"#472a00","on-secondary-fixed":"#002113","primary-fixed-dim":"#ffb95f","surface-container-lowest":"#0a0e16","primary-fixed":"#ffddb8","inverse-surface":"#dfe2ee","surface-container-high":"#262a33","on-error":"#690005","inverse-primary":"#855300","surface-container-low":"#181c24","outline-variant":"#534434","on-background":"#dfe2ee","on-primary-fixed":"#2a1700","secondary-fixed-dim":"#4edea3","surface":"#0f131c","tertiary":"#d5c3ff","on-tertiary-fixed-variant":"#5516be","on-primary-fixed-variant":"#653e00","error":"#ffb4ab","surface-container":"#1c2028","background":"#0f131c","tertiary-fixed":"#e9ddff","on-tertiary-fixed":"#23005c","on-error-container":"#ffdad6","surface-variant":"#31353e","on-surface-variant":"#d8c3ad"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-sm":"0.5rem","margin":"2rem","gutter":"1.5rem","space-xl":"2.5rem","space-xs":"0.25rem","margin-mobile":"1rem","gutter-mobile":"0.75rem","space-lg":"1.5rem","space-md":"1rem"},"fontFamily":{"display-hero":["Outfit"],"headline-sm":["Outfit"],"display-hero-mobile":["Outfit"],"label-caps":["Space Grotesk"],"body-lg":["Plus Jakarta Sans"],"headline-xl-mobile":["Outfit"],"jackpot-counter":["Space Grotesk"],"headline-xl":["Outfit"],"headline-lg":["Outfit"],"body-md":["Plus Jakarta Sans"],"jackpot-counter-mobile":["Space Grotesk"],"body-sm":["Plus Jakarta Sans"],"label-numeric":["Space Grotesk"]},"fontSize":{"display-hero":["64px",{"lineHeight":"72px","letterSpacing":"-0.02em","fontWeight":"800"}],"headline-sm":["18px",{"lineHeight":"24px","fontWeight":"600"}],"display-hero-mobile":["40px",{"lineHeight":"48px","letterSpacing":"-0.01em","fontWeight":"800"}],"label-caps":["11px",{"lineHeight":"14px","letterSpacing":"0.08em","fontWeight":"700"}],"body-lg":["16px",{"lineHeight":"24px","fontWeight":"400"}],"headline-xl-mobile":["28px",{"lineHeight":"34px","fontWeight":"700"}],"jackpot-counter":["56px",{"lineHeight":"60px","letterSpacing":"0.04em","fontWeight":"700"}],"headline-xl":["36px",{"lineHeight":"44px","letterSpacing":"-0.01em","fontWeight":"700"}],"headline-lg":["24px",{"lineHeight":"32px","fontWeight":"600"}],"body-md":["14px",{"lineHeight":"20px","fontWeight":"400"}],"jackpot-counter-mobile":["36px",{"lineHeight":"40px","letterSpacing":"0.02em","fontWeight":"700"}],"body-sm":["12px",{"lineHeight":"16px","fontWeight":"400"}],"label-numeric":["14px",{"lineHeight":"18px","letterSpacing":"0.05em","fontWeight":"600"}]}}}};</script></head><body class="bg-background text-on-surface antialiased selection:bg-primary selection:text-on-primary"><header class="fixed top-0 w-full z-50 bg-surface/90 backdrop-blur-2xl shadow-[0_4px_30px_rgba(0,0,0,0.8)]"><div class="w-full bg-surface-container-lowest/80 px-margin"><div class="max-w-7xl mx-auto h-8 flex items-center justify-between font-label-caps text-label-caps"><div class="flex items-center gap-space-md"><span class="flex items-center gap-space-xs text-secondary"><span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-secondary"></span></span>زنده: قرعه‌کشی سوپر جک‌پات هفتگی</span><span class="text-outline/40">|</span><span class="text-on-surface-variant font-label-numeric text-label-numeric">مجموع جوایز جاری: <strong class="text-primary font-bold">۱۵۰,۰۰۰,۰۰۰,۰۰۰ تومان</strong></span></div><div class="flex items-center gap-space-md text-on-surface-variant"><span class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[14px] text-primary">verified</span>تضمین نقدشوندگی با پشتوانه شمش طلا</span><span class="text-outline/40">|</span><span class="text-secondary hover:text-secondary-fixed transition-colors">پشتیبانی VIP اختصاصی ۲۴/۷</span></div></div></div><div class="h-20 max-w-7xl mx-auto px-margin flex items-center justify-between"><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-md"><img alt="Zarrin Lottery Brand Logo" class="h-10 w-auto object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCI4LdL2Bhav20zsS5RNNkwQQjzfVEy-UdtZyR-Z7EFEvUfuEO_EVMTROEqMpDIJCKAq6QlqT1XYcwXIyu4FeZ44htghc0MtyNYGILomG6rG9b1rAWBJj4Hv9OIeUGo26tFMV-mOeMAK5Xc8Q_TZBfuZkEUHJpAiC19fIx71_7eDJe2_95nYTpQKAnb2RJMp4yt3YrUQazJqoJ8uYaWRT-0nga6Jx317jZwcQbXucej2-uk-qFBHhGF"/><div class="flex flex-col"><span class="font-headline-lg text-headline-lg tracking-tight text-primary font-bold drop-shadow-[0_0_12px_rgba(255,193,116,0.3)]">زرین لاتاری</span><span class="font-body-sm text-body-sm text-on-surface-variant -mt-1">سامانه قرعه‌کشی‌های میلیاردی</span></div></div><nav class="hidden xl:flex items-center gap-space-sm bg-surface-container-low/80 p-space-xs rounded-xl" data-active-classes="bg-primary-container text-on-primary-container font-bold rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.35)]"><a class="px-space-md py-space-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-headline-sm text-body-md transition-all rounded-lg" data-path="lottery-lobby" href="#">لابی قرعه‌کشی‌ها</a><a class="px-space-md py-space-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-headline-sm text-body-md transition-all rounded-lg" data-path="buy-tickets" href="#">خرید بلیت لاتاری</a><a class="px-space-md py-space-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-headline-sm text-body-md transition-all rounded-lg" data-path="results-and-winners" href="#">نتایج و برندگان</a><a class="px-space-md py-space-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-headline-sm text-body-md transition-all rounded-lg" data-path="my-tickets" href="#">بلیت‌های من</a><a class="px-space-md py-space-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-headline-sm text-body-md transition-all rounded-lg" data-path="admin-portal" href="#">پنل مدیریت (ادمین)</a></nav></div><div class="flex items-center gap-space-md"><div class="flex items-center bg-surface-container-low px-space-md py-space-xs rounded-xl shadow-inner"><div class="flex flex-col items-start pl-space-md"><span class="font-body-sm text-body-sm text-on-surface-variant">موجودی کیف پول</span><span class="font-label-numeric text-label-numeric text-secondary font-bold">۲۵۰,۰۰۰,۰۰۰ تومان</span></div><button class="w-7 h-7 rounded-lg bg-secondary-container text-on-secondary-container hover:bg-secondary flex items-center justify-center transition-colors shadow-[0_0_10px_rgba(0,165,114,0.3)]" title="شارژ حساب کاربری" type="button"><span class="material-symbols-outlined text-[16px]">add</span></button></div><div class="flex items-center gap-space-xs px-space-sm py-1 bg-surface-container-high rounded-full shadow-[0_0_10px_rgba(245,158,11,0.2)]"><span class="material-symbols-outlined text-[16px] text-primary">workspace_premium</span><span class="font-label-caps text-label-caps text-primary font-bold">کاربر ویژه VIP</span></div><button class="relative p-space-xs rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" title="اعلان‌ها" type="button"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-error rounded-full ring-2 ring-surface animate-pulse"></span></button><div class="flex items-center gap-space-sm"><img alt="Profile" class="w-9 h-9 rounded-full object-cover ring-2 ring-primary/40 shadow-[0_0_12px_rgba(255,193,116,0.3)]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBON3jugux6gmMGspjgaTMnTY70QyuhQgIH-70LeuxKmRe14hTVVZ1BKKRatssiJcYqq8PGbdDtYj7usBA5BtZ8sGlN8ZGVTHhLdqoYndw7PJl0KESFdJlhdYiWKDKB15ZhEPjwddQEYg6oNOyirCaIOCMJHrIhoqYVVffou4HBsdepMKLjBM8Mf2mk80NAHyRwV0D0LQhAUYLJGUOtDhQCjFgkT9MWf5niVPAPu4DdNBuF7dHpu20N"/><span class="material-symbols-outlined text-on-surface-variant text-[18px]">expand_more</span></div></div></div></header><main class="w-full pt-28 bg-surface min-h-[calc(100vh-16rem)]"><div class="flex flex-col w-full">
+<!-- Top Ambient Glow Field -->
+<div class="relative w-full overflow-hidden">
+<div class="absolute -top-40 right-1/4 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] pointer-events-none"></div>
+<div class="absolute -top-32 left-10 w-[420px] h-[420px] bg-secondary/10 rounded-full blur-[140px] pointer-events-none"></div>
+<!-- Page Title & Auditing Metric Ribbon -->
+<section class="max-w-7xl mx-auto px-margin pt-space-md pb-space-lg">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-space-md">
+<div class="flex flex-col gap-space-xs max-w-3xl">
+<div class="flex items-center gap-space-sm text-primary font-label-caps text-label-caps tracking-widest">
+<span class="w-2 h-2 rounded-full bg-secondary shadow-lg shadow-secondary/50 animate-pulse"></span>
+<span>PROVABLY FAIR 3.0 // گواهی شفافیت الگوریتمی و توزیع مالی عمومی</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface font-extrabold tracking-tight">
+            کالبدشکافی ریاضی شانس‌ها و <span class="text-primary drop-shadow-[0_0_15px_rgba(255,193,116,0.35)]">خزانه باز زرین</span>
+</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant leading-relaxed">
+            ما ریاضیات را پنهان نمی‌کنیم. هر ریال و تتر ورودی به سامانه زرین لاتاری، طبق قرارداد هوشمند تغییرناپذیر توزیع می‌شود؛ بدون دستکاری آماری، بدون مالیات مخفی و تحت ممیزی ۲۴ ساعته خزانه‌های چندامضایی بین‌المللی.
+          </p>
+</div>
+<!-- Real-time Live Financial Status Pill -->
+<div class="bg-surface-container-high/90 backdrop-blur-xl p-space-md rounded-xl shadow-2xl flex flex-col gap-space-xs self-start md:self-auto min-w-[280px]">
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps text-label-caps">
+<span class="flex items-center gap-1 text-secondary">
+<span class="material-symbols-outlined text-[16px]">verified</span> وضعیت ممیزی زنده
+            </span>
+<span class="font-label-numeric text-label-numeric text-primary">بلوک #19,402,118</span>
+</div>
+<div class="flex items-baseline justify-between pt-1">
+<span class="font-body-sm text-body-sm text-on-surface-variant">ذخیره پشتوانه فیزیکی:</span>
+<span class="font-headline-sm text-headline-sm text-secondary font-bold">۲۴۰ کیلوگرم شمش طلا ۹۹۹.۹</span>
+</div>
+<div class="w-full bg-surface-container-lowest h-1.5 rounded-full overflow-hidden mt-1">
+<div class="bg-gradient-to-r from-secondary to-primary h-full rounded-full w-[99.4%] shadow-sm shadow-secondary"></div>
+</div>
+<div class="flex justify-between text-[11px] text-on-surface-variant">
+<span>تعهد نقدشوندگی استخر: ۹۹.۴٪</span>
+<span class="text-secondary font-bold">تأییدیه Deloits Audit</span>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 1: Fund Inflow Decomposition (The 1000 Tomans / 1 USDT Breakdown) -->
+<section class="max-w-7xl mx-auto px-margin py-space-lg">
+<div class="bg-surface-container-low rounded-xl p-space-lg md:p-space-xl shadow-xl relative overflow-hidden">
+<div class="flex flex-col lg:flex-row items-center justify-between gap-space-xl">
+<!-- Left: Narrative & Breakdown Bars -->
+<div class="w-full lg:w-7/12 flex flex-col gap-space-md">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-primary uppercase">معماری تخصیص منابع // TOKENOMICS</span>
+<h2 class="font-headline-lg text-headline-lg text-on-surface font-bold">سرنوشت دقیق هر ۱,۰۰۰ تومان ورودی به چرخه قرعه‌کشی</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 leading-relaxed">
+                قرارداد هوشمند با تایید نهایی تراکنش، مبالغ را در کسری از ثانیه از طریق پروتکل تفکیک نقدینگی بدون دخالت نیروی انسانی به سه ولت غیرقابل دستکاری واریز می‌کند:
+              </p>
+</div>
+<!-- Flow Component 1: 85% -->
+<div class="bg-surface-container p-space-md rounded-xl flex flex-col gap-space-xs transition-transform duration-300 hover:scale-[1.01]">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-10 h-10 rounded-lg bg-secondary-container/20 text-secondary flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">payments</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">۸۵٪ - استخر جوایز مستقیم برندگان (Direct Prize Pool)</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">۸۵۰ تومان مستقیماً به والت قرارداد توزیع هفتگی و ماهانه برندگان تزریق می‌شود.</p>
+</div>
+</div>
+<div class="text-left font-jackpot-counter text-headline-lg text-secondary font-bold">۸۵٪</div>
+</div>
+<div class="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden mt-space-xs">
+<div class="bg-secondary h-full rounded-full w-[85%] shadow-md shadow-secondary/50"></div>
+</div>
+</div>
+<!-- Flow Component 2: 10% -->
+<div class="bg-surface-container p-space-md rounded-xl flex flex-col gap-space-xs transition-transform duration-300 hover:scale-[1.01]">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">memory</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">۱۰٪ - عملیات، ممیزی امنیتی و توسعه زنجیره بلوکی</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">۱۰۰ تومان برای هزینه‌های رله، نودهای بلاکچین، بیمه سرورهای بدون قطعی و پاداش ممیزان نفوذ.</p>
+</div>
+</div>
+<div class="text-left font-jackpot-counter text-headline-lg text-primary font-bold">۱۰٪</div>
+</div>
+<div class="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden mt-space-xs">
+<div class="bg-primary h-full rounded-full w-[10%] shadow-md shadow-primary/50"></div>
+</div>
+</div>
+<!-- Flow Component 3: 5% -->
+<div class="bg-surface-container p-space-md rounded-xl flex flex-col gap-space-xs transition-transform duration-300 hover:scale-[1.01]">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-10 h-10 rounded-lg bg-tertiary-container/20 text-tertiary flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">diamond</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">۵٪ - صندوق ذخیره جک‌پات بیمه شده با شمش طلا</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">۵۰ تومان برای شارژ حداقل کف تضمینی جک‌پات بعدی و خرید شمش‌های استاندارد در خزانه‌های زوریخ و دبی.</p>
+</div>
+</div>
+<div class="text-left font-jackpot-counter text-headline-lg text-tertiary font-bold">۵٪</div>
+</div>
+<div class="w-full bg-surface-container-lowest h-2 rounded-full overflow-hidden mt-space-xs">
+<div class="bg-tertiary h-full rounded-full w-[5%] shadow-md shadow-tertiary/50"></div>
+</div>
+</div>
+</div>
+<!-- Right: Visual Infographic & Radial Chart Card -->
+<div class="w-full lg:w-5/12 flex flex-col items-center justify-center bg-surface-container-lowest/80 p-space-lg rounded-xl shadow-2xl relative">
+<div class="relative w-64 h-64 flex items-center justify-center">
+<!-- Radial Donut SVG -->
+<svg class="w-full h-full transform -rotate-90" viewbox="0 0 100 100">
+<!-- Track -->
+<circle cx="50" cy="50" fill="transparent" r="40" stroke="#1c2028" stroke-width="12"></circle>
+<!-- 85% Segment (Secondary Emerald) -->
+<circle cx="50" cy="50" fill="transparent" r="40" stroke="#4edea3" stroke-dasharray="251.2" stroke-dashoffset="37.68" stroke-linecap="round" stroke-width="12"></circle>
+<!-- 10% Segment (Primary Amber) -->
+<circle class="origin-center rotate-[306deg]" cx="50" cy="50" fill="transparent" r="40" stroke="#ffc174" stroke-dasharray="251.2" stroke-dashoffset="226.08" stroke-linecap="round" stroke-width="12"></circle>
+<!-- 5% Segment (Tertiary Purple) -->
+<circle class="origin-center rotate-[342deg]" cx="50" cy="50" fill="transparent" r="40" stroke="#d5c3ff" stroke-dasharray="251.2" stroke-dashoffset="238.64" stroke-linecap="round" stroke-width="12"></circle>
+</svg>
+<div class="absolute flex flex-col items-center justify-center text-center">
+<span class="font-label-caps text-label-caps text-on-surface-variant">بازگشت مستقیم (RTP)</span>
+<span class="font-jackpot-counter text-headline-xl text-secondary font-black drop-shadow-[0_0_12px_rgba(78,222,163,0.5)]">۸۵٪</span>
+<span class="font-body-sm text-[11px] text-primary font-bold">بیشترین در خاورمیانه</span>
+</div>
+</div>
+<!-- Key Indicators below chart -->
+<div class="grid grid-cols-3 gap-space-sm w-full mt-space-md pt-space-sm bg-surface-container/60 p-space-sm rounded-lg text-center">
+<div>
+<span class="block w-2.5 h-2.5 rounded-full bg-secondary mx-auto mb-1"></span>
+<span class="font-label-numeric text-label-numeric text-on-surface font-bold">۸۵٪</span>
+<span class="block text-[11px] text-on-surface-variant">جوایز مستقیم</span>
+</div>
+<div>
+<span class="block w-2.5 h-2.5 rounded-full bg-primary mx-auto mb-1"></span>
+<span class="font-label-numeric text-label-numeric text-on-surface font-bold">۱۰٪</span>
+<span class="block text-[11px] text-on-surface-variant">توسعه و نود</span>
+</div>
+<div>
+<span class="block w-2.5 h-2.5 rounded-full bg-tertiary mx-auto mb-1"></span>
+<span class="font-label-numeric text-label-numeric text-on-surface font-bold">۵٪</span>
+<span class="block text-[11px] text-on-surface-variant">خزانه طلا</span>
+</div>
+</div>
+<div class="mt-space-md flex items-center gap-space-xs text-on-surface-variant text-[12px] text-center">
+<span class="material-symbols-outlined text-[16px] text-secondary">verified_user</span>
+<span>تطبیق بلادرنگ با استاندارد محاسباتی ISO/IEC 17025</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 2: Provably Fair Mathematics & Prize Tier Matrix -->
+<section class="max-w-7xl mx-auto px-margin py-space-lg">
+<div class="flex flex-col gap-space-sm mb-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary text-[28px]">functions</span>
+<span class="font-label-caps text-label-caps text-primary">ریاضیات دقیق شانس‌ها // COMBINATORIAL PROBABILITY</span>
+</div>
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface font-bold">جدول رسمی رده‌بندی استخر جوایز (Prize Tiers)</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">فرمول شانس در ترکیب ۵ گوی اصلی از ۴۹ گوی به علاوه ۱ گوی ستاره شانس از ۱۲ گوی.</p>
+</div>
+<span class="font-label-numeric text-label-numeric bg-surface-container-high px-space-md py-1 rounded-full text-secondary">
+            فرمول شانس کلی دریافت حداقل یک جایزه: ۱ در ۲۱.۸
+          </span>
+</div>
+</div>
+<!-- Tiers Table Container -->
+<div class="w-full overflow-x-auto bg-surface-container-low rounded-xl shadow-xl">
+<table class="w-full text-right border-collapse">
+<thead>
+<tr class="bg-surface-container text-on-surface-variant font-label-caps text-label-caps">
+<th class="py-space-md px-space-lg">رتبه جایزه (Tier)</th>
+<th class="py-space-md px-space-md">ترکیب گوی‌های برنده</th>
+<th class="py-space-md px-space-md">احتمال ریاضی دقیق</th>
+<th class="py-space-md px-space-md">سهم از کل استخر جوایز</th>
+<th class="py-space-md px-space-md">میانگین مبلغ جایزه جاری</th>
+<th class="py-space-md px-space-lg text-left">وضعیت توزیع</th>
+</tr>
+</thead>
+<tbody class="divide-y-0 text-on-surface font-body-md text-body-md">
+<!-- Tier 1: Grand Jackpot -->
+<tr class="bg-surface-container/30 hover:bg-surface-container-high/60 transition-colors">
+<td class="py-space-md px-space-lg">
+<div class="flex items-center gap-space-sm">
+<span class="w-8 h-8 rounded-lg bg-primary-container text-on-primary-container flex items-center justify-center font-bold">۱</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-primary font-bold">سوپر جک‌پات زرین</span>
+<span class="text-[11px] text-on-surface-variant">رده اول (Grand Tier)</span>
+</div>
+</div>
+</td>
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1">
+<div class="w-6 h-6 rounded-full bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center">۵</div>
+<span class="text-on-surface-variant text-[13px]">+</span>
+<div class="w-6 h-6 rounded-full bg-tertiary text-on-tertiary text-[11px] font-bold flex items-center justify-center shadow-sm">★</div>
+</div>
+</td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface-variant" dir="ltr">
+                1 in 23,289,640
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-primary font-bold">
+                ۶۰٪ از کل استخر (انباشته‌پذیر)
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-headline-sm text-secondary font-bold">
+                ۱۵۰,۰۰۰,۰۰۰,۰۰۰ تومان
+              </td>
+<td class="py-space-md px-space-lg text-left">
+<span class="px-space-sm py-1 rounded bg-secondary-container/20 text-secondary text-[11px] font-bold">تضمینی شمش طلا</span>
+</td>
+</tr>
+<!-- Tier 2: 5 Numbers -->
+<tr class="hover:bg-surface-container-high/60 transition-colors">
+<td class="py-space-md px-space-lg">
+<div class="flex items-center gap-space-sm">
+<span class="w-8 h-8 rounded-lg bg-surface-container-highest text-on-surface flex items-center justify-center font-bold">۲</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">جایزه الماس</span>
+<span class="text-[11px] text-on-surface-variant">تطابق کامل ۵ گوی اصلی</span>
+</div>
+</div>
+</td>
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1">
+<div class="w-6 h-6 rounded-full bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center">۵</div>
+<span class="text-on-surface-variant text-[13px]">-</span>
+<div class="w-6 h-6 rounded-full bg-surface-container-highest text-on-surface-variant text-[11px] font-bold flex items-center justify-center">۰</div>
+</div>
+</td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface-variant" dir="ltr">
+                1 in 2,117,240
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface">
+                ۱۵٪ از استخر جوایز
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface font-semibold">
+                ۱۲,۵۰۰,۰۰۰,۰۰۰ تومان
+              </td>
+<td class="py-space-md px-space-lg text-left">
+<span class="px-space-sm py-1 rounded bg-surface-container text-on-surface-variant text-[11px]">نقدشوندگی آنی</span>
+</td>
+</tr>
+<!-- Tier 3: 4 + 1 Numbers -->
+<tr class="bg-surface-container/20 hover:bg-surface-container-high/60 transition-colors">
+<td class="py-space-md px-space-lg">
+<div class="flex items-center gap-space-sm">
+<span class="w-8 h-8 rounded-lg bg-surface-container-highest text-on-surface flex items-center justify-center font-bold">۳</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">جایزه زمرد</span>
+<span class="text-[11px] text-on-surface-variant">۴ گوی + ستاره شانس</span>
+</div>
+</div>
+</td>
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1">
+<div class="w-6 h-6 rounded-full bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center">۴</div>
+<span class="text-on-surface-variant text-[13px]">+</span>
+<div class="w-6 h-6 rounded-full bg-tertiary text-on-tertiary text-[11px] font-bold flex items-center justify-center">★</div>
+</div>
+</td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface-variant" dir="ltr">
+                1 in 105,862
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface">
+                ۱۰٪ از استخر جوایز
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface font-semibold">
+                ۷۵۰,۰۰۰,۰۰۰ تومان
+              </td>
+<td class="py-space-md px-space-lg text-left">
+<span class="px-space-sm py-1 rounded bg-surface-container text-on-surface-variant text-[11px]">تسویه به ولت</span>
+</td>
+</tr>
+<!-- Tier 4: 4 Numbers -->
+<tr class="hover:bg-surface-container-high/60 transition-colors">
+<td class="py-space-md px-space-lg">
+<div class="flex items-center gap-space-sm">
+<span class="w-8 h-8 rounded-lg bg-surface-container-highest text-on-surface flex items-center justify-center font-bold">۴</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">جایزه یاقوت</span>
+<span class="text-[11px] text-on-surface-variant">۴ گوی اصلی</span>
+</div>
+</div>
+</td>
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1">
+<div class="w-6 h-6 rounded-full bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center">۴</div>
+<span class="text-on-surface-variant text-[13px]">-</span>
+<div class="w-6 h-6 rounded-full bg-surface-container-highest text-on-surface-variant text-[11px] font-bold flex items-center justify-center">۰</div>
+</div>
+</td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface-variant" dir="ltr">
+                1 in 9,623
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface">
+                ۵٪ از استخر جوایز
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface font-semibold">
+                ۶۵,۰۰۰,۰۰۰ تومان
+              </td>
+<td class="py-space-md px-space-lg text-left">
+<span class="px-space-sm py-1 rounded bg-surface-container text-on-surface-variant text-[11px]">واریز خودکار</span>
+</td>
+</tr>
+<!-- Tier 5: 3 + 1 Numbers -->
+<tr class="bg-surface-container/20 hover:bg-surface-container-high/60 transition-colors">
+<td class="py-space-md px-space-lg">
+<div class="flex items-center gap-space-sm">
+<span class="w-8 h-8 rounded-lg bg-surface-container-highest text-on-surface flex items-center justify-center font-bold">۵</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">جایزه فیروزه</span>
+<span class="text-[11px] text-on-surface-variant">۳ گوی + ستاره شانس</span>
+</div>
+</div>
+</td>
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1">
+<div class="w-6 h-6 rounded-full bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center">۳</div>
+<span class="text-on-surface-variant text-[13px]">+</span>
+<div class="w-6 h-6 rounded-full bg-tertiary text-on-tertiary text-[11px] font-bold flex items-center justify-center">★</div>
+</div>
+</td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface-variant" dir="ltr">
+                1 in 2,410
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface">
+                ۵٪ ثابت استخر
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface font-semibold">
+                ۷,۵۰۰,۰۰۰ تومان
+              </td>
+<td class="py-space-md px-space-lg text-left">
+<span class="px-space-sm py-1 rounded bg-surface-container text-on-surface-variant text-[11px]">واریز خودکار</span>
+</td>
+</tr>
+<!-- Tier 6: 2 + 1 Numbers (Minimum Win) -->
+<tr class="hover:bg-surface-container-high/60 transition-colors">
+<td class="py-space-md px-space-lg">
+<div class="flex items-center gap-space-sm">
+<span class="w-8 h-8 rounded-lg bg-surface-container-highest text-on-surface flex items-center justify-center font-bold">۶</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">شارژ مجدد بلیت شانس</span>
+<span class="text-[11px] text-on-surface-variant">۲ گوی + ستاره شانس</span>
+</div>
+</div>
+</td>
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1">
+<div class="w-6 h-6 rounded-full bg-primary text-on-primary text-[11px] font-bold flex items-center justify-center">۲</div>
+<span class="text-on-surface-variant text-[13px]">+</span>
+<div class="w-6 h-6 rounded-full bg-tertiary text-on-tertiary text-[11px] font-bold flex items-center justify-center">★</div>
+</div>
+</td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface-variant" dir="ltr">
+                1 in 38.5
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-on-surface">
+                مبلغ ثابت مصوب
+              </td>
+<td class="py-space-md px-space-md font-label-numeric text-label-numeric text-secondary font-semibold">
+                معادل ۲ بلیت رایگان (۵۰۰,۰۰۰ تومان)
+              </td>
+<td class="py-space-md px-space-lg text-left">
+<span class="px-space-sm py-1 rounded bg-surface-container text-on-surface-variant text-[11px]">اعتبار در کیف پول</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<!-- SECTION 3: Interactive RTP & Statistical Probability Calculator -->
+<section class="max-w-7xl mx-auto px-margin py-space-lg">
+<div class="bg-gradient-to-br from-surface-container-low via-surface-container to-surface-container-low p-space-lg md:p-space-xl rounded-xl shadow-2xl relative">
+<div class="flex flex-col gap-space-xs mb-space-lg">
+<div class="flex items-center gap-space-xs text-primary font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-[20px]">calculate</span>
+<span>ماشین‌حساب زنده ریاضی // INTERACTIVE PROBABILITY ENGINE</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface font-bold">محاسبه‌گر شانس تصاعدی و ارزش بازگشت مورد انتظار (Expected Value)</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">تعداد بلیت‌های مورد نظر خود را وارد کنید تا شانس تجمعی برنده شدن در رده‌های مختلف به شکل زنده بر اساس توزیع دو جمله‌ای (Binomial Distribution) محاسبه گردد.</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-xl items-center">
+<!-- Controls Column -->
+<div class="lg:col-span-5 flex flex-col gap-space-md bg-surface-container-lowest/90 p-space-lg rounded-xl shadow-inner">
+<div class="flex flex-col gap-space-xs">
+<label class="font-headline-sm text-headline-sm text-on-surface flex justify-between items-center" for="ticket-slider">
+<span>تعداد بلیت‌های خریداری شده:</span>
+<span class="font-jackpot-counter text-headline-lg text-primary font-bold" id="ticket-count-display">۱۰ بلیت</span>
+</label>
+<input class="w-full h-2 bg-surface-container-high rounded-lg appearance-none cursor-pointer accent-primary mt-2" id="ticket-slider" max="200" min="1" type="range" value="10"/>
+<div class="flex justify-between text-on-surface-variant text-[11px] font-label-numeric">
+<span>۱ بلیت تک</span>
+<span>۵۰ بلیت (بسته نقره‌ای)</span>
+<span>۱۰۰ بلیت (بسته طلایی)</span>
+<span>۲۰۰ بلیت (سندیکای VIP)</span>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-space-xs mt-space-xs">
+<button class="bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-numeric text-[12px] py-1.5 rounded transition-colors" onclick="setTickets(1)" type="button">۱ بلیت</button>
+<button class="bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-numeric text-[12px] py-1.5 rounded transition-colors" onclick="setTickets(25)" type="button">۲۵ بلیت</button>
+<button class="bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-numeric text-[12px] py-1.5 rounded transition-colors" onclick="setTickets(100)" type="button">۱۰۰ بلیت VIP</button>
+</div>
+<div class="flex flex-col gap-1 p-space-sm bg-surface-container rounded-lg">
+<div class="flex justify-between font-body-sm text-body-sm">
+<span class="text-on-surface-variant">مجموع سرمایه‌گذاری:</span>
+<span class="font-label-numeric text-label-numeric text-on-surface font-bold" id="investment-display">۲,۵۰۰,۰۰۰ تومان</span>
+</div>
+<div class="flex justify-between font-body-sm text-body-sm">
+<span class="text-on-surface-variant">نرخ بازگشت پایه تضمینی (RTP):</span>
+<span class="font-label-numeric text-label-numeric text-secondary font-bold">۸۵.۰٪</span>
+</div>
+</div>
+<p class="text-[11px] text-on-surface-variant leading-relaxed">
+              * محاسبات فوق مبتنی بر قانون اعداد بزرگ و احتمال تجمعی رخداد مستقل است. هیچ استراتژی تضمین‌کننده برد قطعی جک‌پات ۱۰۰٪ نیست؛ زرین لاتاری متعهد به اصول بازی مسئولانه (Responsible Gaming) است.
+            </p>
+</div>
+<!-- Dynamic Output Metrics Bento Grid -->
+<div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-space-md">
+<!-- Result Box 1: Any Prize Chance -->
+<div class="bg-surface-container p-space-md rounded-xl flex flex-col justify-between shadow-lg">
+<div class="flex items-center justify-between">
+<span class="font-body-sm text-body-sm text-on-surface-variant">احتمال برد حداقل ۱ جایزه</span>
+<span class="material-symbols-outlined text-secondary">casino</span>
+</div>
+<div class="py-space-xs">
+<span class="font-jackpot-counter text-headline-xl text-secondary font-bold" id="any-win-prob">۳۷.۲٪</span>
+</div>
+<div class="text-[11px] text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-secondary">trending_up</span>
+<span>شانس وقوع در این دوره قرعه‌کشی</span>
+</div>
+</div>
+<!-- Result Box 2: Tier 4+ Chance -->
+<div class="bg-surface-container p-space-md rounded-xl flex flex-col justify-between shadow-lg">
+<div class="flex items-center justify-between">
+<span class="font-body-sm text-body-sm text-on-surface-variant">شانس جوایز رده ۴ و ۳</span>
+<span class="material-symbols-outlined text-primary">auto_awesome</span>
+</div>
+<div class="py-space-xs">
+<span class="font-jackpot-counter text-headline-xl text-primary font-bold" id="tier-mid-prob">۱ در ۲۴۱</span>
+</div>
+<div class="text-[11px] text-on-surface-variant">
+<span>تطابق ۳ یا ۴ گوی همزمان</span>
+</div>
+</div>
+<!-- Result Box 3: Super Jackpot Multiplier -->
+<div class="bg-surface-container p-space-md rounded-xl flex flex-col justify-between shadow-lg">
+<div class="flex items-center justify-between">
+<span class="font-body-sm text-body-sm text-on-surface-variant">ضریب تصاعد شانس سوپر جک‌پات</span>
+<span class="material-symbols-outlined text-tertiary">rocket_launch</span>
+</div>
+<div class="py-space-xs">
+<span class="font-jackpot-counter text-headline-xl text-tertiary font-bold" id="jackpot-multiplier">۱۰x برابری</span>
+</div>
+<div class="text-[11px] text-on-surface-variant">
+<span id="jackpot-ratio-text">نسبت به خرید تک‌بلیت عادی</span>
+</div>
+</div>
+<!-- Result Box 4: Expected Value (EV) -->
+<div class="bg-surface-container p-space-md rounded-xl flex flex-col justify-between shadow-lg">
+<div class="flex items-center justify-between">
+<span class="font-body-sm text-body-sm text-on-surface-variant">ارزش آماری ریاضی (Expected Value)</span>
+<span class="material-symbols-outlined text-secondary">savings</span>
+</div>
+<div class="py-space-xs">
+<span class="font-jackpot-counter text-headline-xl text-on-surface font-bold" id="ev-display">۲,۱۲۵,۰۰۰ ت</span>
+</div>
+<div class="text-[11px] text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check_circle</span>
+<span>ارزش اسمی توزیع شده در استخر برندگان</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 4: Multi-Sig Vaults & Public On-Chain Ledger Verification -->
+<section class="max-w-7xl mx-auto px-margin py-space-lg">
+<div class="flex flex-col gap-space-xs mb-space-md">
+<div class="flex items-center gap-space-xs text-secondary font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-[20px]">account_balance_wallet</span>
+<span>شفافیت زنجیره‌ای عمومی // MULTI-SIGNATURE ON-CHAIN TREASURIES</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface font-bold">آدرس‌های عمومی قراردادها و خزانه‌های چندامضایی پلتفرم</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">شما می‌توانید موجودی لحظه‌ای و جریان انتقال وجه ورودی به هر استخر را در مرورگرهای رسمی بلاک‌چین رهگیری نمایید.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md">
+<!-- Vault 1: TRON Network -->
+<div class="bg-surface-container-low p-space-md rounded-xl flex flex-col justify-between gap-space-md shadow-lg transition-transform hover:-translate-y-1">
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-8 h-8 rounded-lg bg-surface-container-high text-red-400 flex items-center justify-center font-bold">TRX</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">خزانه اصلی USDT (شبکه ترون)</span>
+</div>
+<span class="w-2.5 h-2.5 rounded-full bg-secondary animate-pulse" title="آنلاین"></span>
+</div>
+<p class="text-[12px] text-on-surface-variant mt-1">خزانه چندامضایی ۴ از ۶ کلید ذخیره نقدینگی تتر TRC-20 با پشتوانه تتر طلایی Tether Gold (XAUT).</p>
+</div>
+<div class="bg-surface-container-lowest p-space-sm rounded-lg flex flex-col gap-1">
+<span class="text-[11px] text-on-surface-variant font-label-caps">قرارداد هوشمند هویت‌سنجی:</span>
+<div class="flex items-center justify-between font-label-numeric text-[12px] text-primary" dir="ltr">
+<span class="truncate">TX8L99xP...ZarrinVault77</span>
+<button class="text-on-surface-variant hover:text-on-surface mr-1" onclick="copyToClipboard('TX8L99xP29vBaQ94jKmL9811ZarrinVault77')" title="کپی آدرس">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+</div>
+</div>
+<div class="flex items-center justify-between pt-space-xs border-t-0">
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant">موجودی لحظه‌ای ثبت شده:</span>
+<span class="font-label-numeric text-label-numeric text-secondary font-bold" dir="ltr">3,420,500.00 USDT</span>
+</div>
+<a class="inline-flex items-center gap-1 font-body-sm text-[12px] text-primary hover:underline" href="#">
+<span>مشاهده در TronScan</span>
+<span class="material-symbols-outlined text-[14px]">open_in_new</span>
+</a>
+</div>
+</div>
+<!-- Vault 2: BNB Smart Chain -->
+<div class="bg-surface-container-low p-space-md rounded-xl flex flex-col justify-between gap-space-md shadow-lg transition-transform hover:-translate-y-1">
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-8 h-8 rounded-lg bg-surface-container-high text-yellow-400 flex items-center justify-center font-bold">BNB</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">قرارداد توزیع آنی (BNB Chain)</span>
+</div>
+<span class="w-2.5 h-2.5 rounded-full bg-secondary animate-pulse" title="آنلاین"></span>
+</div>
+<p class="text-[12px] text-on-surface-variant mt-1">تولیدکننده اعداد تصادفی اثبات‌پذیر (Chainlink VRF) و توزیع‌کننده خودکار جوایز خرد.</p>
+</div>
+<div class="bg-surface-container-lowest p-space-sm rounded-lg flex flex-col gap-1">
+<span class="text-[11px] text-on-surface-variant font-label-caps">قرارداد اوراکل Chainlink VRF:</span>
+<div class="flex items-center justify-between font-label-numeric text-[12px] text-primary" dir="ltr">
+<span class="truncate">0x4D2a...8849E4F01</span>
+<button class="text-on-surface-variant hover:text-on-surface mr-1" onclick="copyToClipboard('0x4D2a1b98Fe31bca092147712398849E4F01')" title="کپی آدرس">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+</div>
+</div>
+<div class="flex items-center justify-between pt-space-xs border-t-0">
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant">موجودی استخر نقدشوندگی:</span>
+<span class="font-label-numeric text-label-numeric text-secondary font-bold" dir="ltr">1,890.45 BNB</span>
+</div>
+<a class="inline-flex items-center gap-1 font-body-sm text-[12px] text-primary hover:underline" href="#">
+<span>مشاهده در BscScan</span>
+<span class="material-symbols-outlined text-[14px]">open_in_new</span>
+</a>
+</div>
+</div>
+<!-- Vault 3: TON Network -->
+<div class="bg-surface-container-low p-space-md rounded-xl flex flex-col justify-between gap-space-md shadow-lg transition-transform hover:-translate-y-1">
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-8 h-8 rounded-lg bg-surface-container-high text-cyan-400 flex items-center justify-center font-bold">TON</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">صندوق جک‌پات بیمه (The Open Network)</span>
+</div>
+<span class="w-2.5 h-2.5 rounded-full bg-secondary animate-pulse" title="آنلاین"></span>
+</div>
+<p class="text-[12px] text-on-surface-variant mt-1">خزانه سپرده‌گذاری غیرمتمرکز تسویه بلیت‌های تلگرامی و پرداخت‌های خرد با کارمزد صفر.</p>
+</div>
+<div class="bg-surface-container-lowest p-space-sm rounded-lg flex flex-col gap-1">
+<span class="text-[11px] text-on-surface-variant font-label-caps">قرارداد خزانه TON:</span>
+<div class="flex items-center justify-between font-label-numeric text-[12px] text-primary" dir="ltr">
+<span class="truncate">EQB_zarrin...Reserve2024</span>
+<button class="text-on-surface-variant hover:text-on-surface mr-1" onclick="copyToClipboard('EQB_zarrinGoldJackpotReserve2024Ton')" title="کپی آدرس">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+</div>
+</div>
+<div class="flex items-center justify-between pt-space-xs border-t-0">
+<div class="flex flex-col">
+<span class="text-[10px] text-on-surface-variant">موجودی ذخیره بیمه‌ای:</span>
+<span class="font-label-numeric text-label-numeric text-secondary font-bold" dir="ltr">850,000 TON</span>
+</div>
+<a class="inline-flex items-center gap-1 font-body-sm text-[12px] text-primary hover:underline" href="#">
+<span>مشاهده در Tonviewer</span>
+<span class="material-symbols-outlined text-[14px]">open_in_new</span>
+</a>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 5: Visual Vaults & Physical Gold Assurance (Bento Display) -->
+<section class="max-w-7xl mx-auto px-margin py-space-lg">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-stretch">
+<!-- Large Image Feature Card -->
+<div class="lg:col-span-7 bg-surface-container-low rounded-xl overflow-hidden shadow-2xl relative flex flex-col justify-end min-h-[380px] p-space-lg">
+<img class="absolute inset-0 w-full h-full object-cover" data-alt="High-security underground gold vault with rows of physical 999.9 gold bullion bars stacked neatly under dramatic warm golden spot lighting, sleek obsidian dark luxury architectural interior, futuristic digital biometric security scanners, cinematic luxury fintech atmosphere with amber and emerald reflections." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA5nay2NNAWLwhI5z-TOIACD_RY_bavgqAL7EVPcbG9Q2cI_h195q0616Togth_fUq2a2LoVCZJEYcBfrf9MouNQM2hFXnNJT3K_lBIlA7hQaE76TTKCYuUHhI8o1rjLaoGG-ZqweweWDeF7PXq0gpdQ3Jqgan2c3miejNQLTsVSA83WH6DqNXv0jQLz-oN3RRXlG3LPn4si3S7WSSSgRD5qIgzQ_26f81wh75NWShQxXQAWhBQMf9d"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/70 to-transparent"></div>
+<div class="relative z-10 flex flex-col gap-space-xs">
+<div class="inline-flex items-center gap-1 bg-primary/20 backdrop-blur-md px-space-sm py-1 rounded-full text-primary w-fit font-label-caps text-[11px] font-bold">
+<span class="material-symbols-outlined text-[14px]">verified</span>
+<span>خزانه فیزیکی شمش طلا // SWISS BANK SAFE 402</span>
+</div>
+<h3 class="font-headline-lg text-headline-lg text-on-surface font-bold">پشتوانه فیزیکی مستقل؛ ایمن در برابر نوسانات ارزی</h3>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl leading-relaxed">
+              هر جایزه بالای ۵۰ میلیارد تومان در زرین لاتاری، پیش از شروع قرعه‌کشی به شکل شمش‌های ۱ کیلوگرمی طلای عیار ۲۴ (PAMP Suisse) در امانات امن بانک‌های سوئیس و امارات رزرو شده و کد رهگیری شمش به قرارداد هوشمند پیوست می‌شود.
+            </p>
+</div>
+</div>
+<!-- 2 Side Cards -->
+<div class="lg:col-span-5 flex flex-col gap-space-md">
+<div class="bg-surface-container-low p-space-lg rounded-xl shadow-xl flex flex-col justify-between flex-1">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-secondary uppercase">شفافیت هش رمزنگاری</span>
+<h4 class="font-headline-sm text-headline-sm text-on-surface font-bold">الگوریتم اثبات‌پذیر SHA-256</h4>
+</div>
+<div class="w-10 h-10 rounded-lg bg-surface-container-high text-primary flex items-center justify-center">
+<span class="material-symbols-outlined">key</span>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed my-space-xs">
+              کد هش ترکیب نهایی گوی‌ها ۲۴ ساعت قبل از قرعه‌کشی به صورت قفل شده در بلاک‌چین منتشر می‌شود. پس از اعلام شماره‌ها، کلید عمومی بازگشایی ارائه شده و هر کاربر می‌تواند مطابقت هش‌ها را به صورت مستقل آزمایش کند.
+            </p>
+<div class="bg-surface-container p-space-xs rounded font-label-numeric text-[11px] text-on-surface-variant truncate" dir="ltr">
+              SHA256: 8f49a2c918bb050d2...b49e89ff4201
+            </div>
+</div>
+<div class="bg-surface-container-low p-space-lg rounded-xl shadow-xl flex flex-col justify-between flex-1">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-primary uppercase">تضمین نقدشوندگی ارزی و ریالی</span>
+<h4 class="font-headline-sm text-headline-sm text-on-surface font-bold">تسویه زیر ۱۰ دقیقه بدون مالیات پلتفرم</h4>
+</div>
+<div class="w-10 h-10 rounded-lg bg-secondary-container/20 text-secondary flex items-center justify-center">
+<span class="material-symbols-outlined">bolt</span>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed my-space-xs">
+              برندگان جوایز می‌توانند نوع دریافت را به انتخاب خود تعیین کنند: انتقال بین‌بانکی پایا/ساتنا در ایران، حواله سوئیفت ارزی به حساب‌های امارات و اروپا، یا واریز آنی USDT/Bitcoin به ولت سرد با امنیت کامل هویتی.
+            </p>
+<div class="flex items-center gap-space-sm text-[12px] text-secondary font-bold">
+<span class="material-symbols-outlined text-[16px]">done_all</span>
+<span>سقف برداشت روزانه نامحدود برای برندگان جک‌پات</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 6: Financial FAQ & Payout Guarantee Accordion -->
+<section class="max-w-7xl mx-auto px-margin py-space-lg mb-space-xl">
+<div class="bg-surface-container-low p-space-lg md:p-space-xl rounded-xl shadow-xl">
+<div class="flex flex-col gap-space-xs mb-space-lg">
+<span class="font-label-caps text-label-caps text-primary uppercase">پاسخ شفاف به دغدغه‌های مالی // TRANSPARENT FAQ</span>
+<h2 class="font-headline-lg text-headline-lg text-on-surface font-bold">پرسش‌های متداول درباره امنیت مالی، نقدشوندگی و مالیات</h2>
+</div>
+<div class="flex flex-col gap-space-sm">
+<!-- FAQ 1 -->
+<details class="group bg-surface-container p-space-md rounded-xl transition-all duration-200 open:bg-surface-container-high cursor-pointer">
+<summary class="flex items-center justify-between font-headline-sm text-headline-sm text-on-surface font-bold select-none list-none">
+<span>آیا زرین لاتاری بر جوایز میلیاردی مالیات یا کسورات جانبی اعمال می‌کند؟</span>
+<span class="material-symbols-outlined transition-transform duration-200 group-open:rotate-180 text-primary">expand_more</span>
+</summary>
+<p class="font-body-md text-body-md text-on-surface-variant mt-space-sm pt-space-xs border-t-0 leading-relaxed">
+              خیر. بر خلاف بخت‌آزمایی‌های دولتی آمریکا و اروپا (مانند Powerball یا EuroMillions) که بین ۲۴٪ تا ۳۷٪ از جوایز را به عنوان مالیات بر درآمد کسر می‌کنند، در زرین لاتاری تمام جوایز به شکل ۱۰۰٪ خالص و معاف از مالیات پلتفرم به برندگان پرداخت می‌شود. ۱۰٪ هزینه عملیاتی قبلاً از ورودی هر بلیت کسر شده و از جایزه برنده مبلغی کم نمی‌شود.
+            </p>
+</details>
+<!-- FAQ 2 -->
+<details class="group bg-surface-container p-space-md rounded-xl transition-all duration-200 open:bg-surface-container-high cursor-pointer">
+<summary class="flex items-center justify-between font-headline-sm text-headline-sm text-on-surface font-bold select-none list-none">
+<span>اگر برنده سوپر جک‌پات باشم، هویت من محرمانه باقی می‌ماند؟</span>
+<span class="material-symbols-outlined transition-transform duration-200 group-open:rotate-180 text-primary">expand_more</span>
+</summary>
+<p class="font-body-md text-body-md text-on-surface-variant mt-space-sm pt-space-xs border-t-0 leading-relaxed">
+              کاملاً. در پروتکل مالی VIP زرین لاتاری، هویت، شماره حساب و آدرس ولت برندگان تحت پروتکل‌های فوق‌محرمانه کلاینت (Zero-Knowledge) محافظت می‌شود. در وبسایت عمومی تنها ۶ رقم پایانی هش بلیت و استان/کشور اقامت بدون نام کامل اعلام می‌گردد، مگر اینکه برنده با درخواست کتبی تمایل به مصاحبه رسانه‌ای داشته باشد.
+            </p>
+</details>
+<!-- FAQ 3 -->
+<details class="group bg-surface-container p-space-md rounded-xl transition-all duration-200 open:bg-surface-container-high cursor-pointer">
+<summary class="flex items-center justify-between font-headline-sm text-headline-sm text-on-surface font-bold select-none list-none">
+<span>چگونه مطمئن شویم در صورت برنده شدن مبلغ سنگین ۱۵۰ میلیارد تومانی، پول پرداخت خواهد شد؟</span>
+<span class="material-symbols-outlined transition-transform duration-200 group-open:rotate-180 text-primary">expand_more</span>
+</summary>
+<p class="font-body-md text-body-md text-on-surface-variant mt-space-sm pt-space-xs border-t-0 leading-relaxed">
+              تمام استخرهای جک‌پات در خزانه‌های چندامضایی (Multi-Sig) قراردادهای هوشمند قفل شده‌اند. به این معنا که وجوه نزد مدیریت پلتفرم نگهداری نمی‌شود که امکان مسدودسازی داشته باشد؛ بلکه به محض تطابق گوی‌ها توسط اوراکل Chainlink، کلید تراکنش آزاد شده و انتقال مبلغ غیرقابل بازگشت خواهد بود. علاوه بر این، بیمه‌نامه کنسرسیوم شمش طلا تا سقف ۵۰ میلیون دلار هرگونه ریسک عدم نقدشوندگی را صفر می‌کند.
+            </p>
+</details>
+<!-- FAQ 4 -->
+<details class="group bg-surface-container p-space-md rounded-xl transition-all duration-200 open:bg-surface-container-high cursor-pointer">
+<summary class="flex items-center justify-between font-headline-sm text-headline-sm text-on-surface font-bold select-none list-none">
+<span>اگر در یک دوره هیچ‌کس برنده سوپر جک‌پات (۵+۱) نشود، سرنوشت پول چیست؟</span>
+<span class="material-symbols-outlined transition-transform duration-200 group-open:rotate-180 text-primary">expand_more</span>
+</summary>
+<p class="font-body-md text-body-md text-on-surface-variant mt-space-sm pt-space-xs border-t-0 leading-relaxed">
+              مبلغ جایزه به شکل تصاعدی Rollover شده و به استخر قرعه‌کشی هفته بعد اضافه می‌گردد. همچنین ۵٪ صندوق ذخیره طلای هفتگی نیز به آن ملحق شده و باعث رکوردشکنی مبلغ جک‌پات بعدی می‌شود تا زمانی که بالاخره یک برنده خوش‌شانس تمام اعداد را حدس بزند.
+            </p>
+</details>
+</div>
+<!-- Action Banner inside FAQ -->
+<div class="mt-space-xl p-space-md rounded-xl bg-gradient-to-r from-surface-container-highest to-surface-container-high flex flex-col md:flex-row items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-md">
+<div class="w-12 h-12 rounded-full bg-secondary/20 text-secondary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[28px]">verified_user</span>
+</div>
+<div class="flex flex-col">
+<h4 class="font-headline-sm text-headline-sm text-on-surface font-bold">نیاز به دریافت گزارش کامل ممیزی مالی دارید؟</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">دانلود فایل PDF گزارش رسمی حسابرسی موسسه بین‌المللی Curacao Gaming Authority و امضاهای رمزنگاری.</p>
+</div>
+</div>
+<button class="px-space-lg py-space-sm bg-primary hover:bg-primary-fixed text-on-primary font-headline-sm text-body-md font-bold rounded-xl shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-all whitespace-nowrap" type="button">
+            دانلود دفترچه شفافیت مالی (PDF)
+          </button>
+</div>
+</div>
+</section>
+</div>
+</div>
+<script>
+  // Ticket Probability & Expected Value Engine
+  const ticketSlider = document.getElementById('ticket-slider');
+  const ticketDisplay = document.getElementById('ticket-count-display');
+  const investmentDisplay = document.getElementById('investment-display');
+  const anyWinProb = document.getElementById('any-win-prob');
+  const tierMidProb = document.getElementById('tier-mid-prob');
+  const jackpotMultiplier = document.getElementById('jackpot-multiplier');
+  const evDisplay = document.getElementById('ev-display');
+
+  const TICKET_PRICE = 250000; // 250,000 Tomans
+  const BASE_ODDS_ANY = 1 / 21.8; // ~4.587% per ticket
+  const BASE_ODDS_MID = 1 / 2410; // Tier 5 (3+1)
+  const RTP_RATE = 0.85;
+
+  function formatFarsiNumber(num) {
+    return num.toLocaleString('fa-IR');
+  }
+
+  function updateCalculator(tickets) {
+    if (!ticketSlider) return;
+    ticketSlider.value = tickets;
+    
+    // Total Investment
+    const totalCost = tickets * TICKET_PRICE;
+    ticketDisplay.innerText = `${formatFarsiNumber(tickets)} بلیت`;
+    investmentDisplay.innerText = `${formatFarsiNumber(totalCost)} تومان`;
+
+    // Probability of winning at least 1 prize = 1 - (1 - p)^n
+    const probAny = 1 - Math.pow(1 - BASE_ODDS_ANY, tickets);
+    const probAnyPercent = (probAny * 100).toFixed(1);
+    anyWinProb.innerText = `${formatFarsiNumber(parseFloat(probAnyPercent))}٪`;
+
+    // Mid Tier Odds (Tier 4 or 5)
+    const midDenominator = Math.max(1, Math.round(2410 / tickets));
+    tierMidProb.innerText = `۱ در ${formatFarsiNumber(midDenominator)}`;
+
+    // Jackpot Multiplier
+    jackpotMultiplier.innerText = `${formatFarsiNumber(tickets)}x برابری`;
+
+    // Expected Value in Tomans
+    const ev = Math.round(totalCost * RTP_RATE);
+    evDisplay.innerText = `${formatFarsiNumber(ev)} ت`;
+  }
+
+  if (ticketSlider) {
+    ticketSlider.addEventListener('input', function(e) {
+      updateCalculator(parseInt(e.target.value, 10));
+    });
+  }
+
+  function setTickets(n) {
+    updateCalculator(n);
+  }
+
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      alert('آدرس قرارداد هوشمند کپی شد: ' + text);
+    });
+  }
+
+  // Initial calculation
+  updateCalculator(10);
+</script></main><footer class="w-full bg-surface-container-lowest text-on-surface-variant pt-space-xl pb-space-lg shadow-[0_-1px_20px_rgba(0,0,0,0.6)]"><div class="max-w-7xl mx-auto px-margin"><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-space-xl mb-space-xl"><div class="flex flex-col gap-space-md"><div class="flex items-center gap-space-sm"><img alt="Zarrin Lottery Brand Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCI4LdL2Bhav20zsS5RNNkwQQjzfVEy-UdtZyR-Z7EFEvUfuEO_EVMTROEqMpDIJCKAq6QlqT1XYcwXIyu4FeZ44htghc0MtyNYGILomG6rG9b1rAWBJj4Hv9OIeUGo26tFMV-mOeMAK5Xc8Q_TZBfuZkEUHJpAiC19fIx71_7eDJe2_95nYTpQKAnb2RJMp4yt3YrUQazJqoJ8uYaWRT-0nga6Jx317jZwcQbXucej2-uk-qFBHhGF"/><span class="font-headline-lg text-headline-lg text-primary font-bold">زرین لاتاری</span></div><p class="font-body-md text-body-md leading-relaxed text-on-surface-variant">معتبرترین و بزرگترین کلوب اختصاصی قرعه‌کشی و لاتاری‌های بین‌المللی با الگوریتم اثبات‌پذیر منصفانه (Provably Fair) و تضمین جوایز کلان با نقدشوندگی آنی ارزی و ریالی.</p><div class="flex items-center gap-space-sm text-secondary"><span class="material-symbols-outlined">verified_user</span><span class="font-label-caps text-label-caps">رمزنگاری زنجیره بلوکی SHA-256</span></div></div><div class="flex flex-col gap-space-sm"><h4 class="font-headline-sm text-headline-sm text-on-surface font-semibold mb-space-xs">دسترسی سریع</h4><a class="font-body-md text-body-md hover:text-primary transition-colors" href="#">لابی سوپر قرعه‌کشی‌ها</a><a class="font-body-md text-body-md hover:text-primary transition-colors" href="#">آرشیو شانس‌های بزرگ هفتگی</a><a class="font-body-md text-body-md hover:text-primary transition-colors" href="#">قوانین محاسبه ضرایب و مالیات صفر</a><a class="font-body-md text-body-md hover:text-primary transition-colors" href="#">سفارش بلیت‌های اختصاصی VIP</a><a class="font-body-md text-body-md hover:text-primary transition-colors" href="#">تأییدیه هش رمزنگاری قرعه‌کشی‌ها</a></div><div class="flex flex-col gap-space-sm"><h4 class="font-headline-sm text-headline-sm text-on-surface font-semibold mb-space-xs">امنیت و پشتیبانی ویژه</h4><div class="flex flex-col gap-space-xs p-space-md rounded-xl bg-surface-container-low"><span class="font-body-sm text-body-sm text-on-surface-variant">خط ارتباطی مستقیم مشتریان ویژه:</span><span class="font-label-numeric text-headline-sm text-primary font-bold" dir="ltr">+971 4 800 9277</span><span class="font-body-sm text-body-sm text-secondary flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">support_agent</span>پاسخگویی اختصاصی ۲۴ ساعته</span></div><a class="font-body-md text-body-md hover:text-primary transition-colors" href="#">درخواست لژ اختصاصی قرعه‌کشی</a><a class="font-body-md text-body-md hover:text-primary transition-colors" href="#">سیاست عدم افشای هویت برندگان</a></div><div class="flex flex-col gap-space-md"><h4 class="font-headline-sm text-headline-sm text-on-surface font-semibold">نشان‌های اعتبار و استاندارد</h4><div class="grid grid-cols-2 gap-space-sm"><div class="p-space-sm rounded-xl bg-surface-container-high flex flex-col items-center justify-center text-center gap-1"><span class="material-symbols-outlined text-primary text-[28px]">lock</span><span class="font-label-caps text-label-caps text-on-surface">PROVABLY FAIR</span><span class="text-[10px] text-on-surface-variant">تضمین شفافیت ریاضی</span></div><div class="p-space-sm rounded-xl bg-surface-container-high flex flex-col items-center justify-center text-center gap-1"><span class="material-symbols-outlined text-secondary text-[28px]">shield</span><span class="font-label-caps text-label-caps text-on-surface">CURACAO VIP</span><span class="text-[10px] text-on-surface-variant">مجوز رسمی رگولاتوری</span></div></div><p class="font-body-sm text-body-sm text-on-surface-variant/80">تمامی تراکنش‌ها و انتخاب گوی‌ها تحت نظارت حسابرسان بین‌المللی بی‌طرف ثبت و در دفتر کل باز ذخیره می‌گردند.</p></div></div><div class="pt-space-lg flex flex-col md:flex-row items-center justify-between gap-space-md"><div class="font-body-sm text-body-sm text-on-surface-variant">© ۱۴۰۳ زرین لاتاری (Zarrin Lottery). تمامی حقوق معنوی، قرعه‌کشی‌ها و مارک‌های تجاری محفوظ است.</div><div class="flex items-center gap-space-lg font-body-sm text-body-sm"><a class="hover:text-primary transition-colors" href="#">شرایط استفاده و عضویت VIP</a><a class="hover:text-primary transition-colors" href="#">حریم خصوصی داده‌ها</a><a class="hover:text-primary transition-colors" href="#">بازی مسئولانه</a></div></div></div></footer><aside class="fixed bottom-6 left-6 z-50 flex flex-col items-start gap-2"><div class="hidden md:flex items-center gap-space-xs bg-surface-container-highest/90 backdrop-blur-xl px-space-md py-1.5 rounded-full shadow-2xl border border-secondary/30 text-on-surface text-body-sm animate-pulse"><span class="w-2 h-2 rounded-full bg-secondary"></span><span class="text-secondary font-bold">پشتیبانی آنلاین فعال:</span><span>پاسخگویی زیر ۳۰ ثانیه</span></div><button class="group relative flex items-center gap-space-sm px-space-lg py-space-sm bg-gradient-to-r from-primary-container via-surface-tint to-primary text-on-primary rounded-full shadow-[0_0_30px_rgba(245,158,11,0.6)] hover:shadow-[0_0_45px_rgba(245,158,11,0.9)] hover:scale-105 active:scale-95 transition-all cursor-pointer" type="button"><span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-on-primary opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-secondary"></span></span><span class="material-symbols-outlined text-[24px]">support_agent</span><div class="flex flex-col text-right"><span class="font-headline-sm text-body-md font-bold leading-tight">پشتیبانی VIP اختصاصی</span><span class="text-[10px] text-on-primary-container font-semibold">چت زنده ۲۴/۷ با کارشناس ارشد</span></div></button></aside></body></html>

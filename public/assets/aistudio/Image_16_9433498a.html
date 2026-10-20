@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LuckyDrop — پیش‌نمایش زنده پلتفرم لاتاری Web3</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- فونت‌های استاندارد: Vazirmatn (فارسی)، Outfit (انگلیسی)، Noto Sans SC (چینی) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Outfit:wght@400;600;800;900&family=Vazirmatn:wght@400;600;800;900&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            obsidian: { 950: '#0a0e16', 900: '#0f131c', 800: '#171d2b' },
+            gold: { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706' }
+          },
+          fontFamily: {
+            fa: ['Vazirmatn', 'sans-serif'],
+            en: ['Outfit', 'sans-serif'],
+            zh: ['Noto Sans SC', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #0a0e16; color: #f1f5f9; }
+    .custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+  </style>
+</head>
+<body id="app-body" class="font-fa min-h-screen bg-[#0a0e16] text-slate-100 pb-24 transition-all duration-200">
+  <!-- نوار ابزار مخصوص پیش‌نمایش (سوییچ بین نمای کاربر، پنل مخفی ادمین و تست ۴۰۴) -->
+  <div class="bg-gradient-to-r from-amber-500/20 via-emerald-500/15 to-amber-500/20 border-b border-amber-500/40 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-2">
+      <span class="px-2 py-0.5 rounded bg-amber-500 text-black font-black">LIVE PREVIEW</span>
+      <span class="text-slate-300">شبیه‌ساز مسیرهای Next.js Middleware:</span>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button onclick="switchRoute('lobby')" id="btn-route-lobby" class="px-3 py-1 rounded-lg font-bold bg-amber-500 text-black">
+        🎰 لابی اصلی سایت (/)
+      </button>
+      <button onclick="switchRoute('admin')" id="btn-route-admin" class="px-3 py-1 rounded-lg font-bold bg-[#171d2b] text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/10">
+        🕵️‍♂️ پنل مخفی ادمین (/ops-k82-cockpit)
+      </button>
+      <button onclick="switchRoute('404')" id="btn-route-404" class="px-3 py-1 rounded-lg font-bold bg-[#171d2b] text-rose-400 border border-rose-500/40 hover:bg-rose-500/10">
+        🚫 تست آدرس غیرمجاز (/admin -> 404)
+      </button>
+    </div>
+  </div>
+  <!-- ۱. نوار زنده نرخ ارزهای دیجیتال و فیات (Redis 30s FX Ticker) -->
+  <div class="bg-[#0f131c] border-b border-slate-800/80 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-5 overflow-x-auto custom-scroll py-0.5">
+      <span class="flex items-center gap-1.5 text-emerald-400 font-bold shrink-0">
+        <span class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
+        REDIS FX ENGINE (30s)
+      </span>
+      <span class="shrink-0">BTC: <strong class="text-white">$88,540</strong></span>
+      <span class="shrink-0">TON: <strong class="text-white">$5.48</strong></span>
+      <span class="shrink-0">TRX: <strong class="text-white">$0.242</strong></span>
+      <span class="shrink-0">BNB: <strong class="text-white">$642.10</strong></span>
+      <span class="text-amber-400 font-bold shrink-0">
+        1 USDT = ۸۲,۵۰۰ تومان | ¥7.24 CNY
+      </span>
+    </div>
+    <!-- دکمه‌های تغییر زبان و واحد پول (useCurrency Hook) -->
+    <div class="flex items-center gap-1.5">
+      <button onclick="setLanguage('FA')" id="lang-FA" class="px-3 py-1 rounded-md font-bold bg-amber-500 text-black shadow">
+        فارسی (تومان)
+      </button>
+      <button onclick="setLanguage('EN')" id="lang-EN" class="px-3 py-1 rounded-md font-bold bg-[#171d2b] text-slate-300 hover:text-white">
+        EN ($ USDT)
+      </button>
+      <button onclick="setLanguage('ZH')" id="lang-ZH" class="px-3 py-1 rounded-md font-bold bg-[#171d2b] text-slate-300 hover:text-white">
+        中文 (¥ CNY)
+      </button>
+    </div>
+  </div>
+  <!-- ========================================================= -->
+  <!-- VIEW 1: لابی اصلی کاربران (LOBBY & LOTTERY HUB) -->
+  <!-- ========================================================= -->
+  <div id="view-lobby">
+    <!-- هدر اصلی -->
+    <header class="max-w-7xl mx-auto px-6 py-6 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="h-12 w-12 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-black font-black text-2xl shadow-lg shadow-amber-500/25">
+          LD
+        </div>
+        <div>
+          <h1 class="text-2xl font-black tracking-tight text-white">
+            LUCKY<span class="text-amber-500">DROP</span>
+          </h1>
+          <p id="txt-instant-badge" class="text-xs text-emerald-400 font-medium">
+            ⚡ تسویه آنی و خودکار جوایز زیر ۱,۰۰۰ دلار از کیف پول گرم
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="bg-[#0f131c] border border-amber-500/30 rounded-xl px-4 py-2">
+          <span id="txt-balance-label" class="text-xs text-slate-400 block">موجودی کیف پول شما</span>
+          <span id="txt-user-balance" class="text-lg font-black text-amber-400">۲۰,۲۵۳,۷۵۰ تومان</span>
+          <span id="txt-user-balance-sub" class="text-[11px] text-slate-400 block">Base: $245.50 USDT</span>
+        </div>
+        <button onclick="toggleDepositModal(true)" id="btn-deposit" class="bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-black px-5 py-3.5 rounded-xl shadow-lg shadow-amber-500/20 transition">
+          + واریز مستقیم ارز دیجیتال
+        </button>
+      </div>
+    </header>
+    <!-- بخش اصلی: بنر جک‌پات + انتخابگر شماره‌ها + برگه خرید بلیط -->
+    <main class="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-12 gap-8 mt-2">
+      <!-- ستون راست/چپ (۸ ستون): بنر جک‌پات و گوی‌ها -->
+      <div class="lg:col-span-8 space-y-6">
+        <!-- کارت جک‌پات -->
+        <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f131c] via-[#141b29] to-[#241b0d] border border-amber-500/40 p-7 shadow-2xl">
+          <div class="flex flex-wrap items-center justify-between gap-6">
+            <div>
+              <span id="txt-provably-badge" class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                🔒 تاییدشده با الگوریتم Provably Fair (SHA-256 + بلاک بیت‌کوین)
+              </span>
+              <h2 id="txt-jackpot-title" class="text-sm uppercase tracking-wider text-slate-400 mt-3 font-bold">
+                جک‌پات بزرگ دوره #۴۸۲ (۸۵٪ RTP تضمینی)
+              </h2>
+              <div id="txt-jackpot-amount" class="text-3xl sm:text-5xl font-black text-amber-400 mt-2">
+                ۱۵,۲۹۷,۱۵۰,۰۰۰ تومان
+              </div>
+              <p id="txt-jackpot-sub" class="text-xs text-slate-400 mt-1.5">
+                معادل دلاری در استخر هوشمند: $185,420.00 USDT
+              </p>
+            </div>
+            <div class="bg-[#0a0e16]/90 border border-slate-800 rounded-2xl p-4 text-center min-w-[190px]">
+              <span class="text-xs text-slate-400 block mb-1">زمان تا قفل شدن بلاک قرعه‌کشی</span>
+              <span id="countdown-timer" class="text-2xl font-mono font-black text-white tracking-wider">04:18:45</span>
+              <span class="text-[11px] text-emerald-400 font-mono block mt-1.5">
+                ServerSeedHash: 9f86d08...15d6c
+              </span>
+            </div>
+          </div>
+        </div>
+        <!-- انتخابگر ۵ عدد اصلی (۱ تا ۵۰) و ۱ گوی طلایی (۱ تا ۱۵) -->
+        <div class="bg-[#0f131c] border border-slate-800 rounded-2xl p-6 space-y-6">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 id="txt-pick-main-title" class="text-lg font-black text-white">
+                انتخاب ۵ عدد اصلی (از ۱ تا ۵۰)
+              </h3>
+              <p class="text-xs text-slate-400">روی اعداد کلیک کنید یا از انتخاب هوشمند استفاده نمایید</p>
+            </div>
+            <button onclick="quickPickNumbers()" id="btn-quick-pick" class="px-4 py-2 rounded-xl bg-[#171d2b] hover:bg-amber-500/20 text-amber-400 border border-amber-500/40 text-xs font-black transition">
+              ⚡ انتخاب تصادفی هوشمند (AI Quick-Pick)
+            </button>
+          </div>
+          <!-- گرید ۵۰ تایی اعداد -->
+          <div id="main-balls-grid" class="grid grid-cols-10 gap-2"></div>
+          <!-- گوی طلایی ۱ تا ۱۵ -->
+          <div class="pt-5 border-t border-slate-800">
+            <h3 id="txt-pick-golden-title" class="text-base font-black text-amber-400 mb-3">
+              🌟 انتخاب ۱ گوی طلایی شانس (از ۱ تا ۱۵)
+            </h3>
+            <div id="golden-balls-grid" class="grid grid-cols-5 sm:grid-cols-15 gap-2"></div>
+          </div>
+        </div>
+      </div>
+      <!-- ستون برگه خرید و تاریخچه بلیط‌ها (۴ ستون) -->
+      <div class="lg:col-span-4 space-y-6">
+        <div class="bg-[#0f131c] border border-amber-500/40 rounded-2xl p-6 space-y-5 shadow-xl">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 id="txt-slip-title" class="text-base font-black text-white">برگه بلیط انتخابی شما</h3>
+            <span class="text-xs px-2.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">Round #482</span>
+          </div>
+          <!-- نمایش گوی‌های انتخاب‌شده -->
+          <div id="selected-balls-preview" class="flex items-center justify-center gap-2 py-2"></div>
+          <!-- جزئیات قیمت به تومان/یوان/تتر و معادل کریپتو -->
+          <div class="bg-[#0a0e16] border border-slate-800/80 rounded-xl p-4 space-y-2.5 text-xs">
+            <div class="flex justify-between items-center text-sm">
+              <span id="txt-ticket-cost-label" class="text-slate-400">قیمت هر بلیط:</span>
+              <span id="txt-ticket-cost-val" class="font-black text-amber-400">۴۱۲,۵۰۰ تومان (5.00 USDT)</span>
+            </div>
+            <div class="flex justify-between text-slate-400 border-t border-slate-800/60 pt-2">
+              <span>معادل لحظه‌ای ترون (TRX):</span>
+              <span class="font-mono text-slate-200">20.66 TRX</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>معادل لحظه‌ای تون‌کوین (TON):</span>
+              <span class="font-mono text-slate-200">0.912 TON</span>
+            </div>
+          </div>
+          <button onclick="mintTicket()" id="btn-mint-ticket" class="w-full py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-black text-base shadow-xl shadow-amber-500/20 transition transform active:scale-95">
+            🎟️ خرید آنی بلیط و ثبت در بلاک‌چین
+          </button>
+          <p id="mint-feedback" class="text-xs text-emerald-400 text-center hidden font-bold"></p>
+        </div>
+        <!-- لیست بلیط‌های خریداری‌شده کاربر -->
+        <div class="bg-[#0f131c] border border-slate-800 rounded-2xl p-6">
+          <h4 id="txt-history-title" class="text-sm font-black text-slate-300 mb-4">
+            📋 بلیط‌های فعال شما در این دوره
+          </h4>
+          <div id="tickets-list" class="space-y-3 max-h-64 overflow-y-auto custom-scroll"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <!-- ========================================================= -->
+  <!-- VIEW 2: پنل مخفی ادمین (/ops-k82-cockpit) -->
+  <!-- ========================================================= -->
+  <div id="view-admin" class="hidden max-w-6xl mx-auto px-6 py-10 space-y-8">
+    <div class="bg-[#0f131c] border border-emerald-500/40 rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2 text-xs font-mono text-emerald-400">
+          <span>🔒 STEALTH ROUTE: /ops-k82-cockpit</span>
+          <span>•</span>
+          <span>COOKIE: __Host_ld_ops_k82_vault (AES-256-GCM VERIFIED)</span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-black text-white mt-2">
+          اتاق فرمان اتوماتیک تک‌اپراتوره (Solo-Operator Cockpit)
+        </h1>
+      </div>
+      <button onclick="toggleKillSwitch()" id="btn-killswitch" class="px-6 py-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-sm shadow-xl shadow-rose-600/30 transition">
+        🛑 فعال‌سازی دکمه توقف اضطراری (KILL-SWITCH)
+      </button>
+    </div>
+    <div id="killswitch-banner" class="hidden p-4 rounded-xl bg-rose-500/20 border border-rose-500 text-rose-200 font-bold text-sm">
+      🚨 وضعیت توقف اضطراری (KILL-SWITCH) فعال شد! فروش بلیط و برداشت‌های خودکار کیف پول گرم موقتاً منجمد شدند.
+    </div>
+    <!-- کارت‌های تقسیم خودکار درآمد (85 / 10 / 3 / 2 Waterfall) -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-5">
+      <div class="bg-[#0f131c] border border-slate-800 rounded-2xl p-5">
+        <span class="text-xs text-slate-400 font-bold">۸۵٪ استخر جوایز (RTP Pool)</span>
+        <p class="text-2xl font-black text-white mt-2">$185,420.00</p>
+        <span class="text-xs text-emerald-400 block mt-1">۱۵.۲۹ میلیارد تومان</span>
+      </div>
+      <div class="bg-[#0f131c] border border-amber-500/50 rounded-2xl p-5">
+        <span class="text-xs text-amber-400 font-bold">۱۰٪ سود خالص تضمینی شما (Cold Wallet)</span>
+        <p class="text-2xl font-black text-amber-400 mt-2">$21,814.12</p>
+        <span class="text-xs text-slate-300 block mt-1">۱,۷۹۹,۶۶۴,۹۰۰ تومان (انتقال خودکار)</span>
+      </div>
+      <div class="bg-[#0f131c] border border-slate-800 rounded-2xl p-5">
+        <span class="text-xs text-slate-400 font-bold">۳٪ ذخیره تجمیعی دور بعد (Rollover)</span>
+        <p class="text-2xl font-black text-white mt-2">$6,544.23</p>
+        <span class="text-xs text-slate-400 block mt-1">تزریق خودکار به جک‌پات بعدی</span>
+      </div>
+      <div class="bg-[#0f131c] border border-slate-800 rounded-2xl p-5">
+        <span class="text-xs text-slate-400 font-bold">۲٪ شارژ کارمزد شبکه (Gas Tank)</span>
+        <p class="text-2xl font-black text-emerald-400 mt-2">$4,362.82</p>
+        <span class="text-xs text-slate-400 block mt-1">پوشش اتوماتیک کارمزد TRC20/TON</span>
+      </div>
+    </div>
+  </div>
+  <!-- ========================================================= -->
+  <!-- VIEW 3: صفحه ۴۰۴ برای مسیرهای غیرمجاز (/admin -> 404) -->
+  <!-- ========================================================= -->
+  <div id="view-404" class="hidden max-w-xl mx-auto px-6 py-24 text-center space-y-5">
+    <div class="text-7xl font-black text-slate-700 font-mono">404</div>
+    <h2 class="text-2xl font-bold text-white">صفحه مورد نظر یافت نشد (Not Found)</h2>
+    <p class="text-sm text-slate-400 leading-relaxed">
+      هرگونه تلاش برای باز کردن آدرس‌های <code class="text-rose-400">/admin</code> یا ورود به <code class="text-amber-400">/ops-k82-cockpit</code> بدون کوکی رمزنگاری‌شده <code class="text-emerald-400">AES-256-GCM</code>، دقیقاً همین صفحه ۴۰۴ عمومی سایت را برمی‌گرداند تا مهاجم حتی متوجه وجود پنل نشود.
+    </p>
+    <button onclick="switchRoute('lobby')" class="px-6 py-3 rounded-xl bg-amber-500 text-black font-black text-sm">
+      بازگشت به صفحه اصلی سایت
+    </button>
+  </div>
+  <!-- ========================================================= -->
+  <!-- MODAL: درگاه واریز مستقیم Web3 با QR Code -->
+  <!-- ========================================================= -->
+  <div id="deposit-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-[#0f131c] border border-amber-500/40 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-lg font-black text-white">درگاه مستقیم ارز دیجیتال (HD Wallet)</h3>
+        <button onclick="toggleDepositModal(false)" class="text-slate-400 hover:text-white text-lg">✕</button>
+      </div>
+      <div class="grid grid-cols-5 gap-2">
+        <button onclick="selectCoin('USDT (TRC-20)', 'TQrY8LuckyDropHDVault9941xTrx77A')" class="px-2 py-2 rounded-lg text-xs font-black bg-amber-500 text-black">USDT</button>
+        <button onclick="selectCoin('TON Network', 'UQBLuckyDropTonVaultAddress9941x_TON')" class="px-2 py-2 rounded-lg text-xs font-bold bg-[#171d2b] text-slate-300">TON</button>
+        <button onclick="selectCoin('TRON (TRX)', 'TQrY8LuckyDropHDVault9941xTrx77A')" class="px-2 py-2 rounded-lg text-xs font-bold bg-[#171d2b] text-slate-300">TRX</button>
+        <button onclick="selectCoin('Bitcoin SegWit', 'bc1qluckydropvault9941x00segwit')" class="px-2 py-2 rounded-lg text-xs font-bold bg-[#171d2b] text-slate-300">BTC</button>
+        <button onclick="selectCoin('BNB (BEP-20)', '0x9941xLuckyDropBscEvmHDVault7788')" class="px-2 py-2 rounded-lg text-xs font-bold bg-[#171d2b] text-slate-300">BNB</button>
+      </div>
+      <div class="bg-[#0a0e16] border border-slate-800 rounded-xl p-4 text-center space-y-3">
+        <span id="modal-coin-network" class="text-xs text-emerald-400 font-bold">شبکه انتخابی: USDT (TRC-20) — تبدیل آنی به تتر</span>
+        <div class="mx-auto h-36 w-36 bg-white p-3 rounded-xl flex items-center justify-center">
+          <!-- QR Code SVG -->
+          <svg viewBox="0 0 100 100" class="w-full h-full text-black fill-current">
+            <rect x="10" y="10" width="25" height="25" />
+            <rect x="65" y="10" width="25" height="25" />
+            <rect x="10" y="65" width="25" height="25" />
+            <rect x="42" y="42" width="16" height="16" />
+            <rect x="65" y="65" width="12" height="12" />
+            <rect x="40" y="15" width="15" height="10" />
+            <rect x="15" y="42" width="18" height="12" />
+          </svg>
+        </div>
+        <p id="modal-coin-address" class="text-xs font-mono bg-[#171d2b] p-2.5 rounded-lg text-amber-300 break-all select-all">
+          TQrY8LuckyDropHDVault9941xTrx77A
+        </p>
+        <button onclick="simulateInstantDeposit()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs">
+          ⚡ شبیه‌سازی واریز آنی +$50 USDT (تست Webhook)
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- ========================================================= -->
+  <!-- WIDGET: چت‌بات هوشمند ۲۴ ساعته Gemini 2.5 Flash -->
+  <!-- ========================================================= -->
+  <div class="fixed bottom-5 left-5 z-40">
+    <div id="ai-chat-box" class="hidden w-80 sm:w-96 bg-[#0f131c] border border-amber-500/40 rounded-2xl shadow-2xl overflow-hidden mb-3">
+      <div class="bg-gradient-to-r from-amber-500 to-amber-400 text-black px-4 py-3 font-black text-xs flex items-center justify-between">
+        <span>🤖 پشتیبان هوشمند ۲۴ ساعته (Gemini Flash AI)</span>
+        <button onclick="toggleAiChat(false)" class="text-base font-bold">✕</button>
+      </div>
+      <div id="ai-messages" class="p-4 h-64 overflow-y-auto space-y-3 text-xs custom-scroll">
+        <div class="bg-[#171d2b] text-slate-200 p-3 rounded-xl leading-relaxed">
+          سلام! من هوش مصنوعی ۲۴ ساعته LuckyDrop هستم. هر زمان هش تراکنش (TXID) خود را بفرستید، مستقیماً از نودهای بلاک‌چین (TronGrid / Toncenter / BSC) استعلام می‌گیرم.
+        </div>
+      </div>
+      <div class="p-3 border-t border-slate-800 flex gap-2">
+        <input id="ai-input" type="text" placeholder="ارسال هش تراکنش (TXID) یا سوال..." class="flex-1 bg-[#0a0e16] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white" />
+        <button onclick="sendAiChat()" class="bg-amber-500 text-black font-black px-3 py-2 rounded-lg text-xs">ارسال</button>
+      </div>
+    </div>
+    <button onclick="toggleAiChat(true)" class="bg-amber-500 hover:bg-amber-400 text-black font-black px-5 py-3.5 rounded-full shadow-xl shadow-amber-500/30 flex items-center gap-2 text-xs">
+      <span>💬 پشتیبانی هوشمند ۲۴ ساعته (استعلام TXID)</span>
+    </button>
+  </div>
+  <!-- ========================================================= -->
+  <!-- منطق تعاملی کامل فرانت‌اند (useCurrency + RNG + Chat) -->
+  <!-- ========================================================= -->
+  <script>
+    const state = {
+      lang: 'FA',
+      balanceUsdt: 245.50,
+      jackpotUsdt: 185420.00,
+      ticketPriceUsdt: 5.00,
+      rates: { TOMAN: 82500, CNY: 7.24, USD: 1 },
+      selectedMain: [7, 14, 21, 33, 48],
+      selectedGolden: 9,
+      killSwitch: false,
+      tickets: [
+        { id: 'TKT-9042X', main: [4, 12, 29, 37, 49], golden: 11, costUsdt: 5, seed: 'a8f91c02' }
+      ]
+    };
+    function formatCurrency(usdt) {
+      if (state.lang === 'FA') {
+        return Math.round(usdt * state.rates.TOMAN).toLocaleString('fa-IR') + ' تومان';
+      }
+      if (state.lang === 'ZH') {
+        return '¥' + (usdt * state.rates.CNY).toFixed(2) + ' CNY';
+      }
+      return '$' + usdt.toLocaleString('en-US', { minimumFractionDigits: 2 }) + ' USDT';
+    }
+    function setLanguage(lang) {
+      state.lang = lang;
+      const body = document.getElementById('app-body');
+      body.dir = lang === 'FA' ? 'rtl' : 'ltr';
+      body.className = (lang === 'FA' ? 'font-fa' : lang === 'ZH' ? 'font-zh' : 'font-en') + ' min-h-screen bg-[#0a0e16] text-slate-100 pb-24';
+      ['FA', 'EN', 'ZH'].forEach(l => {
+        document.getElementById('lang-' + l).className = l === lang
+          ? 'px-3 py-1 rounded-md font-bold bg-amber-500 text-black shadow'
+          : 'px-3 py-1 rounded-md font-bold bg-[#171d2b] text-slate-300 hover:text-white';
+      });
+      renderAll();
+    }
+    function renderBalls() {
+      const mainGrid = document.getElementById('main-balls-grid');
+      mainGrid.innerHTML = '';
+      for (let i = 1; i <= 50; i++) {
+        const active = state.selectedMain.includes(i);
+        const btn = document.createElement('button');
+        btn.textContent = i;
+        btn.onclick = () => {
+          if (active) state.selectedMain = state.selectedMain.filter(n => n !== i);
+          else if (state.selectedMain.length < 5) state.selectedMain = [...state.selectedMain, i].sort((a,b) => a-b);
+          renderAll();
+        };
+        btn.className = active
+          ? 'h-10 rounded-lg font-black text-sm bg-amber-500 text-black shadow-md shadow-amber-500/30 scale-105 transition'
+          : 'h-10 rounded-lg font-bold text-sm bg-[#171d2b] text-slate-300 hover:bg-slate-800 transition';
+        mainGrid.appendChild(btn);
+      }
+      const goldenGrid = document.getElementById('golden-balls-grid');
+      goldenGrid.innerHTML = '';
+      for (let g = 1; g <= 15; g++) {
+        const active = state.selectedGolden === g;
+        const btn = document.createElement('button');
+        btn.textContent = g;
+        btn.onclick = () => { state.selectedGolden = g; renderAll(); };
+        btn.className = active
+          ? 'h-10 rounded-full font-black text-sm bg-gradient-to-br from-amber-300 to-amber-600 text-black ring-2 ring-amber-200 transition'
+          : 'h-10 rounded-full font-bold text-sm bg-[#171d2b] text-amber-400 hover:bg-amber-500/20 transition';
+        goldenGrid.appendChild(btn);
+      }
+      const preview = document.getElementById('selected-balls-preview');
+      preview.innerHTML = state.selectedMain.map(n =>
+        `<span class="h-11 w-11 rounded-xl bg-[#171d2b] border border-amber-500/40 flex items-center justify-center font-black text-white">${n}</span>`
+      ).join('') + `<span class="h-11 w-11 rounded-full bg-amber-500 text-black flex items-center justify-center font-black shadow-lg">${state.selectedGolden}</span>`;
+    }
+    function renderTickets() {
+      const container = document.getElementById('tickets-list');
+      container.innerHTML = state.tickets.map(t => `
+        <div class="bg-[#0a0e16] border border-slate-800 rounded-xl p-3 text-xs flex items-center justify-between">
+          <div>
+            <span class="text-emerald-400 font-mono font-bold block">${t.id}</span>
+            <span class="text-slate-300">گوی‌ها: ${t.main.join(' - ')} + [${t.golden}]</span>
+          </div>
+          <div class="text-left">
+            <span class="text-amber-400 font-bold block">${formatCurrency(t.costUsdt)}</span>
+            <span class="text-[10px] text-slate-500 font-mono">ClientSeed: ${t.seed}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+    function renderAll() {
+      document.getElementById('txt-user-balance').textContent = formatCurrency(state.balanceUsdt);
+      document.getElementById('txt-user-balance-sub').textContent = `Base Accounting: $${state.balanceUsdt.toFixed(2)} USDT`;
+      document.getElementById('txt-jackpot-amount').textContent = formatCurrency(state.jackpotUsdt);
+      document.getElementById('txt-ticket-cost-val').textContent = `${formatCurrency(state.ticketPriceUsdt)} ($5.00 USDT)`;
+      renderBalls();
+      renderTickets();
+    }
+    function quickPickNumbers() {
+      const set = new Set();
+      while (set.size < 5) set.add(Math.floor(Math.random() * 50) + 1);
+      state.selectedMain = Array.from(set).sort((a,b) => a-b);
+      state.selectedGolden = Math.floor(Math.random() * 15) + 1;
+      renderAll();
+    }
+    function mintTicket() {
+      if (state.selectedMain.length !== 5) return alert('لطفاً ۵ عدد اصلی را انتخاب کنید.');
+      if (state.balanceUsdt < state.ticketPriceUsdt) {
+        toggleDepositModal(true);
+        return;
+      }
+      state.balanceUsdt -= state.ticketPriceUsdt;
+      state.tickets.unshift({
+        id: 'TKT-' + Math.random().toString(36).substring(2, 7).toUpperCase(),
+        main: [...state.selectedMain],
+        golden: state.selectedGolden,
+        costUsdt: state.ticketPriceUsdt,
+        seed: Math.random().toString(16).substring(2, 10)
+      });
+      const fb = document.getElementById('mint-feedback');
+      fb.textContent = '✅ بلیط شما با موفقیت صادر و با هش SHA-256 ثبت شد!';
+      fb.classList.remove('hidden');
+      setTimeout(() => fb.classList.add('hidden'), 3500);
+      renderAll();
+    }
+    function switchRoute(route) {
+      ['lobby', 'admin', '404'].forEach(r => {
+        document.getElementById('view-' + r).classList.toggle('hidden', r !== route);
+      });
+    }
+    function toggleKillSwitch() {
+      state.killSwitch = !state.killSwitch;
+      document.getElementById('killswitch-banner').classList.toggle('hidden', !state.killSwitch);
+    }
+    function toggleDepositModal(show) {
+      const m = document.getElementById('deposit-modal');
+      m.classList.toggle('hidden', !show);
+      m.classList.toggle('flex', show);
+    }
+    function selectCoin(net, addr) {
+      document.getElementById('modal-coin-network').textContent = `شبکه انتخابی: ${net} — تبدیل آنی به تتر`;
+      document.getElementById('modal-coin-address').textContent = addr;
+    }
+    function simulateInstantDeposit() {
+      state.balanceUsdt += 50;
+      renderAll();
+      toggleDepositModal(false);
+    }
+    function toggleAiChat(show) {
+      document.getElementById('ai-chat-box').classList.toggle('hidden', show === false ? false : true);
+    }
+    function sendAiChat() {
+      const input = document.getElementById('ai-input');
+      const text = input.value.trim();
+      if (!text) return;
+      const box = document.getElementById('ai-messages');
+      box.innerHTML += `<div class="bg-amber-500/20 text-amber-200 p-2.5 rounded-xl">${text}</div>`;
+      input.value = '';
+      setTimeout(() => {
+        box.innerHTML += `<div class="bg-[#171d2b] text-emerald-300 p-2.5 rounded-xl">
+          ✅ استعلام از نود بلاک‌چین انجام شد: تراکنش شما دارای ۱۹ تایید شبکه (Confirmations) است. موجودی شما به ارزش <strong>${formatCurrency(state.balanceUsdt)}</strong> کاملاً به‌روز است.
+        </div>`;
+        box.scrollTop = box.scrollHeight;
+      }, 600);
+    }
+    renderAll();
+  </script>
+</body>
+</html>
