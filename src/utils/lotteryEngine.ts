@@ -11,14 +11,19 @@ export interface ExchangeRates {
 }
 
 export const DEFAULT_FX_RATES: ExchangeRates = {
-  TOMAN: 82500,
-  CNY: 7.24,
+  TOMAN: 271600,
+  CNY: 6.68,
   USD: 1,
-  BTC: 88540,
-  TON: 5.48,
-  TRX: 0.242,
-  BNB: 642.1,
+  BTC: 81344,
+  TON: 1.6,
+  TRX: 0.3283,
+  BNB: 731.07,
 };
+
+export function getCnyToTomanRate(rates: ExchangeRates = DEFAULT_FX_RATES): number {
+  const safeCny = rates.CNY > 0 ? rates.CNY : 6.68;
+  return Math.round(rates.TOMAN / safeCny);
+}
 
 export interface WaterfallBreakdown {
   grossVolumeUsdt: number;
@@ -277,7 +282,7 @@ export function calculateBinomialOddsAndEV(
   tickets: number,
   ticketPriceUsdt: number = 3.030303,
   rtpRateOrJackpot: number = 0.85,
-  tomanRateOrRtpPct: number = 82500
+  tomanRateOrRtpPct: number = DEFAULT_FX_RATES.TOMAN
 ): BinomialOddsResult {
   const n = Math.max(1, Math.min(10000, Math.floor(tickets)));
   const rtpFraction =
@@ -286,7 +291,7 @@ export function calculateBinomialOddsAndEV(
       : tomanRateOrRtpPct <= 100
       ? tomanRateOrRtpPct / 100
       : 0.85;
-  const tomanRate = tomanRateOrRtpPct > 1000 ? tomanRateOrRtpPct : 82500;
+  const tomanRate = tomanRateOrRtpPct > 1000 ? tomanRateOrRtpPct : DEFAULT_FX_RATES.TOMAN;
 
   const baseOddsAny = 1 / 21.8;
   const probAny = 1 - Math.pow(1 - baseOddsAny, n);
@@ -637,4 +642,470 @@ export function calculateFixedPegTicketConversions(
     btc: crypto.btc,
   };
 }
+
+// ============================================================================
+// MULTI-LOTTERY CONCURRENT ENGINE SPECIFICATIONS
+// ============================================================================
+export type LotteryTypeId = 'MEGA_WEEKLY' | 'DAILY_BLITZ' | 'HOURLY_FLASH' | 'TON_SPECIAL';
+
+export interface MultiLotterySpec {
+  id: LotteryTypeId;
+  roundCode: string;
+  titleFa: string;
+  titleEn: string;
+  titleZh: string;
+  subtitleFa: string;
+  category: string;
+  formatLabel: string;
+  mainCount: number;
+  mainMax: number;
+  goldenMax: number; // 0 means no golden ball required (e.g., Hourly Flash 4/25)
+  jackpotUsdt: number;
+  ticketPriceUsdt: number;
+  rtpPercent: number;
+  soldPercent: number;
+  remainingLabel: string;
+  drawTimeLabel: string;
+  initialCountdownSec: number;
+  serverSeedHash: string;
+  clientSeed: string;
+  winningNumbers: number[];
+  winningGoldenBall: number;
+  badgeColor: 'amber' | 'emerald' | 'purple' | 'sky';
+}
+
+export const MULTI_LOTTERY_SPECS: MultiLotterySpec[] = [
+  {
+    id: 'MEGA_WEEKLY',
+    roundCode: '#ZRN-8493',
+    titleFa: 'مگا جک‌پات VIP هفتگی (Mega Jackpot VIP)',
+    titleEn: 'Mega Jackpot VIP Weekly',
+    titleZh: 'VIP 超级周大奖',
+    subtitleFa: 'استخر تضمین‌شده بالای ۱۵۰,۰۰۰ دلار • قرعه‌کشی هفتگی ۵ از ۵۰ + ۱ گوی طلایی',
+    category: 'WEEKLY',
+    formatLabel: '۵ از ۵۰ + ۱ از ۱۵ ★',
+    mainCount: 5,
+    mainMax: 50,
+    goldenMax: 15,
+    jackpotUsdt: 184500,
+    ticketPriceUsdt: 5.0,
+    rtpPercent: 85,
+    soldPercent: 82,
+    remainingLabel: 'ظرفیت باقی‌مانده: ۱۸٪',
+    drawTimeLabel: 'جمعه ۲۲:۰۰ به وقت تهران',
+    initialCountdownSec: 2 * 86400 + 14 * 3600 + 38 * 60 + 49,
+    serverSeedHash: '0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    clientSeed: 'tron_block_62194801_mega_vip',
+    winningNumbers: [7, 14, 23, 38, 49],
+    winningGoldenBall: 8,
+    badgeColor: 'amber',
+  },
+  {
+    id: 'DAILY_BLITZ',
+    roundCode: '#BLZ-2409',
+    titleFa: 'بلیتز روزانه ۱۰ هزار دلاری (Daily Blitz)',
+    titleEn: 'Daily Blitz $10,000',
+    titleZh: '每日闪电大奖',
+    subtitleFa: 'قرعه‌کشی هر ۲۴ ساعت راس ساعت ۲۴:۰۰ • ضریب برد ۵ برابر سریع‌تر',
+    category: 'DAILY',
+    formatLabel: '۵ از ۳۵ + ۱ از ۱۰ ★',
+    mainCount: 5,
+    mainMax: 35,
+    goldenMax: 10,
+    jackpotUsdt: 12400,
+    ticketPriceUsdt: 2.0,
+    rtpPercent: 85,
+    soldPercent: 74,
+    remainingLabel: 'قرعه‌کشی امشب ساعت ۲۴:۰۰',
+    drawTimeLabel: 'هر شب ساعت ۲۴:۰۰',
+    initialCountdownSec: 6 * 3600 + 42 * 60 + 18,
+    serverSeedHash: '0x9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+    clientSeed: 'btc_block_879410_daily_blitz',
+    winningNumbers: [4, 11, 19, 27, 33],
+    winningGoldenBall: 6,
+    badgeColor: 'emerald',
+  },
+  {
+    id: 'HOURLY_FLASH',
+    roundCode: '#FLS-0060',
+    titleFa: 'فلش ساعتی سریع (Hourly Flash 60m)',
+    titleEn: 'Hourly Flash 60-Min',
+    titleZh: '每小时极速开奖',
+    subtitleFa: 'دورهای فوق سریع ۶۰ دقیقه‌ای • انتخاب فقط ۴ گوی از ۲۵ عدد با ورودی ۱ دلار',
+    category: 'TURBO',
+    formatLabel: '۴ از ۲۵ (بدون گوی طلایی)',
+    mainCount: 4,
+    mainMax: 25,
+    goldenMax: 0,
+    jackpotUsdt: 2850,
+    ticketPriceUsdt: 1.0,
+    rtpPercent: 88,
+    soldPercent: 91,
+    remainingLabel: 'کمتر از ۱ ساعت تا استخراج بلاک',
+    drawTimeLabel: 'راس هر ساعت میلادی',
+    initialCountdownSec: 34 * 60 + 12,
+    serverSeedHash: '0x4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a',
+    clientSeed: 'ton_shard_39812099_hourly_flash',
+    winningNumbers: [3, 9, 17, 24],
+    winningGoldenBall: 0,
+    badgeColor: 'purple',
+  },
+  {
+    id: 'TON_SPECIAL',
+    roundCode: '#TON-9920',
+    titleFa: 'قرعه‌کشی ویژه جامعه تلگرام (TON Telegram Special)',
+    titleEn: 'TON Telegram Special',
+    titleZh: 'TON 电报专属大奖',
+    subtitleFa: 'مخصوص کاربران مینی‌اپ تلگرام با تسویه آنی TON در کمتر از ۵ ثانیه',
+    category: 'TON_VIP',
+    formatLabel: '۵ از ۴۰ + ۱ از ۱۲ 💎',
+    mainCount: 5,
+    mainMax: 40,
+    goldenMax: 12,
+    jackpotUsdt: 45000,
+    ticketPriceUsdt: 3.0,
+    rtpPercent: 86,
+    soldPercent: 68,
+    remainingLabel: 'تسویه مستقیم شاردینگ TON',
+    drawTimeLabel: 'پنج‌شنبه‌ها ساعت ۲۱:۰۰',
+    initialCountdownSec: 1 * 86400 + 9 * 3600 + 15 * 60 + 40,
+    serverSeedHash: '0x7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451',
+    clientSeed: 'ton_masterchain_seqno_41982301',
+    winningNumbers: [6, 15, 22, 31, 39],
+    winningGoldenBall: 9,
+    badgeColor: 'sky',
+  },
+];
+
+// ============================================================================
+// BULK TICKET PURCHASING & MULTI-CHANCE CART LOGIC
+// ============================================================================
+export interface BulkTicketSlip {
+  slipIndex: number;
+  mainNumbers: number[];
+  goldenBall: number;
+  clientSeed: string;
+}
+
+export function generateBulkQuickPickSlips(
+  count: number = 5,
+  mainCount: number = 5,
+  mainMax: number = 50,
+  goldenMax: number = 15,
+  seedPrefix: string = 'bulk_ai'
+): BulkTicketSlip[] {
+  const safeCount = Math.max(1, Math.min(50, Math.floor(count)));
+  const safeMainCount = Math.max(1, Math.min(10, mainCount));
+  const safeMainMax = Math.max(safeMainCount + 2, mainMax);
+  const usedSignatures = new Set<string>();
+  const slips: BulkTicketSlip[] = [];
+
+  for (let i = 0; i < safeCount; i++) {
+    let mainNumbers: number[] = [];
+    let goldenBall = 0;
+    let attempts = 0;
+
+    do {
+      const pool: number[] = [];
+      while (pool.length < safeMainCount) {
+        const candidate = Math.floor(Math.random() * safeMainMax) + 1;
+        if (!pool.includes(candidate)) {
+          pool.push(candidate);
+        }
+      }
+      pool.sort((a, b) => a - b);
+      mainNumbers = pool;
+      goldenBall = goldenMax > 0 ? Math.floor(Math.random() * goldenMax) + 1 : 0;
+      attempts++;
+    } while (
+      usedSignatures.has(`${mainNumbers.join(',')}:${goldenBall}`) &&
+      attempts < 25
+    );
+
+    usedSignatures.add(`${mainNumbers.join(',')}:${goldenBall}`);
+    slips.push({
+      slipIndex: i + 1,
+      mainNumbers,
+      goldenBall,
+      clientSeed: `${seedPrefix}_${i + 1}_${Math.random().toString(16).slice(2, 10)}`,
+    });
+  }
+
+  return slips;
+}
+
+export interface BulkCartSummary {
+  ticketCount: number;
+  unitPriceUsdt: number;
+  discountPercent: number;
+  subtotalUsdt: number;
+  totalUsdt: number;
+  totalToman: number;
+  totalCny: number;
+  totalTon: number;
+  totalTrx: number;
+  totalBtc: number;
+  totalBnb: number;
+}
+
+export function calculateBulkCartSummary(
+  ticketCount: number,
+  unitPriceUsdt: number,
+  rates: ExchangeRates = DEFAULT_FX_RATES
+): BulkCartSummary {
+  const safeCount = Math.max(1, Math.min(100, Math.floor(ticketCount)));
+  const safeUnit = Math.max(0.1, unitPriceUsdt);
+  // Multi-chance bundle bonus discount: 5+ tickets = 5% off, 10+ tickets = 10% off
+  const discountPercent = safeCount >= 10 ? 10 : safeCount >= 5 ? 5 : 0;
+  const subtotalUsdt = Number((safeCount * safeUnit).toFixed(2));
+  const totalUsdt = Number((subtotalUsdt * (1 - discountPercent / 100)).toFixed(2));
+  const converted = convertUsdtToCrypto(totalUsdt, rates);
+
+  return {
+    ticketCount: safeCount,
+    unitPriceUsdt: safeUnit,
+    discountPercent,
+    subtotalUsdt,
+    totalUsdt,
+    totalToman: converted.toman,
+    totalCny: converted.cny,
+    totalTon: converted.ton,
+    totalTrx: converted.trx,
+    totalBtc: converted.btc,
+    totalBnb: converted.bnb,
+  };
+}
+
+// ============================================================================
+// CRYPTO WITHDRAWAL MODULE VALIDATION & FEE CALCULATOR
+// ============================================================================
+export type WithdrawalNetwork =
+  | 'USDT (TRC-20)'
+  | 'TON Network'
+  | 'TRON (TRX)'
+  | 'BNB (BEP-20)'
+  | 'Bitcoin (BTC)';
+
+export interface AddressValidationResult {
+  valid: boolean;
+  network: WithdrawalNetwork;
+  errorFa?: string;
+}
+
+export function validateCryptoWithdrawalAddress(
+  network: WithdrawalNetwork,
+  address: string
+): AddressValidationResult {
+  const clean = (address || '').trim();
+  if (!clean) {
+    return {
+      valid: false,
+      network,
+      errorFa: 'لطفاً آدرس کیف پول مقصد را وارد نمایید.',
+    };
+  }
+
+  switch (network) {
+    case 'USDT (TRC-20)':
+    case 'TRON (TRX)': {
+      const isTron = /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(clean);
+      return isTron
+        ? { valid: true, network }
+        : {
+            valid: false,
+            network,
+            errorFa: 'آدرس شبکه ترون (TRC-20 / TRX) باید با حرف T بزرگ شروع شده و دقیقاً ۳۴ کاراکتر Base58 باشد.',
+          };
+    }
+    case 'TON Network': {
+      const isTon =
+        /^(EQ|UQ)[A-Za-z0-9_-]{46}$/.test(clean) ||
+        /^(EQ|UQ)[A-Za-z0-9_-]{34,52}$/.test(clean) ||
+        /^0:[a-fA-F0-9]{64}$/.test(clean);
+      return isTon
+        ? { valid: true, network }
+        : {
+            valid: false,
+            network,
+            errorFa: 'آدرس شبکه TON باید با پیشوند EQ یا UQ (فرمت کاربرپسند) یا 0: شروع شود.',
+          };
+    }
+    case 'BNB (BEP-20)': {
+      const isBep20 = /^0x[a-fA-F0-9]{40}$/.test(clean);
+      return isBep20
+        ? { valid: true, network }
+        : {
+            valid: false,
+            network,
+            errorFa: 'آدرس شبکه بایننس اسمارت چین (BEP-20) باید با 0x شروع شده و ۴۲ کاراکتر هگزادسیمال باشد.',
+          };
+    }
+    case 'Bitcoin (BTC)': {
+      const isBtc = /^(bc1[a-zA-HJ-NP-Z0-9]{25,59}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(clean);
+      return isBtc
+        ? { valid: true, network }
+        : {
+            valid: false,
+            network,
+            errorFa: 'آدرس بیت‌کوین باید با پیشوند bc1 (SegWit) یا 1 یا 3 شروع شود.',
+          };
+    }
+  }
+}
+
+export interface WithdrawalFeeEstimate {
+  grossAmountUsdt: number;
+  networkFeeUsdt: number;
+  netAmountUsdt: number;
+  netAmountCrypto: string;
+  cryptoSymbol: 'USDT' | 'TON' | 'TRX' | 'BNB' | 'BTC';
+  estimatedArrivalLabel: string;
+}
+
+export function calculateWithdrawalFeeAndNet(
+  amountUsdt: number,
+  network: WithdrawalNetwork,
+  rates: ExchangeRates = DEFAULT_FX_RATES
+): WithdrawalFeeEstimate {
+  const safeGross = Math.max(0, Number(amountUsdt) || 0);
+  let networkFeeUsdt = 1.0;
+  let cryptoSymbol: WithdrawalFeeEstimate['cryptoSymbol'] = 'USDT';
+  let estimatedArrivalLabel = 'کمتر از ۶۰ ثانیه (Hot Wallet Auto-Payout)';
+
+  switch (network) {
+    case 'USDT (TRC-20)':
+      networkFeeUsdt = 1.0;
+      cryptoSymbol = 'USDT';
+      estimatedArrivalLabel = 'کمتر از ۴۵ ثانیه (۱ تایید ترون)';
+      break;
+    case 'TON Network':
+      networkFeeUsdt = 0.25;
+      cryptoSymbol = 'TON';
+      estimatedArrivalLabel = 'کمتر از ۱۰ ثانیه (شاردینگ TON)';
+      break;
+    case 'TRON (TRX)':
+      networkFeeUsdt = 0.15;
+      cryptoSymbol = 'TRX';
+      estimatedArrivalLabel = 'کمتر از ۳۰ ثانیه';
+      break;
+    case 'BNB (BEP-20)':
+      networkFeeUsdt = 0.35;
+      cryptoSymbol = 'BNB';
+      estimatedArrivalLabel = 'کمتر از ۳۰ ثانیه (BSC)';
+      break;
+    case 'Bitcoin (BTC)':
+      networkFeeUsdt = 4.5;
+      cryptoSymbol = 'BTC';
+      estimatedArrivalLabel = 'حدود ۱۰ دقیقه (SegWit Block)';
+      break;
+  }
+
+  const netAmountUsdt = Number(Math.max(0, safeGross - networkFeeUsdt).toFixed(2));
+  const netCryptoStr = convertUsdtToCrypto(netAmountUsdt, cryptoSymbol, rates);
+
+  return {
+    grossAmountUsdt: Number(safeGross.toFixed(2)),
+    networkFeeUsdt,
+    netAmountUsdt,
+    netAmountCrypto: `${netCryptoStr} ${cryptoSymbol}`,
+    cryptoSymbol,
+    estimatedArrivalLabel,
+  };
+}
+
+// ============================================================================
+// LIVE WIN-TIER CHECKER FOR MY TICKETS & CLAIM HUB
+// ============================================================================
+export interface TicketWinEvaluation {
+  matchedMain: number[];
+  matchedGolden: boolean;
+  tierLabelFa: string;
+  tierCode: 'TIER_1' | 'TIER_2' | 'TIER_3' | 'TIER_4' | 'TIER_5' | 'TIER_6' | 'NONE';
+  prizeUsdt: number;
+  isWinner: boolean;
+}
+
+export function evaluateTicketWinTier(
+  ticketMain: number[],
+  ticketGolden: number,
+  winningMain: number[],
+  winningGolden: number,
+  roundJackpotUsdt: number = 150000
+): TicketWinEvaluation {
+  const winSet = new Set(winningMain);
+  const matchedMain = ticketMain.filter((n) => winSet.has(n));
+  const matchedGolden = winningGolden > 0 ? ticketGolden === winningGolden : false;
+  const mCount = matchedMain.length;
+
+  if (mCount >= 5 && (matchedGolden || winningGolden === 0)) {
+    return {
+      matchedMain,
+      matchedGolden,
+      tierLabelFa: 'رده ۱ (مگا جک‌پات طلایی ★)',
+      tierCode: 'TIER_1',
+      prizeUsdt: roundJackpotUsdt,
+      isWinner: true,
+    };
+  }
+  if (mCount === 5 && !matchedGolden) {
+    return {
+      matchedMain,
+      matchedGolden,
+      tierLabelFa: 'رده ۲ (۵ گوی اصلی)',
+      tierCode: 'TIER_2',
+      prizeUsdt: 10000,
+      isWinner: true,
+    };
+  }
+  if (mCount === 4 && (matchedGolden || winningGolden === 0)) {
+    return {
+      matchedMain,
+      matchedGolden,
+      tierLabelFa: 'رده ۳ (۴ گوی + ستاره طلایی)',
+      tierCode: 'TIER_3',
+      prizeUsdt: 1500,
+      isWinner: true,
+    };
+  }
+  if (mCount === 4 && !matchedGolden) {
+    return {
+      matchedMain,
+      matchedGolden,
+      tierLabelFa: 'رده ۴ (۴ گوی اصلی)',
+      tierCode: 'TIER_4',
+      prizeUsdt: 150,
+      isWinner: true,
+    };
+  }
+  if (mCount === 3 && (matchedGolden || winningGolden === 0)) {
+    return {
+      matchedMain,
+      matchedGolden,
+      tierLabelFa: 'رده ۵ (۳ گوی + ستاره طلایی)',
+      tierCode: 'TIER_5',
+      prizeUsdt: 25,
+      isWinner: true,
+    };
+  }
+  if ((mCount === 2 && matchedGolden) || (mCount === 3 && !matchedGolden) || matchedGolden) {
+    return {
+      matchedMain,
+      matchedGolden,
+      tierLabelFa: 'رده ۶ (جایزه نقدی / بلیت رایگان)',
+      tierCode: 'TIER_6',
+      prizeUsdt: 5,
+      isWinner: true,
+    };
+  }
+
+  return {
+    matchedMain,
+    matchedGolden,
+    tierLabelFa: 'بدون تطابق در این دور',
+    tierCode: 'NONE',
+    prizeUsdt: 0,
+    isWinner: false,
+  };
+}
+
 

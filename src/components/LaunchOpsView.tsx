@@ -11,6 +11,7 @@ export const LaunchOpsView: React.FC = () => {
     killSwitchActive,
     setKillSwitchState,
     navigateTo,
+    fxRates,
   } = useLottery();
 
   const [activeTab, setActiveTab] = useState<1 | 2 | 3>(1);
@@ -58,18 +59,20 @@ export const LaunchOpsView: React.FC = () => {
   );
   const [channelId, setChannelId] = useState<string>('@LuckyDropWinners');
   const [broadcastHighlight, setBroadcastHighlight] = useState<boolean>(false);
-  const [latestBroadcast, setLatestBroadcast] = useState<TelegramWinnerBroadcastPayload>({
+  const [latestBroadcast, setLatestBroadcast] = useState<TelegramWinnerBroadcastPayload>(() => ({
     channelId: '@LuckyDropWinners',
     winnerShortId: 'VIP_User#9812',
     prizeUsdt: 150000,
-    prizeTomanFormatted: '۱۲،۳۷۵،۰۰۰،۰۰۰ تومان',
+    prizeTomanFormatted: `${toPersianDigits(
+      Math.round(150000 * fxRates.TOMAN).toLocaleString('en-US')
+    )} تومان`,
     txHashShort: '7a4b8f...39c01d',
     tronScanUrl: 'https://tronscan.org/#/transaction/7a4b8f1928374655aabbccdd39c01d',
     miniAppUrl: 'https://t.me/LuckyDropVIPBot/app',
     markdownMessage:
       '🎉 تبریک بی‌کران! سوپر جک‌پات هفتگی منفجر شد! 🏆\nکاربر با هویت حفاظت‌شده VIP_User#9812 برنده جایزه بزرگ به ارزش ۱۵۰,۰۰۰ دلار تتر شد!',
     timestampLabel: 'چند لحظه پیش',
-  });
+  }));
 
   const showToast = (msg: string) => {
     setToastBanner(msg);

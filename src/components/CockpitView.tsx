@@ -1,18 +1,29 @@
 import React, { useState } from 'react';
 import { useLottery } from '../context/LotteryContext.tsx';
 import { toPersianDigits } from '../utils/lotteryEngine.ts';
+import { SUPABASE_SQL_SCHEMA_DDL } from '../services/supabase.ts';
 
 export const CockpitView: React.FC = () => {
   const {
     rounds,
+    withdrawals,
     supportMessages,
     killSwitchActive,
     toggleKillSwitch,
     triggerDraw,
     createNewRound,
     toggleRoundSales,
+    updateRoundTicketPrice,
+    adminActionWithdrawal,
     sendSupportMessage,
     formatAmount,
+    fxRates,
+    oracleSnapshot,
+    oracleCountdownSec,
+    oracleMarkupPercent,
+    setOracleMarkupPercent,
+    refreshPriceOracleNow,
+    supabaseConnected,
   } = useLottery();
 
   // Draw execution state
@@ -26,11 +37,15 @@ export const CockpitView: React.FC = () => {
 
   // Create New Round state
   const [newTitle, setNewTitle] = useState<string>('');
-  const [newCategory, setNewCategory] = useState<string>('weekly');
+  const [newCategory, setNewCategory] = useState<string>('WEEKLY');
   const [newPrice, setNewPrice] = useState<number>(5);
   const [newRtp, setNewRtp] = useState<number>(85);
   const [newJackpot, setNewJackpot] = useState<number>(250000);
   const [creatingRound, setCreatingRound] = useState<boolean>(false);
+
+  // Supabase SQL Schema modal
+  const [showSqlSchema, setShowSqlSchema] = useState<boolean>(false);
+  const [copiedSql, setCopiedSql] = useState<boolean>(false);
 
   // Live VIP Customer Chat Console state
   const [activeSessionCode, setActiveSessionCode] = useState<string>('VIP-KAMRAN');
@@ -75,7 +90,16 @@ export const CockpitView: React.FC = () => {
     setOperatorReply('');
   };
 
+  const handleCopySql = () => {
+    navigator.clipboard?.writeText(SUPABASE_SQL_SCHEMA_DDL);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2500);
+  };
+
   const sessionMessages = supportMessages.filter((m) => m.sessionCode === activeSessionCode);
+  const pendingWithdrawalsCount = withdrawals.filter(
+    (w) => w.status === 'pending_review' || w.status === 'broadcasting'
+  ).length;
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-8">
@@ -87,14 +111,21 @@ export const CockpitView: React.FC = () => {
               STEALTH ROUTE: /ops-k82-cockpit
             </span>
             <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/35 text-amber-300 text-xs font-mono">
-              COOKIE: __Host_ld_ops_k82_vault (AES-256-GCM VERIFIED)
+              {supabaseConnected ? 'SUPABASE POSTGRESQL CONNECTED' : 'LOCAL PERSISTENT ENGINE +EXPRESS'}
             </span>
+            <button
+              type="button"
+              onClick={() => setShowSqlSchema(!showSqlSchema)}
+              className="px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/35 text-sky-300 text-xs font-bold hover:bg-sky-500/25 transition-all"
+            >
+              {showSqlSchema ? 'بستن اسکیمای SQL' : 'مشاهده SQL Schema & RLS دیتابیس'}
+            </button>
           </div>
           <h1 className="text-2xl sm:text-4xl font-black text-white">
             کاکپیت مخفی اپراتور ارشد (Stealth Solo Operator Cockpit)
           </h1>
           <p className="text-xs sm:text-sm text-slate-300">
-            مدیریت یک‌نفره خزانه‌های سرد و گرم، اجرای قرعه‌کشی Provably Fair و پاسخگویی مستقیم به بازیکنان VIP.
+            مدیریت یک‌نفره خزانه‌های سرد و گرم، تایید آنی برداشت‌ها، تنظیم مارک‌آپ اوراکل زنده، اجرای قرعه‌کشی Provably Fair و پاسخگویی VIP.
           </p>
         </div>
 
@@ -131,6 +162,190 @@ export const CockpitView: React.FC = () => {
         </div>
       </div>
 
+      {/* Optional Supabase PostgreSQL Schema Drawer */}
+      {showSqlSchema && (
+        <div className="rounded-3xl bg-[#0d111a] border border-sky-500/40 p-6 space-y-4 shadow-2xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-mono text-sky-400">SUPABASE POSTGRESQL + ROW LEVEL SECURITY (RLS)</span>
+              <h3 className="text-lg font-black text-white">
+                اسکیمای کامل جداول (users, lottery_rounds, tickets, transactions, withdrawals)
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopySql}
+              className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-xs transition-all"
+            >
+              {copiedSql ? '✅ کپی شد!' : 'کپی اسکریپت کامل SQL'}
+            </button>
+          </div>
+          <pre
+            dir="ltr"
+            className="bg-[#070a0f] border border-white/10 rounded-2xl p-4 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-80"
+          >
+            {SUPABASE_SQL_SCHEMA_DDL}
+          </pre>
+        </div>
+      )}
+
+      {/* Live Oracle Markup & Exchange Rate Controller */}
+      <section className="rounded-3xl bg-[#141923] border border-amber-500/30 p-6 space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div>
+            <span className="text-xs font-bold text-emerald-400 font-mono">
+              REAL-TIME DYNAMIC PRICE ORACLE ({oracleSnapshot?.source || 'TetherLand + Wallex + Binance Live'})
+            </span>
+            <h2 className="text-xl font-black text-white mt-0.5">
+              نرخ لحظه‌ای بازار آزاد تتر/تومان، یوآن چین و رمزارزها (بروزرسانی هر ۱۵ ثانیه)
+            </h2>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono text-slate-400">
+              بروزرسانی بعدی: <strong className="text-emerald-300">{oracleCountdownSec}s</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => refreshPriceOracleNow()}
+              className="px-4 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-emerald-300 text-xs font-bold flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm">sync</span>
+              <span>فراخوانی فوری اوراکل</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          <div className="lg:col-span-4 space-y-2 bg-[#0b0f18] border border-white/10 rounded-2xl p-4">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-300 font-bold">ضریب مارک‌آپ نرخ فیات (Toman / CNY):</span>
+              <span className="font-mono font-black text-amber-400">
+                {oracleMarkupPercent >= 0 ? `+${oracleMarkupPercent}%` : `${oracleMarkupPercent}%`}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={-5}
+              max={10}
+              step={0.5}
+              value={oracleMarkupPercent}
+              onChange={(e) => setOracleMarkupPercent(Number(e.target.value))}
+              aria-label="ضریب مارک‌آپ اوراکل"
+              className="w-full accent-amber-400 cursor-pointer"
+            />
+            <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono" dir="ltr">
+              <span>-5% Discount</span>
+              <span>0% Market Spot (Exact)</span>
+              <span>+10% VIP Spread</span>
+            </div>
+          </div>
+
+          <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5" dir="ltr">
+            {[
+              { pair: 'USDT / TOMAN', val: `${fxRates.TOMAN.toLocaleString('en-US')} T` },
+              {
+                pair: '1 CNY / TOMAN',
+                val: `${Math.round(fxRates.TOMAN / (fxRates.CNY || 6.68)).toLocaleString('en-US')} T`,
+              },
+              { pair: 'USD / CNY', val: `¥${fxRates.CNY}` },
+              { pair: 'BTC / USDT', val: `$${fxRates.BTC.toLocaleString('en-US')}` },
+              { pair: 'TON / USDT', val: `$${fxRates.TON.toFixed(3)}` },
+              { pair: 'TRX / USDT', val: `$${fxRates.TRX.toFixed(4)}` },
+            ].map((item) => (
+              <div key={item.pair} className="bg-[#0b0f18] border border-white/10 rounded-xl p-3 text-center">
+                <span className="text-[10px] text-slate-400 font-mono block">{item.pair}</span>
+                <span className="text-xs font-black text-emerald-300 font-mono mt-1 block">{item.val}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Admin Withdrawal Approval & Auto-Sweep Desk */}
+      <section className="rounded-3xl bg-[#141923] border border-emerald-500/35 p-6 space-y-5 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div>
+            <span className="text-xs font-bold text-emerald-400 font-mono">
+              ADMIN WITHDRAWAL APPROVAL & HOT-WALLET AUTO-SWEEP DESK
+            </span>
+            <h2 className="text-xl font-black text-white mt-0.5">
+              صف تایید و تسویه برداشت‌های رمزارزی کاربران ({toPersianDigits(pendingWithdrawalsCount)} در انتظار)
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            data-testid="cockpit-sweep-withdrawals-btn"
+            onClick={() => adminActionWithdrawal('ALL', 'sweep_all')}
+            className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all flex items-center gap-2 self-start"
+          >
+            <span className="material-symbols-outlined text-base">done_all</span>
+            <span>تسویه دسته‌ای تمام درخواست‌های در انتظار (Auto-Sweep)</span>
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {withdrawals.map((w) => (
+            <div
+              key={w.withdrawalCode}
+              className="bg-[#0b0f18] border border-white/10 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+            >
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs font-black text-amber-400">{w.withdrawalCode}</span>
+                  <span className="text-xs font-bold text-white">{w.userDisplayName}</span>
+                  <span className="px-2 py-0.5 rounded bg-white/5 text-slate-300 text-[11px] font-mono">
+                    {w.network}
+                  </span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      w.status === 'completed'
+                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                        : w.status === 'rejected'
+                        ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                        : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                    }`}
+                  >
+                    {w.status === 'completed'
+                      ? 'تسویه شده در بلاکچین'
+                      : w.status === 'rejected'
+                      ? 'رد شده'
+                      : w.status === 'broadcasting'
+                      ? 'در حال ارسال به نود'
+                      : 'در انتظار تایید اپراتور'}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 font-mono break-all" dir="ltr">
+                  To: {w.destinationAddress} • Net: {w.netAmountCrypto} (${w.netAmountUsdt} USDT | Fee: ${w.networkFeeUsdt})
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {w.status !== 'completed' && w.status !== 'rejected' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => adminActionWithdrawal(w.withdrawalCode, 'approve')}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all"
+                    >
+                      تایید و ارسال آنی
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => adminActionWithdrawal(w.withdrawalCode, 'reject')}
+                      className="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 text-xs font-bold transition-all"
+                    >
+                      رد درخواست
+                    </button>
+                  </>
+                )}
+                <span className="text-[11px] text-slate-500 font-mono">{w.createdAt}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Live Hot & Cold Treasury Vault Balances (USDT, TON, TRX, BTC) */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {[
@@ -139,28 +354,24 @@ export const CockpitView: React.FC = () => {
             crypto: '482,910.00 USDT',
             sub: 'Cold: $410,000 • Hot: $72,910',
             badge: 'TRON MULTI-SIG',
-            color: 'emerald',
           },
           {
             label: 'خزانه شبکه تون تلگرام (TON Vault)',
             crypto: '28,450.00 TON',
-            sub: 'معادل $148,509 USDT',
+            sub: `معادل $${Math.round(28450 * fxRates.TON).toLocaleString('en-US')} USDT`,
             badge: 'TON SHARDED',
-            color: 'sky',
           },
           {
             label: 'موجودی گس و نقدینگی ترون (TRX Gas Pool)',
             crypto: '640,000 TRX',
-            sub: 'معادل $154,880 USDT • استیک‌شده برای گس رایگان',
+            sub: `معادل $${Math.round(640000 * fxRates.TRX).toLocaleString('en-US')} USDT`,
             badge: 'ENERGY STAKED',
-            color: 'rose',
           },
           {
             label: 'ذخیره استراتژیک بیت‌کوین (Ledger Cold)',
             crypto: '3.42 BTC',
-            sub: 'معادل $305,235 USDT • آفلاین',
+            sub: `معادل $${Math.round(3.42 * fxRates.BTC).toLocaleString('en-US')} USDT`,
             badge: 'HARDWARE VAULT',
-            color: 'amber',
           },
         ].map((vault) => (
           <div
@@ -196,6 +407,7 @@ export const CockpitView: React.FC = () => {
               <select
                 value={selectedRoundForDraw}
                 onChange={(e) => setSelectedRoundForDraw(e.target.value)}
+                aria-label="انتخاب دور قرعه‌کشی"
                 className="bg-[#0b0f18] border border-white/15 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono"
               >
                 {rounds.map((r) => (
@@ -279,9 +491,10 @@ export const CockpitView: React.FC = () => {
                   onChange={(e) => setNewCategory(e.target.value)}
                   className="w-full bg-[#0b0f18] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white"
                 >
-                  <option value="WEEKLY">هفتگی (Super Gold)</option>
-                  <option value="TURBO">توربو ۱۵ دقیقه‌ای (Fast Turbo)</option>
-                  <option value="VIP_PHYSICAL">جوایز فیزیکی VIP (خودرو و طلا)</option>
+                  <option value="WEEKLY">هفتگی (Mega Weekly)</option>
+                  <option value="DAILY">روزانه (Daily Blitz)</option>
+                  <option value="TURBO">ساعتی (Hourly Flash)</option>
+                  <option value="TON_SPECIAL">ویژه تون تلگرام (TON Special)</option>
                 </select>
               </div>
               <div>
@@ -317,14 +530,16 @@ export const CockpitView: React.FC = () => {
             </div>
           </form>
 
-          {/* Manage Existing Rounds Status */}
+          {/* Manage Existing Rounds Status & Ticket Price */}
           <div className="rounded-3xl bg-[#141923] border border-white/10 p-6 space-y-3">
-            <h3 className="text-base font-black text-white">وضعیت استخرهای فعال ({toPersianDigits(rounds.length)})</h3>
-            <div className="space-y-2">
+            <h3 className="text-base font-black text-white">
+              مدیریت استخرهای همزمان و قیمت بلیط ({toPersianDigits(rounds.length)})
+            </h3>
+            <div className="space-y-2.5">
               {rounds.map((r) => (
                 <div
                   key={r.roundCode}
-                  className="bg-[#0b0f18] border border-white/5 rounded-2xl p-3.5 flex items-center justify-between gap-3"
+                  className="bg-[#0b0f18] border border-white/5 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
                   <div>
                     <div className="text-xs font-black text-white">
@@ -337,17 +552,31 @@ export const CockpitView: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleRoundSales(r.roundCode)}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border ${
-                      r.status?.toUpperCase() === 'ACTIVE'
-                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                        : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                    }`}
-                  >
-                    {r.status?.toUpperCase() === 'ACTIVE' ? 'فعال (توقف فروش)' : 'متوقف (فعال‌سازی)'}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1 bg-[#141923] border border-white/10 rounded-xl px-2 py-1">
+                      <span className="text-[10px] text-slate-400">قیمت ($):</span>
+                      <input
+                        type="number"
+                        min={0.5}
+                        step={0.5}
+                        aria-label={`قیمت بلیط ${r.roundCode}`}
+                        value={Number(r.ticketPriceUsdt)}
+                        onChange={(e) => updateRoundTicketPrice(r.roundCode, Number(e.target.value))}
+                        className="w-14 bg-transparent text-xs font-mono text-amber-300 font-bold focus:outline-none text-center"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleRoundSales(r.roundCode)}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border ${
+                        r.status?.toUpperCase() === 'ACTIVE'
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                          : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                      }`}
+                    >
+                      {r.status?.toUpperCase() === 'ACTIVE' ? 'فعال (توقف فروش)' : 'متوقف (فعال‌سازی)'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

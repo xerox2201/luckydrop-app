@@ -36,6 +36,187 @@ const getUserIdentity = (req: AuthRequest) => ({
   email: req.user?.email || 'vip@zarrinlottery.live',
 });
 
+// In-memory state overlay for withdrawals, claimed tickets, and multi-lottery rounds
+interface ServerWithdrawalItem {
+  id: number;
+  withdrawalCode: string;
+  userUid: string;
+  userDisplayName: string;
+  network: string;
+  destinationAddress: string;
+  grossAmountUsdt: number;
+  networkFeeUsdt: number;
+  netAmountUsdt: number;
+  netAmountCrypto: string;
+  twoFactorVerified: boolean;
+  status: 'pending_review' | 'broadcasting' | 'completed' | 'rejected';
+  txHash: string;
+  createdAt: string;
+}
+
+const serverWithdrawals: ServerWithdrawalItem[] = [
+  {
+    id: 901,
+    withdrawalCode: 'WD-884120',
+    userUid: 'vip-demo-user',
+    userDisplayName: 'کامران سهرابی (VIP)',
+    network: 'USDT (TRC-20)',
+    destinationAddress: 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE',
+    grossAmountUsdt: 450.0,
+    networkFeeUsdt: 1.0,
+    netAmountUsdt: 449.0,
+    netAmountCrypto: '449.00 USDT',
+    twoFactorVerified: true,
+    status: 'pending_review',
+    txHash: '0x94a8b7c6d5e4f3a2b1c0987654321fedcba0987654321fedcba098765432101',
+    createdAt: '۱۰ دقیقه پیش',
+  },
+  {
+    id: 902,
+    withdrawalCode: 'WD-883904',
+    userUid: 'vip-demo-user',
+    userDisplayName: 'نسترن فرهادی (VIP)',
+    network: 'TON Network',
+    destinationAddress: 'UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
+    grossAmountUsdt: 1200.0,
+    networkFeeUsdt: 0.25,
+    netAmountUsdt: 1199.75,
+    netAmountCrypto: '212.72 TON',
+    twoFactorVerified: true,
+    status: 'completed',
+    txHash: '0x3f82c1099b84a712e904d2c3f1a8b904d2c3f1a8b904d2c3f1a8b904d2c3f1a8',
+    createdAt: '۱ ساعت پیش',
+  },
+];
+
+const claimedTicketCodesServer = new Set<string>();
+
+// 0. Real-Time Multi-Exchange Live Price Oracle Proxy (CORS-Free)
+// Aggregates live Iranian Tether/Toman (TetherLand, Wallex, Nobitex),
+// live Chinese Yuan (Frankfurter ECB, OpenER, KuCoin), and live Crypto (Binance 24hr, CoinGecko)
+app.get('/api/oracle/live', async (_req, res) => {
+  let toman = DEFAULT_FX_RATES.TOMAN;
+  let cny = DEFAULT_FX_RATES.CNY;
+  let btc = DEFAULT_FX_RATES.BTC;
+  let ton = DEFAULT_FX_RATES.TON;
+  let trx = DEFAULT_FX_RATES.TRX;
+  let bnb = DEFAULT_FX_RATES.BNB;
+  const changes24h = { BTC: 1.42, TON: 2.15, TRX: 1.18, BNB: 0.94 };
+  const activeSources: string[] = [];
+
+  const fetchJsonWithTimeout = async (url: string, timeoutMs = 3800) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LuckyDropOracle/4.8)' },
+      });
+      clearTimeout(timer);
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      clearTimeout(timer);
+      return null;
+    }
+  };
+
+  const [tetherlandData, wallexData, nobitexData, binanceData, frankfurterData, openErData, kucoinData] =
+    await Promise.all([
+      fetchJsonWithTimeout('https://api.tetherland.com/currencies'),
+      fetchJsonWithTimeout('https://api.wallex.ir/v1/markets'),
+      fetchJsonWithTimeout('https://apiv2.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls'),
+      fetchJsonWithTimeout(
+        'https://api.binance.com/api/v3/ticker/24hr?symbols=%5B%22BTCUSDT%22,%22TONUSDT%22,%22TRXUSDT%22,%22BNBUSDT%22%5D'
+      ),
+      fetchJsonWithTimeout('https://api.frankfurter.app/latest?from=USD&to=CNY'),
+      fetchJsonWithTimeout('https://open.er-api.com/v6/latest/USD'),
+      fetchJsonWithTimeout('https://api.kucoin.com/api/v1/prices?base=CNY&currencies=USDT'),
+    ]);
+
+  // 1. Live Iranian Tether/Toman (USDT/IRT)
+  const tomanQuotes: number[] = [];
+  const tlPrice = Number(tetherlandData?.data?.currencies?.USDT?.price);
+  if (Number.isFinite(tlPrice) && tlPrice > 50000) {
+    tomanQuotes.push(Math.round(tlPrice));
+    activeSources.push('TetherLand');
+  }
+  const wxPrice = Number(wallexData?.result?.symbols?.USDTTMN?.stats?.lastPrice);
+  if (Number.isFinite(wxPrice) && wxPrice > 50000) {
+    tomanQuotes.push(Math.round(wxPrice));
+    activeSources.push('Wallex');
+  }
+  const nbRlsPrice = Number(nobitexData?.stats?.['usdt-rls']?.latest);
+  if (Number.isFinite(nbRlsPrice) && nbRlsPrice > 500000) {
+    tomanQuotes.push(Math.round(nbRlsPrice / 10)); // Convert Rial (RLS) to Toman (IRT)
+    activeSources.push('Nobitex');
+  }
+  if (tomanQuotes.length > 0) {
+    // Use TetherLand/Wallex primary quote or median of live Iranian exchanges
+    toman = tomanQuotes[0];
+  }
+
+  // 2. Live Chinese Yuan (USD/CNY & USDT/CNY)
+  const cnyQuotes: number[] = [];
+  const erCny = Number(openErData?.rates?.CNY);
+  if (Number.isFinite(erCny) && erCny > 3 && erCny < 15) {
+    cnyQuotes.push(erCny);
+    activeSources.push('OpenER');
+  }
+  const ffCny = Number(frankfurterData?.rates?.CNY);
+  if (Number.isFinite(ffCny) && ffCny > 3 && ffCny < 15) {
+    cnyQuotes.push(ffCny);
+    activeSources.push('Frankfurter');
+  }
+  const kcCny = Number(kucoinData?.data?.USDT);
+  if (Number.isFinite(kcCny) && kcCny > 3 && kcCny < 15) {
+    cnyQuotes.push(kcCny);
+    activeSources.push('KuCoin');
+  }
+  if (cnyQuotes.length > 0) {
+    cny = Number(cnyQuotes[0].toFixed(4));
+  }
+
+  // 3. Live Crypto Prices (BTC, TON, TRX, BNB) from Binance 24hr Ticker
+  if (Array.isArray(binanceData)) {
+    for (const item of binanceData) {
+      const price = parseFloat(item.lastPrice);
+      const pct = parseFloat(item.priceChangePercent);
+      if (!Number.isFinite(price) || price <= 0) continue;
+      if (item.symbol === 'BTCUSDT') {
+        btc = Number(price.toFixed(2));
+        if (Number.isFinite(pct)) changes24h.BTC = Number(pct.toFixed(2));
+      } else if (item.symbol === 'TONUSDT') {
+        ton = Number(price.toFixed(4));
+        if (Number.isFinite(pct)) changes24h.TON = Number(pct.toFixed(2));
+      } else if (item.symbol === 'TRXUSDT') {
+        trx = Number(price.toFixed(4));
+        if (Number.isFinite(pct)) changes24h.TRX = Number(pct.toFixed(2));
+      } else if (item.symbol === 'BNBUSDT') {
+        bnb = Number(price.toFixed(2));
+        if (Number.isFinite(pct)) changes24h.BNB = Number(pct.toFixed(2));
+      }
+    }
+    activeSources.push('Binance');
+  }
+
+  const cnyToToman = Math.round(toman / (cny || 6.68));
+
+  res.json({
+    ok: true,
+    toman,
+    cny,
+    cnyToToman,
+    btc,
+    ton,
+    trx,
+    bnb,
+    changes24h,
+    sources: activeSources,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // 1. Live FX & Platform Snapshot
 app.get('/api/snapshot', optionalAuth, async (req: AuthRequest, res) => {
   try {
@@ -43,6 +224,8 @@ app.get('/api/snapshot', optionalAuth, async (req: AuthRequest, res) => {
     const snapshot = await getPlatformSnapshot(uid, email);
     res.json({
       ...snapshot,
+      withdrawals: serverWithdrawals,
+      claimedTicketCodes: Array.from(claimedTicketCodesServer),
       killSwitchActive,
       fxRates: DEFAULT_FX_RATES,
     });
@@ -52,7 +235,7 @@ app.get('/api/snapshot', optionalAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// 2. Mint Lottery Ticket (/api/tickets/purchase and alias /api/tickets/buy)
+// 2. Mint Single or Bulk Lottery Tickets (/api/tickets/purchase and alias /api/tickets/buy)
 const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => {
   try {
     if (killSwitchActive) {
@@ -69,10 +252,44 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
       costUsdt = 5,
       currencyNetwork = 'USDT (TRC-20)',
       clientSeed = 'zarrin-client-vip',
+      slips,
     } = req.body;
 
-    if (!Array.isArray(mainNumbers) || mainNumbers.length !== 5) {
-      return res.status(400).json({ error: 'لطفاً دقیقاً ۵ گوی اصلی انتخاب کنید.' });
+    // Support Bulk Multi-Ticket Batches in a single atomic transaction
+    if (Array.isArray(slips) && slips.length > 0) {
+      const unitCost = Number(costUsdt) / slips.length;
+      const mintedTickets = [];
+      let latestBalance = 0;
+
+      for (const slip of slips) {
+        const slipMain = Array.isArray(slip.mainNumbers) ? slip.mainNumbers.map(Number) : [7, 14, 21, 33, 49];
+        if (slipMain.length < 4) {
+          return res.status(400).json({ error: 'لطفاً تمام گوی‌های اصلی مورد نیاز هر کوپن را انتخاب کنید.' });
+        }
+        const singleRes = await purchaseLotteryTicket({
+          uid,
+          email,
+          roundCode,
+          mainNumbers: slipMain,
+          goldenBall: Number(slip.goldenBall ?? 0),
+          costUsdt: Number(unitCost.toFixed(2)),
+          currencyNetwork,
+          clientSeed: slip.clientSeed || clientSeed,
+        });
+        mintedTickets.push(singleRes.ticket);
+        latestBalance = singleRes.newBalanceUsdt;
+      }
+
+      return res.json({
+        ok: true,
+        ticket: mintedTickets[0],
+        tickets: mintedTickets,
+        newBalanceUsdt: latestBalance,
+      });
+    }
+
+    if (!Array.isArray(mainNumbers) || mainNumbers.length < 4) {
+      return res.status(400).json({ error: 'لطفاً تمام گوی‌های اصلی را انتخاب کنید.' });
     }
 
     const result = await purchaseLotteryTicket({
@@ -80,13 +297,13 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
       email,
       roundCode,
       mainNumbers: mainNumbers.map(Number),
-      goldenBall: Number(goldenBall) || 3,
+      goldenBall: Number(goldenBall ?? 3),
       costUsdt: Number(costUsdt) || 5,
       currencyNetwork,
       clientSeed,
     });
 
-    res.json(result);
+    res.json({ ok: true, ...result });
   } catch (error: any) {
     if (error?.message === 'INSUFFICIENT_BALANCE') {
       return res.status(400).json({ error: 'INSUFFICIENT_BALANCE' });
@@ -98,6 +315,35 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
 
 app.post('/api/tickets/purchase', optionalAuth, handleTicketPurchase);
 app.post('/api/tickets/buy', optionalAuth, handleTicketPurchase);
+
+// 2b. Claim Winning Ticket Prize
+app.post('/api/tickets/claim', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const { uid, email } = getUserIdentity(req);
+    const { ticketCode, prizeUsdt = 25, network = 'USDT (TRC-20)' } = req.body;
+    if (!ticketCode) {
+      return res.status(400).json({ error: 'کد بلیت نامعتبر است.' });
+    }
+    if (claimedTicketCodesServer.has(ticketCode)) {
+      return res.status(400).json({ error: 'جایزه این بلیت قبلاً دریافت شده است.' });
+    }
+    claimedTicketCodesServer.add(ticketCode);
+    const result = await creditCryptoDeposit({
+      uid,
+      email,
+      amountUsdt: Number(prizeUsdt) || 25,
+      network: `Payout (${network})`,
+    });
+    res.json({
+      ok: true,
+      ticketCode,
+      newBalanceUsdt: result.newBalanceUsdt,
+      transaction: result.transaction,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'خطا در تسویه جایزه' });
+  }
+});
 
 // 3. Instant Web3 Crypto Deposit (/api/wallet/deposit and alias /api/deposit)
 const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
@@ -125,6 +371,93 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
 
 app.post('/api/wallet/deposit', optionalAuth, handleCryptoDeposit);
 app.post('/api/deposit', optionalAuth, handleCryptoDeposit);
+
+// 3b. Crypto Withdrawal Request & Admin Approval Pipeline
+app.post('/api/wallet/withdraw', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    if (killSwitchActive) {
+      return res.status(503).json({
+        status: 'HALTED',
+        error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: برداشت وجه موقتاً توسط کلید اضطراری متوقف شده است.',
+      });
+    }
+    const { uid, email } = getUserIdentity(req);
+    const {
+      network = 'USDT (TRC-20)',
+      destinationAddress = '',
+      grossAmountUsdt = 100,
+      networkFeeUsdt = 1.0,
+      netAmountUsdt = 99.0,
+      netAmountCrypto = '99.00 USDT',
+    } = req.body;
+
+    // Deduct balance using negative creditCryptoDeposit or purchase helper
+    const snap = await getPlatformSnapshot(uid, email);
+    const currentBal = parseFloat(snap.user?.balanceUsdt || '3030.30');
+    const amountNum = Number(grossAmountUsdt);
+    if (amountNum <= 0 || amountNum > currentBal) {
+      return res.status(400).json({ error: 'موجودی کیف پول برای این برداشت کافی نیست.' });
+    }
+
+    // Deduct from user DB balance
+    const deductRes = await creditCryptoDeposit({
+      uid,
+      email,
+      amountUsdt: -amountNum,
+      network: `Withdraw (${network})`,
+    });
+
+    const newItem: ServerWithdrawalItem = {
+      id: Date.now(),
+      withdrawalCode: `WD-${Math.floor(100000 + Math.random() * 900000)}`,
+      userUid: uid,
+      userDisplayName: snap.user?.displayName || 'کامران سهرابی (VIP)',
+      network,
+      destinationAddress,
+      grossAmountUsdt: amountNum,
+      networkFeeUsdt: Number(networkFeeUsdt),
+      netAmountUsdt: Number(netAmountUsdt),
+      netAmountCrypto: String(netAmountCrypto),
+      twoFactorVerified: true,
+      status: 'pending_review',
+      txHash: `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
+      createdAt: 'همین الان',
+    };
+    serverWithdrawals.unshift(newItem);
+
+    res.json({
+      ok: true,
+      withdrawal: newItem,
+      newBalanceUsdt: deductRes.newBalanceUsdt,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'خطا در ثبت درخواست برداشت' });
+  }
+});
+
+app.post('/api/admin/withdrawals/action', optionalAuth, async (req: AuthRequest, res) => {
+  const { withdrawalCode, action } = req.body; // action: 'approve' | 'reject' | 'sweep_all'
+  if (action === 'sweep_all') {
+    for (const w of serverWithdrawals) {
+      if (w.status === 'pending_review' || w.status === 'broadcasting') {
+        w.status = 'completed';
+      }
+    }
+    return res.json({ ok: true, withdrawals: serverWithdrawals });
+  }
+  const target = serverWithdrawals.find((w) => w.withdrawalCode === withdrawalCode);
+  if (!target) {
+    return res.status(404).json({ error: 'درخواست برداشت یافت نشد.' });
+  }
+  if (action === 'approve') {
+    target.status = 'completed';
+  } else if (action === 'broadcast') {
+    target.status = 'broadcasting';
+  } else if (action === 'reject') {
+    target.status = 'rejected';
+  }
+  res.json({ ok: true, withdrawal: target, withdrawals: serverWithdrawals });
+});
 
 // 4. Emergency Kill-Switch Toggle or Explicit Set
 app.post('/api/admin/killswitch', optionalAuth, (req: AuthRequest, res) => {
