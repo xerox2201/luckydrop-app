@@ -5,6 +5,7 @@ import {
   toPersianDigits,
   TelegramWinnerBroadcastPayload,
 } from '../utils/lotteryEngine.ts';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 export const LaunchOpsView: React.FC = () => {
   const {
@@ -319,14 +320,21 @@ export const LaunchOpsView: React.FC = () => {
 
         {/* Main Status Card: Glassmorphic Sovereign Deck */}
         <div className="relative rounded-3xl bg-[#141923]/95 backdrop-blur-2xl border border-amber-500/25 p-6 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden">
-          <div className="absolute -top-24 -left-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          <img
+            src={LUXURY_IMAGES.telegramBot}
+            alt="Telegram Mini-App & Launch Ops"
+            className="absolute inset-0 w-full h-full object-cover opacity-35"
+          />
+          <div className="absolute inset-0 bg-gradient-to-l from-[#070a12]/90 via-[#070a12]/75 to-[#070a12]/90"></div>
 
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
             <div className="flex flex-col gap-2 max-w-2xl">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-[#232834] border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner">
-                  <span className="material-symbols-outlined text-2xl">rocket_launch</span>
-                </div>
+                <img
+                  src={LUXURY_IMAGES.brandCrownLogo}
+                  alt="LuckyDrop Crown"
+                  className="w-12 h-12 rounded-2xl object-cover border border-amber-500/40 shadow-inner"
+                />
                 <div>
                   <h1 className="text-2xl sm:text-3xl font-black text-amber-300 tracking-tight">
                     مرکز کنترل لانچ عملیاتی LuckyDrop

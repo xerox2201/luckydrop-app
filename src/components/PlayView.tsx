@@ -7,6 +7,7 @@ import {
   toPersianDigits,
   computeDeterministicHash,
 } from '../utils/lotteryEngine.ts';
+import { PageHeroBanner, LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 export const PlayView: React.FC = () => {
   const {
@@ -146,6 +147,14 @@ export const PlayView: React.FC = () => {
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-8 overflow-x-clip">
+      <PageHeroBanner
+        badgeFa="BULK & SINGLE VIP TICKET TERMINAL • ترمینال خرید تکی و دسته‌ای"
+        titleFa="صدور آنی بلیت‌های طلایی VIP با تخفیف پلکانی"
+        subtitleFa="انتخاب دستی شماره‌ها یا تولید هوشمند ۵ کوپن متمایز با یک کلیک (Bulk AI Quick-Pick) و ثبت آنی در بلاکچین."
+        imageUrl={LUXURY_IMAGES.playTicketsBanner}
+        iconUrl={LUXURY_IMAGES.ticketIcon3d}
+      />
+
       {/* 1. CONCURRENT MULTI-LOTTERY SELECTOR TABS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" data-testid="play-multi-lottery-tabs">
         {MULTI_LOTTERY_SPECS.map((spec) => {

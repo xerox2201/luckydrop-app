@@ -5,6 +5,7 @@ import {
   evaluateTicketWinTier,
   toPersianDigits,
 } from '../utils/lotteryEngine.ts';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 export const MyTicketsView: React.FC = () => {
   const {
@@ -71,21 +72,35 @@ export const MyTicketsView: React.FC = () => {
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-8 overflow-x-clip">
       {/* Header Banner */}
-      <div className="rounded-3xl bg-gradient-to-r from-[#171d2c] via-[#131824] to-[#1a1328] border border-amber-500/30 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
-            <span className="material-symbols-outlined text-sm">Style</span>
-            <span>دفترکل بلیت‌های من و مرکز دریافت آنی جوایز • My Tickets &amp; Claim Hub</span>
+      <div className="relative rounded-3xl overflow-hidden border border-amber-500/40 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
+        <img
+          src={LUXURY_IMAGES.playTicketsBanner}
+          alt="My VIP Tickets"
+          className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0a0e17]/92 via-[#111625]/85 to-[#1a1328]/90 pointer-events-none" />
+
+        <div className="relative z-10 flex items-start sm:items-center gap-4">
+          <img
+            src={LUXURY_IMAGES.trophyIcon3d}
+            alt="Trophy"
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-amber-400/75 shadow-xl shrink-0"
+          />
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+              <span className="material-symbols-outlined text-sm">Style</span>
+              <span>دفترکل بلیت‌های من و مرکز دریافت آنی جوایز • My Tickets &amp; Claim Hub</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-black text-white">
+              بلیت‌های من و استعلام هوشمند رده برد (/my-tickets)
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-200 max-w-2xl">
+              تمامی کوپن‌های ثبت‌شده شما به تفکیک دور قرعه‌کشی، مجهز به تطبیق‌دهنده خودکار اعداد برنده و دکمه دریافت ۱-کلیکی جوایز در کیف پول.
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-4xl font-black text-white">
-            بلیت‌های من و استعلام هوشمند رده برد (/my-tickets)
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
-            تمامی کوپن‌های ثبت‌شده شما به تفکیک دور قرعه‌کشی، مجهز به تطبیق‌دهنده خودکار اعداد برنده و دکمه دریافت ۱-کلیکی جوایز در کیف پول.
-          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="relative z-10 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => navigateTo('play')}

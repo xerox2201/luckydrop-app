@@ -6,6 +6,7 @@ import {
   calculateWithdrawalFeeAndNet,
   toPersianDigits,
 } from '../utils/lotteryEngine.ts';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 interface NetworkMeta {
   network: WithdrawalNetwork;
@@ -141,21 +142,35 @@ export const WithdrawView: React.FC = () => {
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-8 overflow-x-clip">
       {/* Header Banner */}
-      <div className="rounded-3xl bg-gradient-to-r from-[#171d2c] via-[#131824] to-[#111f24] border border-amber-500/30 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
-            <span className="material-symbols-outlined text-sm">payments</span>
-            <span>موتور تسویه آنی جوایز و برداشت رمزارز • Multi-Chain Cash-Out Engine</span>
+      <div className="relative rounded-3xl overflow-hidden border border-amber-500/40 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
+        <img
+          src={LUXURY_IMAGES.withdrawVault}
+          alt="Instant Withdrawal Hardware Wallet"
+          className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#090d16]/92 via-[#0e1422]/85 to-[#091c18]/90 pointer-events-none" />
+
+        <div className="relative z-10 flex items-start sm:items-center gap-4">
+          <img
+            src={LUXURY_IMAGES.walletIcon3d}
+            alt="Withdraw Wallet"
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-emerald-400/75 shadow-xl shrink-0"
+          />
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+              <span className="material-symbols-outlined text-sm">payments</span>
+              <span>موتور تسویه آنی جوایز و برداشت رمزارز • Multi-Chain Cash-Out Engine</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-black text-white">
+              کنسول برداشت آنی جوایز و موجودی کیف پول (/withdraw)
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-200 max-w-2xl">
+              تسویه خودکار زیر ۹۰ ثانیه از طریق کیف پول گرم برای مبالغ زیر ۱۰,۰۰۰ دلار و تسویه چندامضایی Gnosis Safe برای جک‌پات‌های سنگین بدون نیاز به KYC.
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-4xl font-black text-white">
-            کنسول برداشت آنی جوایز و موجودی کیف پول (/withdraw)
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
-            تسویه خودکار زیر ۹۰ ثانیه از طریق کیف پول گرم برای مبالغ زیر ۱۰,۰۰۰ دلار و تسویه چندامضایی Gnosis Safe برای جک‌پات‌های سنگین بدون نیاز به KYC.
-          </p>
         </div>
 
-        <div className="bg-[#0b0f18] border border-amber-500/30 rounded-2xl p-4 sm:p-5 flex items-center gap-4 shrink-0">
+        <div className="relative z-10 bg-[#0b0f18]/90 border border-amber-500/35 rounded-2xl p-4 sm:p-5 flex items-center gap-4 shrink-0">
           <div>
             <span className="text-xs text-slate-400 block">موجودی قابل برداشت شما:</span>
             <span

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useLottery } from '../context/LotteryContext.tsx';
 import { convertUsdtToCrypto, toPersianDigits } from '../utils/lotteryEngine.ts';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 interface DepositNetworkOption {
   id: 'USDT_TRC20' | 'TON' | 'TRX' | 'BNB' | 'BTC';
@@ -67,7 +68,7 @@ const DEPOSIT_NETWORKS: DepositNetworkOption[] = [
 ];
 
 export const DepositView: React.FC = () => {
-  const { fxRates, formatAmount, balanceUsdt, depositCrypto, navigateTo } = useLottery();
+  const { fxRates, formatAmount, balanceUsdt, depositCrypto, navigateTo, officialWallets } = useLottery();
   const [selectedNet, setSelectedNet] = useState<DepositNetworkOption>(DEPOSIT_NETWORKS[0]);
   const [amountUsdt, setAmountUsdt] = useState<number>(100);
   const [hdIndex, setHdIndex] = useState<number>(482);
@@ -75,10 +76,11 @@ export const DepositView: React.FC = () => {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [depositSuccess, setDepositSuccess] = useState<boolean>(false);
 
+  const baseOfficialAddress = officialWallets[selectedNet.id] || selectedNet.address;
   const dynamicAddress =
     hdIndex === 482
-      ? selectedNet.address
-      : `${selectedNet.address.slice(0, -4)}${String(hdIndex).padStart(4, '0')}`;
+      ? baseOfficialAddress
+      : `${baseOfficialAddress.slice(0, -4)}${String(hdIndex).padStart(4, '0')}`;
 
   const cryptoAmount = convertUsdtToCrypto(amountUsdt, selectedNet.cryptoKey, fxRates);
 
@@ -100,21 +102,35 @@ export const DepositView: React.FC = () => {
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-8 overflow-x-clip">
       {/* Header */}
-      <div className="rounded-3xl bg-gradient-to-r from-[#171d2c] via-[#131824] to-[#122229] border border-amber-500/30 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
-            <span className="material-symbols-outlined text-sm">qr_code_2</span>
-            <span>درگاه چندزنجیره‌ای واریز آنی رمزارز • Multi-Chain HD Deposit Gateway</span>
+      <div className="relative rounded-3xl overflow-hidden border border-amber-500/40 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
+        <img
+          src={LUXURY_IMAGES.depositVault}
+          alt="Crypto Deposit Vault"
+          className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#090d16]/92 via-[#0d1322]/85 to-[#091b1e]/90 pointer-events-none" />
+
+        <div className="relative z-10 flex items-start sm:items-center gap-4">
+          <img
+            src={LUXURY_IMAGES.walletIcon3d}
+            alt="Deposit Wallet"
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-amber-400/75 shadow-xl shrink-0"
+          />
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+              <span className="material-symbols-outlined text-sm">qr_code_2</span>
+              <span>درگاه چندزنجیره‌ای واریز آنی رمزارز • Multi-Chain HD Deposit Gateway</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-black text-white">
+              شارژ آنی کیف پول در ۵ شبکه بلاکچین (/deposit)
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-200 max-w-2xl">
+              تولید آدرس اختصاصی سلسله‌مراتبی (BIP-44 HD Wallet) با شناسایی خودکار تراکنش در استخر ممپول در کمتر از ۳ ثانیه.
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-4xl font-black text-white">
-            شارژ آنی کیف پول در ۵ شبکه بلاکچین (/deposit)
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
-            تولید آدرس اختصاصی سلسله‌مراتبی (BIP-44 HD Wallet) با شناسایی خودکار تراکنش در استخر ممپول در کمتر از ۳ ثانیه.
-          </p>
         </div>
 
-        <div className="bg-[#0b0f18] border border-emerald-500/30 rounded-2xl p-4 flex items-center gap-4 shrink-0">
+        <div className="relative z-10 bg-[#0b0f18]/90 border border-emerald-500/35 rounded-2xl p-4 flex items-center gap-4 shrink-0">
           <div>
             <span className="text-xs text-slate-400 block">موجودی فعلی کیف پول:</span>
             <span className="text-2xl font-black text-emerald-400 font-mono block">

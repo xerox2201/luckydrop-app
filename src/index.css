@@ -103,33 +103,51 @@
   }
 }
 
-/* Imperial Black Onyx Marble with 24K Gold Veins Canvas */
+/* Imperial Black Onyx Marble with 24K Gold Veins & Subtle Luxury Vault Backdrop */
 .bg-imperial-marble {
   background-color: #07090e;
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -15%, rgba(245, 158, 11, 0.14), transparent 70%),
-    radial-gradient(ellipse 55% 45% at 88% 20%, rgba(217, 119, 6, 0.08), transparent 65%),
-    radial-gradient(ellipse 50% 40% at 12% 75%, rgba(16, 185, 129, 0.05), transparent 65%),
-    linear-gradient(125deg, rgba(251, 191, 36, 0.03) 0%, transparent 38%, rgba(245, 158, 11, 0.04) 52%, transparent 75%, rgba(217, 119, 6, 0.03) 100%),
-    linear-gradient(180deg, #07090e 0%, #0b0e17 50%, #07090e 100%);
+    radial-gradient(ellipse 80% 50% at 50% -15%, rgba(245, 158, 11, 0.16), transparent 70%),
+    radial-gradient(ellipse 55% 45% at 88% 20%, rgba(217, 119, 6, 0.1), transparent 65%),
+    radial-gradient(ellipse 50% 40% at 12% 75%, rgba(16, 185, 129, 0.06), transparent 65%),
+    linear-gradient(180deg, rgba(7, 9, 14, 0.82) 0%, rgba(11, 14, 23, 0.88) 50%, rgba(7, 9, 14, 0.92) 100%),
+    url('/assets/aistudio/Gemini_Generated_Image___6__134e28bc.jpg');
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+@keyframes cardEnterFade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.motion-card-enter {
+  animation: cardEnterFade 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Smoked Obsidian Glass Card with 24K Brushed Gold Rim */
 .luxury-marble-card {
-  background: linear-gradient(155deg, rgba(19, 24, 36, 0.92) 0%, rgba(11, 15, 23, 0.95) 100%);
-  border: 1px solid rgba(245, 158, 11, 0.22);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(254, 240, 138, 0.12);
+  background: linear-gradient(155deg, rgba(19, 24, 36, 0.94) 0%, rgba(11, 15, 23, 0.96) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(254, 240, 138, 0.14);
   backdrop-filter: blur(16px);
 }
 
 .luxury-marble-card-hover {
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .luxury-marble-card-hover:hover {
-  transform: translateY(-2px);
-  border-color: rgba(251, 191, 36, 0.48);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85), 0 0 28px rgba(245, 158, 11, 0.14), inset 0 1px 0 rgba(254, 240, 138, 0.22);
+  transform: translateY(-3px);
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85), 0 0 28px rgba(245, 158, 11, 0.18), inset 0 1px 0 rgba(254, 240, 138, 0.25);
 }
 
 /* Sovereign Gold & Lottery Ball 3D Surface Utilities */

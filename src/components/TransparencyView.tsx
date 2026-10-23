@@ -5,6 +5,7 @@ import {
   calculateBinomialOddsAndEV,
   toPersianDigits,
 } from '../utils/lotteryEngine.ts';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 export const TransparencyView: React.FC = () => {
   const { formatAmount, navigateTo } = useLottery();
@@ -22,17 +23,33 @@ export const TransparencyView: React.FC = () => {
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-10">
       {/* Header */}
-      <div className="rounded-3xl bg-gradient-to-r from-[#141a29] via-[#111622] to-[#132226] border border-emerald-500/30 p-6 sm:p-10 space-y-3">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
-          <span className="material-symbols-outlined text-base">calculate</span>
-          <span>MATHEMATICAL TRANSPARENCY & SOLVENCY PROOF</span>
+      <div className="relative rounded-3xl overflow-hidden border border-emerald-500/40 p-6 sm:p-10 shadow-2xl">
+        <img
+          src={LUXURY_IMAGES.fairnessAudit}
+          alt="Provably Fair Padlock"
+          className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#090d16]/92 via-[#0e1522]/85 to-[#081c1a]/90 pointer-events-none" />
+
+        <div className="relative z-10 flex items-start sm:items-center gap-4">
+          <img
+            src={LUXURY_IMAGES.shieldIcon3d}
+            alt="Security Shield"
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-emerald-400/75 shadow-xl shrink-0"
+          />
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+              <span className="material-symbols-outlined text-base">calculate</span>
+              <span>MATHEMATICAL TRANSPARENCY &amp; SOLVENCY PROOF</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-black text-white">
+              مرکز شفافیت ریاضی، جدول احتمالات و اثبات موجودی خزانه
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-200 max-w-3xl leading-relaxed">
+              تمامی محاسبات ترکیبیاتی <code className="text-amber-300">C(50,5) × C(15,1) = 31,781,400</code> و توزیع دوجمعی امید ریاضی (Expected Value) به صورت ۱۰۰٪ متن‌باز و قابل راستی‌آزمایی در بلاکچین ارائه شده‌اند.
+            </p>
+          </div>
         </div>
-        <h1 className="text-2xl sm:text-4xl font-black text-white">
-          مرکز شفافیت ریاضی، جدول احتمالات و اثبات موجودی خزانه
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
-          تمامی محاسبات ترکیبیاتی <code className="text-amber-300">C(50,5) × C(15,1) = 31,781,400</code> و توزیع دوجمعی امید ریاضی (Expected Value) به صورت ۱۰۰٪ متن‌باز و قابل راستی‌آزمایی در بلاکچین ارائه شده‌اند.
-        </p>
       </div>
 
       {/* 1. Interactive Binomial Odds & Expected Value (EV) Calculator */}

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useLottery } from '../context/LotteryContext.tsx';
 import { calculateWaterfallCashflow, toPersianDigits } from '../utils/lotteryEngine.ts';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 export const FinancesView: React.FC = () => {
-  const { rounds, formatAmount } = useLottery();
+  const { rounds, formatAmount, officialWallets, updateOfficialWallets } = useLottery();
 
   // Interactive Profit & Margin Simulator state ($500K to $10M volume)
   const [simVolumeUsdt, setSimVolumeUsdt] = useState<number>(2500000);
@@ -11,7 +12,7 @@ export const FinancesView: React.FC = () => {
 
   // Cold Storage Hardware Sweep Modal & 2FA state
   const [accumulatedProfitUsdt, setAccumulatedProfitUsdt] = useState<number>(482910);
-  const [sweepAddress, setSweepAddress] = useState<string>('TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE');
+  const [sweepAddress, setSweepAddress] = useState<string>(officialWallets.COLD_TREASURY);
   const [twoFaCode, setTwoFaCode] = useState<string>('849201');
   const [sweepSuccessMsg, setSweepSuccessMsg] = useState<string | null>(null);
 
@@ -23,6 +24,7 @@ export const FinancesView: React.FC = () => {
   const handleColdStorageSweep = (e: React.FormEvent) => {
     e.preventDefault();
     if (accumulatedProfitUsdt <= 0) return;
+    updateOfficialWallets({ COLD_TREASURY: sweepAddress });
     const sweptAmount = accumulatedProfitUsdt;
     setAccumulatedProfitUsdt(0);
     setSweepSuccessMsg(
@@ -40,11 +42,21 @@ export const FinancesView: React.FC = () => {
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-10">
       {/* 1. Real-Time Accumulated Pure Profit Hero Counter */}
-      <section className="rounded-3xl bg-gradient-to-r from-[#141d29] via-[#101622] to-[#1a172a] border border-amber-500/40 p-6 sm:p-10 shadow-2xl">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+      <section className="relative overflow-hidden rounded-3xl bg-[#101622] border border-amber-500/40 p-6 sm:p-10 shadow-2xl">
+        <img
+          src={LUXURY_IMAGES.cockpitCommandVault}
+          alt="Cold Treasury Vault"
+          className="absolute inset-0 w-full h-full object-cover opacity-35"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#070a12]/95 via-[#070a12]/80 to-[#070a12]/90"></div>
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           <div className="lg:col-span-7 space-y-3">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
-              <span className="material-symbols-outlined text-base">payments</span>
+              <img
+                src={LUXURY_IMAGES.walletIcon3d}
+                alt="Treasury Wallet"
+                className="w-5 h-5 rounded-md object-cover"
+              />
               <span>AUTOMATED WATERFALL CASHFLOW ENGINE (10% GUARANTEED MARGIN)</span>
             </div>
             <h1 className="text-2xl sm:text-4xl font-black text-white">
@@ -55,7 +67,7 @@ export const FinancesView: React.FC = () => {
             </p>
           </div>
 
-          <div className="lg:col-span-5 bg-[#0b0f18] border border-amber-500/35 rounded-3xl p-6 space-y-3 text-center">
+          <div className="lg:col-span-5 bg-[#0b0f18]/95 backdrop-blur-xl border border-amber-500/35 rounded-3xl p-6 space-y-3 text-center">
             <span className="text-xs font-bold text-slate-400 block">
               سود خالص انباشته‌شده قابل برداشت (Un-swept Operator Profit):
             </span>

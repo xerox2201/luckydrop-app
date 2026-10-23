@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useLottery } from '../context/LotteryContext.tsx';
 import { toPersianDigits } from '../utils/lotteryEngine.ts';
 import { SUPABASE_SQL_SCHEMA_DDL } from '../services/supabase.ts';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 export const CockpitView: React.FC = () => {
   const {
@@ -24,7 +25,21 @@ export const CockpitView: React.FC = () => {
     setOracleMarkupPercent,
     refreshPriceOracleNow,
     supabaseConnected,
+    setStealthCookieAuthorized,
+    navigateTo,
+    officialWallets,
+    updateOfficialWallets,
   } = useLottery();
+
+  const [walletDraft, setWalletDraft] = useState(officialWallets);
+  const [walletSavedBanner, setWalletSavedBanner] = useState<boolean>(false);
+
+  const handleSaveOfficialWallets = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateOfficialWallets(walletDraft);
+    setWalletSavedBanner(true);
+    setTimeout(() => setWalletSavedBanner(false), 3000);
+  };
 
   // Draw execution state
   const [selectedRoundForDraw, setSelectedRoundForDraw] = useState<string>('#ZRN-8493');
@@ -96,6 +111,11 @@ export const CockpitView: React.FC = () => {
     setTimeout(() => setCopiedSql(false), 2500);
   };
 
+  const handleSecureAdminExit = () => {
+    setStealthCookieAuthorized(false);
+    navigateTo('lobby');
+  };
+
   const sessionMessages = supportMessages.filter((m) => m.sessionCode === activeSessionCode);
   const pendingWithdrawalsCount = withdrawals.filter(
     (w) => w.status === 'pending_review' || w.status === 'broadcasting'
@@ -103,9 +123,16 @@ export const CockpitView: React.FC = () => {
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-8">
-      {/* Top Stealth Security Header & Emergency Kill-Switch */}
-      <div className="rounded-3xl bg-gradient-to-r from-[#181224] via-[#131824] to-[#20131a] border border-amber-500/40 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
-        <div className="space-y-2">
+      {/* Top Stealth Security Header & Emergency Kill-Switch + 1-Click Zero-Trust Exit */}
+      <div className="relative rounded-3xl overflow-hidden border border-amber-500/45 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
+        <img
+          src={LUXURY_IMAGES.cockpitCommandVault}
+          alt="Cockpit Vault Background"
+          className="absolute inset-0 w-full h-full object-cover opacity-35 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#140e20]/92 via-[#0e131f]/88 to-[#1f1118]/92 pointer-events-none" />
+
+        <div className="relative z-10 space-y-2.5">
           <div className="inline-flex flex-wrap items-center gap-2">
             <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 text-xs font-mono font-bold">
               STEALTH ROUTE: /ops-k82-cockpit
@@ -116,7 +143,7 @@ export const CockpitView: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowSqlSchema(!showSqlSchema)}
-              className="px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/35 text-sky-300 text-xs font-bold hover:bg-sky-500/25 transition-all"
+              className="px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/35 text-sky-300 text-xs font-bold hover:bg-sky-500/25 transition-all cursor-pointer"
             >
               {showSqlSchema ? 'بستن اسکیمای SQL' : 'مشاهده SQL Schema & RLS دیتابیس'}
             </button>
@@ -124,40 +151,53 @@ export const CockpitView: React.FC = () => {
           <h1 className="text-2xl sm:text-4xl font-black text-white">
             کاکپیت مخفی اپراتور ارشد (Stealth Solo Operator Cockpit)
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300">
+          <p className="text-xs sm:text-sm text-slate-200 max-w-3xl leading-relaxed">
             مدیریت یک‌نفره خزانه‌های سرد و گرم، تایید آنی برداشت‌ها، تنظیم مارک‌آپ اوراکل زنده، اجرای قرعه‌کشی Provably Fair و پاسخگویی VIP.
           </p>
         </div>
 
-        {/* Emergency Kill-Switch Box */}
-        <div
-          className={`rounded-2xl p-4 border flex items-center gap-4 shrink-0 ${
-            killSwitchActive
-              ? 'bg-red-500/20 border-red-500 text-red-200'
-              : 'bg-[#0c1018] border-red-500/35 text-slate-200'
-          }`}
-        >
-          <div>
-            <span className="text-xs font-black text-red-400 block">
-              کلید اضطراری توقف قرارداد هوشمند (Kill-Switch)
-            </span>
-            <span className="text-[11px] text-slate-400 block">
-              {killSwitchActive
-                ? 'وضعیت: فروش بلیط و برداشت کیف پول گرم مسدود است'
-                : 'وضعیت: پروتکل در مدار عملیاتی نرمال قرار دارد'}
-            </span>
-          </div>
-          <button
-            type="button"
-            data-testid="cockpit-kill-switch-btn"
-            onClick={toggleKillSwitch}
-            className={`px-5 py-3 rounded-xl font-black text-xs transition-all ${
+        {/* Right Controls: Emergency Kill-Switch + 1-Click Secure Logout & Cookie Revocation */}
+        <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+          <div
+            className={`rounded-2xl p-4 border flex items-center gap-4 ${
               killSwitchActive
-                ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                : 'bg-red-600 text-white hover:bg-red-500 shadow-[0_0_25px_rgba(220,38,38,0.5)]'
+                ? 'bg-red-500/20 border-red-500 text-red-200'
+                : 'bg-[#0c1018]/95 border-red-500/35 text-slate-200'
             }`}
           >
-            {killSwitchActive ? 'رفع انسداد و فعال‌سازی مجدد' : '🚨 توقف اضطراری (FREEZE)'}
+            <div>
+              <span className="text-xs font-black text-red-400 block">
+                کلید اضطراری توقف (Kill-Switch)
+              </span>
+              <span className="text-[11px] text-slate-300 block">
+                {killSwitchActive
+                  ? 'فروش بلیت و برداشت مسدود است'
+                  : 'پروتکل در مدار عملیاتی نرمال'}
+              </span>
+            </div>
+            <button
+              type="button"
+              data-testid="cockpit-kill-switch-btn"
+              onClick={toggleKillSwitch}
+              className={`px-4 py-3 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                killSwitchActive
+                  ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                  : 'bg-red-600 text-white hover:bg-red-500 shadow-[0_0_25px_rgba(220,38,38,0.5)]'
+              }`}
+            >
+              {killSwitchActive ? 'رفع انسداد' : '🚨 توقف اضطراری'}
+            </button>
+          </div>
+
+          <button
+            type="button"
+            data-testid="admin-secure-exit-btn"
+            onClick={handleSecureAdminExit}
+            className="px-5 py-4 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/50 text-amber-300 font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+            title="ابطل کوکی رمزشده AES-256-GCM و خروج امن به لابی"
+          >
+            <span className="material-symbols-outlined text-lg">lock</span>
+            <span>خروج امن و قفل سشن ادمین</span>
           </button>
         </div>
       </div>
@@ -389,6 +429,65 @@ export const CockpitView: React.FC = () => {
             <div className="text-[11px] text-slate-400">{vault.sub}</div>
           </div>
         ))}
+      </section>
+
+      {/* Official Site Deposit Wallets & Cold Treasury Address Manager */}
+      <section className="rounded-3xl bg-[#141923] border border-amber-500/40 p-6 space-y-5 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div>
+            <span className="text-xs font-bold text-amber-400 font-mono">
+              OFFICIAL MULTI-CHAIN DEPOSIT & COLD TREASURY WALLETS
+            </span>
+            <h2 className="text-xl font-black text-white mt-0.5">
+              تنظیمات کیف پول‌های رسمی سایت (درگاه واریز ۵ شبکه + آدرس خزانه سرد ادمین)
+            </h2>
+            <p className="text-xs text-slate-300 mt-1">
+              هر تغییری در آدرس‌های زیر بلافاصله در صفحه واریز کاربران (`/deposit`)، مودال شارژ سریع و بخش تسویه سود خزانه (`/admin/finances`) اعمال می‌شود.
+            </p>
+          </div>
+          {walletSavedBanner && (
+            <span className="px-4 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-black">
+              ✅ آدرس کیف پول‌های رسمی سایت با موفقیت ذخیره و همگام‌سازی شد!
+            </span>
+          )}
+        </div>
+
+        <form onSubmit={handleSaveOfficialWallets} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              { key: 'USDT_TRC20' as const, label: 'کیف پول رسمی تتر (USDT - TRC20):' },
+              { key: 'TON' as const, label: 'کیف پول رسمی تون تلگرام (TON Network):' },
+              { key: 'TRX' as const, label: 'کیف پول رسمی ترون (TRX Native):' },
+              { key: 'BNB' as const, label: 'کیف پول رسمی بایننس (BNB Smart Chain - BEP20):' },
+              { key: 'BTC' as const, label: 'کیف پول رسمی بیت‌کوین (BTC Native SegWit):' },
+              { key: 'COLD_TREASURY' as const, label: 'کیف پول سرد سود ۱۰٪ ادمین (Ledger Cold Treasury):' },
+            ].map((item) => (
+              <div key={item.key} className="bg-[#0b0f18] border border-white/10 rounded-2xl p-3.5 space-y-1.5">
+                <label className="block text-xs font-bold text-amber-300">{item.label}</label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={walletDraft[item.key]}
+                  onChange={(e) =>
+                    setWalletDraft((prev) => ({ ...prev, [item.key]: e.target.value }))
+                  }
+                  className="w-full bg-[#131824] border border-white/15 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-amber-400"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              data-testid="save-official-wallets-btn"
+              className="px-6 py-3 rounded-2xl gold-gradient-cta text-[#241300] font-black text-xs sm:text-sm cursor-pointer flex items-center gap-2 shadow-lg"
+            >
+              <span className="material-symbols-outlined text-lg">save</span>
+              <span>ذخیره و بروزرسانی کیف پول‌های رسمی سایت</span>
+            </button>
+          </div>
+        </form>
       </section>
 
       {/* Provably Fair Draw Execution Trigger + Create New Lottery Round */}

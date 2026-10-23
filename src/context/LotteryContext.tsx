@@ -32,6 +32,7 @@ export type AppRoute =
   | 'deposit'
   | 'withdraw'
   | 'my-tickets'
+  | 'user-panel'
   | 'status'
   | 'transparency'
   | 'cockpit'
@@ -204,14 +205,37 @@ interface LotteryContextType {
   updateRoundTicketPrice: (roundCode: string, newPriceUsdt: number) => void;
   toggleRoundSales: (roundCode: string) => Promise<void>;
   sendSupportMessage: (sessionCode: string, message: string, senderRole?: string, senderName?: string) => Promise<boolean>;
+  officialWallets: OfficialSiteWallets;
+  updateOfficialWallets: (next: Partial<OfficialSiteWallets>) => void;
   supabaseConnected: boolean;
 }
+
+export interface OfficialSiteWallets {
+  USDT_TRC20: string;
+  TON: string;
+  TRX: string;
+  BNB: string;
+  BTC: string;
+  COLD_TREASURY: string;
+}
+
+export const DEFAULT_OFFICIAL_WALLETS: OfficialSiteWallets = {
+  USDT_TRC20: 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE',
+  TON: 'UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
+  TRX: 'TXk8Y2khEsLJW1ChVWFMSMeRDow5KcbL99',
+  BNB: '0x71C8F9409a89bC20D471980D772094B112039A8F',
+  BTC: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+  COLD_TREASURY: 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE',
+};
 
 const LotteryContext = createContext<LotteryContextType | null>(null);
 
 const resolveInitialRoute = (): AppRoute => {
   if (typeof window === 'undefined') return 'lobby';
   const path = window.location.pathname.toLowerCase();
+  const search = window.location.search.toLowerCase();
+  if (search.includes('vault=sovereign-gate-777')) return 'cockpit';
+  if (path.startsWith('/user-panel') || path.startsWith('/profile')) return 'user-panel';
   if (path.startsWith('/terms') || path.startsWith('/rules')) return 'terms';
   if (path.startsWith('/ops/launch')) return 'launch';
   if (path.startsWith('/ops-k82-cockpit')) return 'cockpit';
@@ -232,6 +256,7 @@ const ROUTE_TO_PATH: Record<AppRoute, string> = {
   deposit: '/deposit',
   withdraw: '/withdraw',
   'my-tickets': '/my-tickets',
+  'user-panel': '/user-panel',
   status: '/status/tx',
   transparency: '/transparency',
   cockpit: '/ops-k82-cockpit',
@@ -1041,6 +1066,30 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const [officialWallets, setOfficialWallets] = useState<OfficialSiteWallets>(() => {
+    try {
+      const raw = localStorage.getItem('luckydrop_official_wallets_v1');
+      if (raw) {
+        return { ...DEFAULT_OFFICIAL_WALLETS, ...JSON.parse(raw) };
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return DEFAULT_OFFICIAL_WALLETS;
+  });
+
+  const updateOfficialWallets = (next: Partial<OfficialSiteWallets>) => {
+    setOfficialWallets((prev) => {
+      const updated = { ...prev, ...next };
+      try {
+        localStorage.setItem('luckydrop_official_wallets_v1', JSON.stringify(updated));
+      } catch {
+        // ignore storage errors
+      }
+      return updated;
+    });
+  };
+
   return (
     <LotteryContext.Provider
       value={{
@@ -1106,6 +1155,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateRoundTicketPrice,
         toggleRoundSales,
         sendSupportMessage,
+        officialWallets,
+        updateOfficialWallets,
         supabaseConnected: isSupabaseConfigured,
       }}
     >

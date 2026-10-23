@@ -11,6 +11,7 @@ import { PlayView } from './components/PlayView.tsx';
 import { DepositView } from './components/DepositView.tsx';
 import { WithdrawView } from './components/WithdrawView.tsx';
 import { MyTicketsView } from './components/MyTicketsView.tsx';
+import { UserPanelView } from './components/UserPanelView.tsx';
 import { TxStatusView } from './components/TxStatusView.tsx';
 import { TransparencyView } from './components/TransparencyView.tsx';
 import { CockpitView } from './components/CockpitView.tsx';
@@ -25,7 +26,7 @@ const MainRouter: React.FC = () => {
   const { activeRoute } = useLottery();
 
   return (
-    <div className="min-h-screen w-full overflow-x-clip flex flex-col bg-imperial-marble text-[#dfe2ef] selection:bg-amber-500 selection:text-slate-950 pb-16 lg:pb-0">
+    <div className="min-h-screen w-full overflow-x-clip flex flex-col bg-imperial-marble text-[#f1f5f9] selection:bg-amber-500 selection:text-slate-950 pb-20 lg:pb-0">
       <Navbar />
       <main className="flex-1">
         {activeRoute === 'lobby' && <LobbyView />}
@@ -33,6 +34,7 @@ const MainRouter: React.FC = () => {
         {activeRoute === 'deposit' && <DepositView />}
         {activeRoute === 'withdraw' && <WithdrawView />}
         {activeRoute === 'my-tickets' && <MyTicketsView />}
+        {activeRoute === 'user-panel' && <UserPanelView />}
         {activeRoute === 'status' && <TxStatusView />}
         {activeRoute === 'transparency' && <TransparencyView />}
         {activeRoute === 'terms' && <TermsRulesView />}

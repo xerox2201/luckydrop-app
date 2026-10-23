@@ -74,6 +74,7 @@ export const DepositModal: React.FC = () => {
     formatAmount,
     depositCrypto,
     navigateTo,
+    officialWallets,
   } = useLottery();
 
   const [selectedNet, setSelectedNet] = useState<NetworkOption>(NETWORKS[0]);
@@ -84,10 +85,11 @@ export const DepositModal: React.FC = () => {
 
   if (!depositModalOpen) return null;
 
+  const liveAddress = officialWallets[selectedNet.id] || selectedNet.address;
   const cryptoAmount = convertUsdtToCrypto(amountUsdt, selectedNet.cryptoKey, fxRates);
 
   const handleCopy = () => {
-    navigator.clipboard?.writeText(selectedNet.address);
+    navigator.clipboard?.writeText(liveAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -244,7 +246,7 @@ export const DepositModal: React.FC = () => {
 
               <div className="bg-[#0a0e16] border border-white/10 rounded-xl p-3 flex items-center justify-between gap-2">
                 <code className="text-xs text-amber-200 font-mono break-all select-all">
-                  {selectedNet.address}
+                  {liveAddress}
                 </code>
                 <button
                   type="button"
