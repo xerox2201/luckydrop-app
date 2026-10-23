@@ -199,7 +199,7 @@ export const FooterAndChat: React.FC = () => {
         onClick={scrollToTop}
         aria-label="بازگشت به بالای صفحه"
         title="بازگشت به بالای صفحه"
-        className={`fixed bottom-5 left-5 z-40 min-w-[44px] min-h-[44px] px-3.5 py-2.5 rounded-2xl bg-[#181c24]/95 border border-amber-500/45 text-amber-300 hover:bg-amber-500 hover:text-[#241300] shadow-[0_12px_32px_rgba(0,0,0,0.75)] backdrop-blur-md flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer ${
+        className={`fixed bottom-20 lg:bottom-5 left-4 lg:left-5 z-40 min-w-[44px] min-h-[44px] px-3.5 py-2.5 rounded-2xl bg-[#181c24]/95 border border-amber-500/45 text-amber-300 hover:bg-amber-500 hover:text-[#241300] shadow-[0_12px_32px_rgba(0,0,0,0.75)] backdrop-blur-md flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer ${
           showScrollTop && !aiChatOpen
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 translate-y-3 pointer-events-none'
@@ -211,7 +211,7 @@ export const FooterAndChat: React.FC = () => {
 
       {/* 24/7 Gemini Flash AI Concierge Drawer (Triggered via Top Bar, CTA, or Footer) */}
       {aiChatOpen && (
-        <div className="fixed inset-x-4 bottom-4 md:inset-x-auto md:bottom-5 md:left-5 z-50">
+        <div className="fixed inset-x-4 bottom-20 md:inset-x-auto md:bottom-5 md:left-5 z-50">
           <div className="w-80 sm:w-96 rounded-3xl bg-[#121724] border border-amber-500/40 shadow-[0_20px_60px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col">
             <div className="px-4 py-3.5 bg-gradient-to-r from-[#1d2538] to-[#141926] border-b border-white/10 flex items-center justify-between">
               <div className="flex items-center gap-2">
