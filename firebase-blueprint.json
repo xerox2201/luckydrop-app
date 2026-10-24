@@ -1,0 +1,323 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "VIP user account profile, multi-currency balance, Web3 wallet, Telegram identity, and referral metrics",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique user identifier",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name",
+          "maxLength": 100
+        },
+        "vipTier": {
+          "type": "string",
+          "description": "VIP tier status",
+          "maxLength": 40
+        },
+        "balanceUsdt": {
+          "type": "number",
+          "description": "Available user balance in USDT"
+        },
+        "connectedWallet": {
+          "type": "string",
+          "description": "Connected Web3 wallet address (TronLink, MetaMask, or TON)",
+          "maxLength": 128
+        },
+        "telegramUsername": {
+          "type": "string",
+          "description": "Linked Telegram username or ID",
+          "maxLength": 64
+        },
+        "referralCode": {
+          "type": "string",
+          "description": "Unique VIP referral code for this user",
+          "maxLength": 32
+        },
+        "referredByCode": {
+          "type": "string",
+          "description": "Referral code of the inviter",
+          "maxLength": 32
+        },
+        "referralEarningsUsdt": {
+          "type": "number",
+          "description": "Total USDT earned from 2% referral commission out of the 10% house margin"
+        },
+        "referredTicketsCount": {
+          "type": "number",
+          "description": "Total tickets purchased by referred friends"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last profile update",
+          "maxLength": 64
+        }
+      },
+      "required": ["uid", "displayName", "balanceUsdt", "referralCode"]
+    },
+    "PlatformSettings": {
+      "title": "PlatformSettings",
+      "description": "Official site deposit wallets across 5 networks, cold treasury wallet, and zero-loss solvency configuration",
+      "type": "object",
+      "properties": {
+        "USDT_TRC20": {
+          "type": "string",
+          "description": "Official USDT TRC-20 deposit address",
+          "maxLength": 128
+        },
+        "TON": {
+          "type": "string",
+          "description": "Official TON network deposit address",
+          "maxLength": 128
+        },
+        "TRX": {
+          "type": "string",
+          "description": "Official TRON native deposit address",
+          "maxLength": 128
+        },
+        "BNB": {
+          "type": "string",
+          "description": "Official BNB Smart Chain BEP-20 deposit address",
+          "maxLength": 128
+        },
+        "BTC": {
+          "type": "string",
+          "description": "Official Bitcoin Native SegWit deposit address",
+          "maxLength": 128
+        },
+        "COLD_TREASURY": {
+          "type": "string",
+          "description": "Admin hardware cold storage wallet address",
+          "maxLength": 128
+        },
+        "solvencyMode": {
+          "type": "string",
+          "enum": ["AUTO_EXTEND", "PROPORTIONAL_POOL"],
+          "description": "Zero-loss draw solvency protection mode",
+          "maxLength": 32
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update",
+          "maxLength": 64
+        }
+      },
+      "required": ["USDT_TRC20", "TON", "TRX", "BNB", "BTC", "COLD_TREASURY"]
+    },
+    "DepositRecord": {
+      "title": "DepositRecord",
+      "description": "On-chain auto-verified or admin-approved crypto deposit record",
+      "type": "object",
+      "properties": {
+        "depositCode": {
+          "type": "string",
+          "description": "Unique deposit reference code",
+          "maxLength": 64
+        },
+        "userUid": {
+          "type": "string",
+          "description": "User UID who initiated the deposit",
+          "maxLength": 128
+        },
+        "userDisplayName": {
+          "type": "string",
+          "description": "Display name of the depositing user",
+          "maxLength": 100
+        },
+        "network": {
+          "type": "string",
+          "description": "Blockchain network name",
+          "maxLength": 64
+        },
+        "amountUsdt": {
+          "type": "number",
+          "description": "Deposit value in USDT"
+        },
+        "txHash": {
+          "type": "string",
+          "description": "Unique blockchain transaction hash",
+          "maxLength": 160
+        },
+        "verificationMethod": {
+          "type": "string",
+          "enum": ["ONCHAIN_AUTO", "ADMIN_MANUAL"],
+          "description": "How the deposit is verified",
+          "maxLength": 32
+        },
+        "status": {
+          "type": "string",
+          "enum": ["confirmed", "pending_admin", "rejected"],
+          "description": "Deposit settlement status",
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp label",
+          "maxLength": 64
+        }
+      },
+      "required": ["depositCode", "userUid", "network", "amountUsdt", "txHash", "verificationMethod", "status"]
+    },
+    "ReferralLink": {
+      "title": "ReferralLink",
+      "description": "Unique referral code and URL generated for a user and stored in Firestore",
+      "type": "object",
+      "properties": {
+        "referralCode": {
+          "type": "string",
+          "description": "Unique referral code identifier",
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "description": "UID of the user who owns this referral link",
+          "maxLength": 128
+        },
+        "ownerDisplayName": {
+          "type": "string",
+          "description": "Display name of the referrer",
+          "maxLength": 100
+        },
+        "referralUrl": {
+          "type": "string",
+          "description": "Full unique referral URL",
+          "maxLength": 256
+        },
+        "commissionRatePercent": {
+          "type": "number",
+          "description": "Commission percentage carved strictly from the 10% net lottery profit (default 2%)"
+        },
+        "totalReferredTickets": {
+          "type": "number",
+          "description": "Total tickets purchased via this referral link"
+        },
+        "totalCommissionEarnedUsdt": {
+          "type": "number",
+          "description": "Total USDT commission earned from net lottery profit"
+        },
+        "netHouseProfitRetainedUsdt": {
+          "type": "number",
+          "description": "Total 8% net profit retained by the house after deducting the 2% commission"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "referralCode",
+        "ownerUid",
+        "ownerDisplayName",
+        "referralUrl",
+        "commissionRatePercent",
+        "totalReferredTickets",
+        "totalCommissionEarnedUsdt",
+        "netHouseProfitRetainedUsdt"
+      ]
+    },
+    "ReferralCommissionLedger": {
+      "title": "ReferralCommissionLedger",
+      "description": "Immutable financial ledger entry proving referral commission was deducted strictly from net lottery profit with zero house loss",
+      "type": "object",
+      "properties": {
+        "commissionId": {
+          "type": "string",
+          "description": "Unique commission ledger ID",
+          "maxLength": 64
+        },
+        "referrerCode": {
+          "type": "string",
+          "description": "Referral code that earned the commission",
+          "maxLength": 32
+        },
+        "buyerUid": {
+          "type": "string",
+          "description": "UID of the ticket buyer",
+          "maxLength": 128
+        },
+        "buyerDisplayName": {
+          "type": "string",
+          "description": "Display name of the ticket buyer",
+          "maxLength": 100
+        },
+        "roundCode": {
+          "type": "string",
+          "description": "Lottery round code",
+          "maxLength": 32
+        },
+        "ticketGrossUsdt": {
+          "type": "number",
+          "description": "Gross ticket purchase amount in USDT"
+        },
+        "prizePool85Usdt": {
+          "type": "number",
+          "description": "85% prize pool allocation (untouched)"
+        },
+        "grossLotteryProfit10Usdt": {
+          "type": "number",
+          "description": "10% gross lottery profit before referral deduction"
+        },
+        "commissionDeductedFromProfit2Usdt": {
+          "type": "number",
+          "description": "2% referral commission deducted exclusively from the 10% gross lottery profit"
+        },
+        "netHouseProfitRetained8Usdt": {
+          "type": "number",
+          "description": "8% guaranteed net profit retained by the house"
+        },
+        "platformLossUsdt": {
+          "type": "number",
+          "description": "Always 0 — mathematical zero-loss guarantee"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp label",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "commissionId",
+        "referrerCode",
+        "buyerUid",
+        "roundCode",
+        "ticketGrossUsdt",
+        "prizePool85Usdt",
+        "grossLotteryProfit10Usdt",
+        "commissionDeductedFromProfit2Usdt",
+        "netHouseProfitRetained8Usdt",
+        "platformLossUsdt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores user profile, balance, Web3 wallet, Telegram handle, and referral stats"
+    },
+    "/settings/{docId}": {
+      "schema": { "$ref": "#/entities/PlatformSettings" },
+      "description": "Stores official multi-chain deposit wallets and zero-loss solvency settings"
+    },
+    "/deposits/{depositId}": {
+      "schema": { "$ref": "#/entities/DepositRecord" },
+      "description": "Stores on-chain verified and admin-queued crypto deposits"
+    },
+    "/referrals/{referralCode}": {
+      "schema": { "$ref": "#/entities/ReferralLink" },
+      "description": "Stores unique user referral codes, full URLs, and cumulative zero-loss profit split metrics"
+    },
+    "/referralCommissions/{commissionId}": {
+      "schema": { "$ref": "#/entities/ReferralCommissionLedger" },
+      "description": "Stores automatic referral commission deductions carved strictly out of net lottery profit"
+    }
+  }
+}
+

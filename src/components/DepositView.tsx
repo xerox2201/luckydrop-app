@@ -68,13 +68,36 @@ const DEPOSIT_NETWORKS: DepositNetworkOption[] = [
 ];
 
 export const DepositView: React.FC = () => {
-  const { fxRates, formatAmount, balanceUsdt, depositCrypto, navigateTo, officialWallets } = useLottery();
+  const {
+    fxRates,
+    formatAmount,
+    balanceUsdt,
+    submitDepositRequest,
+    deposits,
+    navigateTo,
+    officialWallets,
+    connectedWeb3Wallet,
+    connectedWalletProvider,
+    connectWeb3Wallet,
+  } = useLottery();
   const [selectedNet, setSelectedNet] = useState<DepositNetworkOption>(DEPOSIT_NETWORKS[0]);
   const [amountUsdt, setAmountUsdt] = useState<number>(100);
   const [hdIndex, setHdIndex] = useState<number>(482);
   const [copied, setCopied] = useState<boolean>(false);
+  const [depositMode, setDepositMode] = useState<'ONCHAIN_AUTO' | 'ADMIN_MANUAL'>('ONCHAIN_AUTO');
+  const [txHashInput, setTxHashInput] = useState<string>('');
+  const [senderWalletInput, setSenderWalletInput] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [depositSuccess, setDepositSuccess] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<string>('');
+
+  const supportsWeb3 = selectedNet.id !== 'BTC';
+  const walletLabel =
+    selectedNet.id === 'TON'
+      ? 'TON Wallet'
+      : selectedNet.id === 'BNB'
+      ? 'MetaMask / TrustWallet'
+      : 'TronLink';
 
   const baseOfficialAddress = officialWallets[selectedNet.id] || selectedNet.address;
   const dynamicAddress =
@@ -90,13 +113,38 @@ export const DepositView: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleConnectWallet = async () => {
+    const res = await connectWeb3Wallet(walletLabel as any);
+    setSenderWalletInput(res.address);
+    setDepositSuccess(true);
+    setStatusMessage(res.message);
+  };
+
   const handleConfirmDeposit = async () => {
-    setSubmitting(true);
-    const ok = await depositCrypto(amountUsdt, selectedNet.name);
-    setSubmitting(false);
-    if (ok) {
+    const effectiveMode = supportsWeb3 ? depositMode : 'ADMIN_MANUAL';
+    if (effectiveMode === 'ADMIN_MANUAL' && txHashInput.trim().length < 6) {
       setDepositSuccess(true);
+      setStatusMessage(
+        '⚠️ برای ثبت فیش جهت تایید ادمین، لطفاً هش تراکنش (TXID) را در کادر مربوطه وارد نمایید.'
+      );
+      return;
     }
+    setSubmitting(true);
+    const res = await submitDepositRequest({
+      amountUsdt,
+      network: selectedNet.name,
+      txHash:
+        txHashInput.trim() ||
+        `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
+      senderWallet: senderWalletInput.trim() || connectedWeb3Wallet || 'Web3 Wallet',
+      officialRecipientWallet: dynamicAddress,
+      mode: effectiveMode,
+      web3Signed: Boolean(connectedWeb3Wallet) && effectiveMode === 'ONCHAIN_AUTO',
+    });
+    setSubmitting(false);
+    setDepositSuccess(true);
+    setStatusMessage(res.message);
+    if (res.ok) setTxHashInput('');
   };
 
   return (
@@ -119,13 +167,13 @@ export const DepositView: React.FC = () => {
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
               <span className="material-symbols-outlined text-sm">qr_code_2</span>
-              <span>درگاه چندزنجیره‌ای واریز آنی رمزارز • Multi-Chain HD Deposit Gateway</span>
+              <span>درگاه دوگانه واریز رمزارز • اتصال مستقیم Web3 + صف تایید ادمین</span>
             </div>
             <h1 className="text-2xl sm:text-4xl font-black text-white">
-              شارژ آنی کیف پول در ۵ شبکه بلاکچین (/deposit)
+              شارژ کیف پول در ۵ شبکه بلاکچین (/deposit)
             </h1>
             <p className="text-xs sm:text-sm text-slate-200 max-w-2xl">
-              تولید آدرس اختصاصی سلسله‌مراتبی (BIP-44 HD Wallet) با شناسایی خودکار تراکنش در استخر ممپول در کمتر از ۳ ثانیه.
+              کیف پول‌های قابل اتصال (TronLink، MetaMask، TON Wallet) با تایید مستقیم شبکه به صورت خودکار شارژ می‌شوند و سایر واریزها با ثبت هش تراکنش (TXID) توسط ادمین تایید می‌گردند.
             </p>
           </div>
         </div>
@@ -133,7 +181,7 @@ export const DepositView: React.FC = () => {
         <div className="relative z-10 bg-[#0b0f18]/90 border border-emerald-500/35 rounded-2xl p-4 flex items-center gap-4 shrink-0">
           <div>
             <span className="text-xs text-slate-400 block">موجودی فعلی کیف پول:</span>
-            <span className="text-2xl font-black text-emerald-400 font-mono block">
+            <span className="text-2xl font-black text-emerald-400 font-mono tabular-nums block">
               ${balanceUsdt.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT
             </span>
             <span className="text-[11px] text-amber-300 font-bold">{formatAmount(balanceUsdt)}</span>
@@ -165,6 +213,7 @@ export const DepositView: React.FC = () => {
                     data-testid={`deposit-page-net-${net.id}`}
                     onClick={() => {
                       setSelectedNet(net);
+                      if (net.id === 'BTC') setDepositMode('ADMIN_MANUAL');
                       setDepositSuccess(false);
                     }}
                     className={`p-3 rounded-2xl border text-right transition-all cursor-pointer ${
@@ -181,9 +230,77 @@ export const DepositView: React.FC = () => {
             </div>
           </div>
 
+          {/* Step 2: Select Auto Web3 vs Manual Admin Verification */}
+          <div className="space-y-3">
+            <label className="block text-xs font-bold text-slate-300">
+              ۲. روش تایید تراکنش واریز:
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={!supportsWeb3}
+                onClick={() => setDepositMode('ONCHAIN_AUTO')}
+                className={`p-3.5 rounded-2xl border text-right transition-all cursor-pointer ${
+                  depositMode === 'ONCHAIN_AUTO' && supportsWeb3
+                    ? 'bg-emerald-500/15 border-emerald-400 text-white'
+                    : 'bg-[#0b0f18] border-white/10 text-slate-400 opacity-75'
+                }`}
+              >
+                <div className="text-xs font-black text-emerald-300">
+                  ⚡ اتصال کیف پول {walletLabel} (تایید خودکار شبکه)
+                </div>
+                <p className="text-[11px] text-slate-300 mt-1">
+                  بررسی مستقیم تراکنش در نود بلاکچین و شارژ آنی موجودی بدون انتظار.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDepositMode('ADMIN_MANUAL')}
+                className={`p-3.5 rounded-2xl border text-right transition-all cursor-pointer ${
+                  depositMode === 'ADMIN_MANUAL' || !supportsWeb3
+                    ? 'bg-amber-500/15 border-amber-400 text-white'
+                    : 'bg-[#0b0f18] border-white/10 text-slate-400'
+                }`}
+              >
+                <div className="text-xs font-black text-amber-300">
+                  🛡️ ثبت هش تراکنش (TXID) جهت تایید ادمین
+                </div>
+                <p className="text-[11px] text-slate-300 mt-1">
+                  مخصوص انتقال از صرافی‌ها، ولت‌های خارجی یا بیت‌کوین با تایید در کاکپیت ادمین.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {supportsWeb3 && depositMode === 'ONCHAIN_AUTO' && (
+            <div className="bg-[#0b0f18] border border-emerald-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-black text-emerald-300 block">
+                  وضعیت اتصال کیف پول Web3 ({walletLabel}):
+                </span>
+                <span className="text-xs font-mono text-slate-300" dir="ltr">
+                  {connectedWeb3Wallet
+                    ? `متصل: ${connectedWeb3Wallet} (${connectedWalletProvider || walletLabel})`
+                    : 'هنوز کیف پولی متصل نشده است'}
+                </span>
+              </div>
+              <button
+                type="button"
+                data-testid="deposit-connect-web3-btn"
+                onClick={handleConnectWallet}
+                className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400 text-emerald-200 text-xs font-black cursor-pointer shrink-0"
+              >
+                {connectedWeb3Wallet
+                  ? '✓ بروزرسانی اتصال کیف پول'
+                  : `اتصال مستقیم به ${walletLabel}`}
+              </button>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-slate-300 mb-2.5">
-              ۲. مبلغ شارژ کیف پول (بر پایه تتر USDT):
+              ۳. مبلغ شارژ کیف پول (بر پایه تتر USDT):
             </label>
             <div className="grid grid-cols-4 gap-2.5 mb-3">
               {[25, 100, 500, 1000].map((preset) => (
@@ -211,10 +328,43 @@ export const DepositView: React.FC = () => {
             />
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                هش تراکنش بلاکچین (TXID / Hash):
+              </label>
+              <input
+                type="text"
+                dir="ltr"
+                value={txHashInput}
+                onChange={(e) => setTxHashInput(e.target.value)}
+                placeholder={
+                  depositMode === 'ADMIN_MANUAL' || !supportsWeb3
+                    ? 'هش تراکنش (الزامی برای تایید ادمین)...'
+                    : 'اختیاری در حالت اتصال مستقیم Web3...'
+                }
+                className="w-full bg-[#0a0e16] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                آدرس کیف پول فرستنده شما:
+              </label>
+              <input
+                type="text"
+                dir="ltr"
+                value={senderWalletInput || connectedWeb3Wallet}
+                onChange={(e) => setSenderWalletInput(e.target.value)}
+                placeholder="T... / 0x... / UQ... / bc1..."
+                className="w-full bg-[#0a0e16] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs font-mono text-amber-200"
+              />
+            </div>
+          </div>
+
           <div className="bg-[#0b0f18] border border-white/10 rounded-2xl p-4 flex items-center justify-between">
             <div>
               <span className="text-[11px] text-slate-400 block">مقدار دقیق رمزارز جهت ارسال به آدرس:</span>
-              <span className="text-xl font-black text-amber-400 font-mono">
+              <span className="text-xl font-black text-amber-400 font-mono tabular-nums">
                 {cryptoAmount} {selectedNet.cryptoKey}
               </span>
             </div>
@@ -229,7 +379,8 @@ export const DepositView: React.FC = () => {
               data-testid="deposit-page-success"
               className="p-4 rounded-2xl bg-emerald-500/20 border border-emerald-400 text-emerald-200 font-bold text-xs sm:text-sm"
             >
-              ✅ تراکنش واریز ${toPersianDigits(amountUsdt)} USDT در شبکه {selectedNet.name} تایید و به موجودی شما افزوده شد!
+              {statusMessage ||
+                `✅ تراکنش واریز $${toPersianDigits(amountUsdt)} USDT در شبکه ${selectedNet.name} تایید و به موجودی شما افزوده شد!`}
             </div>
           )}
 
@@ -242,7 +393,11 @@ export const DepositView: React.FC = () => {
           >
             <span className="material-symbols-outlined">bolt</span>
             <span>
-              {submitting ? 'در حال اسکن ممپول شبکه...' : 'تایید واریز و شارژ آنی کیف پول'}
+              {submitting
+                ? 'در حال استعلام از نود بلاکچین...'
+                : depositMode === 'ADMIN_MANUAL' || !supportsWeb3
+                ? 'ثبت فیش و هش تراکنش در صف تایید ادمین'
+                : 'تایید واریز و شارژ آنی کیف پول'}
             </span>
           </button>
         </div>
@@ -321,6 +476,72 @@ export const DepositView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Live Deposit Status Ledger */}
+      <section className="rounded-3xl bg-[#131824] border border-white/10 p-6 sm:p-8 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div>
+            <span className="text-xs font-bold text-amber-400 font-mono">
+              REAL-TIME DEPOSIT SETTLEMENT LEDGER
+            </span>
+            <h2 className="text-xl font-black text-white mt-0.5">
+              وضعیت واریزهای اخیر (تایید خودکار شبکه و صف تایید ادمین)
+            </h2>
+          </div>
+          <span className="text-xs text-slate-400">
+            کل تراکنش‌های ثبت‌شده: {toPersianDigits(deposits.length)} مورد
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          {deposits.map((dep) => (
+            <div
+              key={dep.depositCode}
+              className="bg-[#0b0f18] border border-white/10 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+            >
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs font-black text-amber-400">{dep.depositCode}</span>
+                  <span className="text-xs font-bold text-white">{dep.network}</span>
+                  <span className="font-mono text-xs font-black text-emerald-400">
+                    +${dep.amountUsdt.toLocaleString('en-US')} USDT
+                  </span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                      dep.status === 'confirmed'
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35'
+                        : dep.status === 'rejected'
+                        ? 'bg-rose-500/15 text-rose-300 border-rose-500/35'
+                        : 'bg-amber-500/15 text-amber-300 border-amber-500/35'
+                    }`}
+                  >
+                    {dep.status === 'confirmed'
+                      ? '✓ تایید شده و شارژ شده'
+                      : dep.status === 'rejected'
+                      ? '✕ رد شده توسط ادمین'
+                      : '⏳ در انتظار بررسی و تایید ادمین'}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 font-mono break-all" dir="ltr">
+                  TXID: {dep.txHash} • Method: {dep.verificationMethod}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <a
+                  href={dep.explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-sky-300"
+                >
+                  مشاهده در اکسپلورر بلاکچین ↗
+                </a>
+                <span className="text-xs text-slate-500">{dep.createdAt}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 };

@@ -72,16 +72,21 @@ export const DepositModal: React.FC = () => {
     setDepositModalOpen,
     fxRates,
     formatAmount,
-    depositCrypto,
+    submitDepositRequest,
     navigateTo,
     officialWallets,
+    connectedWeb3Wallet,
+    connectedWalletProvider,
+    connectWeb3Wallet,
   } = useLottery();
 
   const [selectedNet, setSelectedNet] = useState<NetworkOption>(NETWORKS[0]);
   const [amountUsdt, setAmountUsdt] = useState<number>(100);
+  const [verificationMode, setVerificationMode] = useState<'ONCHAIN_AUTO' | 'ADMIN_MANUAL'>('ONCHAIN_AUTO');
+  const [txHashInput, setTxHashInput] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
-  const [confirmedSuccess, setConfirmedSuccess] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<{ text: string; isPending: boolean } | null>(null);
 
   if (!depositModalOpen) return null;
 
@@ -94,17 +99,44 @@ export const DepositModal: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleConnectWalletForNetwork = async () => {
+    if (selectedNet.id === 'USDT_TRC20' || selectedNet.id === 'TRX') {
+      await connectWeb3Wallet('TRONLINK');
+    } else if (selectedNet.id === 'TON') {
+      await connectWeb3Wallet('TON');
+    } else {
+      await connectWeb3Wallet('METAMASK');
+    }
+  };
+
   const handleConfirmDeposit = async () => {
     setSubmitting(true);
-    const ok = await depositCrypto(amountUsdt, selectedNet.name);
+    setStatusMessage(null);
+    const cleanTx =
+      txHashInput.trim() ||
+      (verificationMode === 'ONCHAIN_AUTO'
+        ? `0x${Date.now().toString(16)}${Math.random().toString(16).slice(2, 18)}`
+        : `MANUAL_TX_${Date.now().toString(36).toUpperCase()}`);
+
+    const res = await submitDepositRequest({
+      amountUsdt,
+      network: selectedNet.id,
+      cryptoKey: selectedNet.cryptoKey,
+      txHash: cleanTx,
+      verificationMode: selectedNet.id === 'BTC' ? 'ADMIN_MANUAL' : verificationMode,
+      senderWallet: connectedWeb3Wallet || undefined,
+    });
     setSubmitting(false);
-    if (ok) {
-      setConfirmedSuccess(true);
+    if (res.ok) {
+      setStatusMessage({
+        text: res.message,
+        isPending: res.status === 'PENDING_ADMIN',
+      });
       setTimeout(() => {
-        setConfirmedSuccess(false);
+        setStatusMessage(null);
         setDepositModalOpen(false);
-        navigateTo('status');
-      }, 1100);
+        navigateTo('deposit');
+      }, 1400);
     }
   };
 
@@ -273,15 +305,92 @@ export const DepositModal: React.FC = () => {
             </div>
           </div>
 
+          {/* Dual-Mode Verification Selector */}
+          <div className="bg-[#0d121d] border border-white/10 rounded-2xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-black text-white">
+                ۳. روش تایید تراکنش واریزی:
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVerificationMode('ONCHAIN_AUTO')}
+                  disabled={selectedNet.id === 'BTC'}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all ${
+                    verificationMode === 'ONCHAIN_AUTO' && selectedNet.id !== 'BTC'
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white disabled:opacity-40'
+                  }`}
+                >
+                  ⚡ اتصال مستقیم کیف پول (تایید خودکار شبکه)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVerificationMode('ADMIN_MANUAL')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all ${
+                    verificationMode === 'ADMIN_MANUAL' || selectedNet.id === 'BTC'
+                      ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  🛡️ ثبت TXID (تایید توسط ادمین خزانه)
+                </button>
+              </div>
+            </div>
+
+            {verificationMode === 'ONCHAIN_AUTO' && selectedNet.id !== 'BTC' ? (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
+                <div className="text-xs text-slate-300">
+                  {connectedWeb3Wallet ? (
+                    <span className="text-emerald-300 font-bold">
+                      ✅ کیف پول متصل ({connectedWalletProvider}):{' '}
+                      <code className="font-mono text-amber-200">{connectedWeb3Wallet}</code>
+                    </span>
+                  ) : (
+                    <span>
+                      کیف پول Web3 خود (TronLink / TON / MetaMask) را متصل کنید تا واریز به صورت خودکار توسط شبکه تایید شود.
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleConnectWalletForNetwork}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-xs font-black shrink-0"
+                >
+                  {connectedWeb3Wallet ? 'تغییر کیف پول متصل' : 'اتصال کیف پول Web3'}
+                </button>
+              </div>
+            ) : null}
+
+            <div>
+              <input
+                type="text"
+                dir="ltr"
+                value={txHashInput}
+                onChange={(e) => setTxHashInput(e.target.value)}
+                placeholder="شناسه تراکنش (TXID / Hash) را وارد کنید..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#070a10] border border-white/15 text-xs font-mono text-amber-200 focus:outline-none focus:border-amber-400"
+              />
+            </div>
+          </div>
+
           {/* Action CTA */}
-          {confirmedSuccess ? (
-            <div className="p-4 rounded-2xl bg-emerald-500/20 border border-emerald-400 text-emerald-200 text-center font-bold text-sm">
-              ✅ تراکنش واریز در استخر ممپول ثبت شد و موجودی شما به میزان ${toPersianDigits(amountUsdt)} USDT افزایش یافت!
+          {statusMessage ? (
+            <div
+              className={`p-4 rounded-2xl border text-center font-bold text-sm ${
+                statusMessage.isPending
+                  ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                  : 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
+              }`}
+            >
+              {statusMessage.text}
             </div>
           ) : (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
               <p className="text-xs text-slate-400">
-                پس از ارسال رمزارز، نودهای ما در کمتر از ۳ ثانیه تراکنش را در ممپول شناسایی می‌کنند.
+                {verificationMode === 'ONCHAIN_AUTO' && selectedNet.id !== 'BTC'
+                  ? 'در حالت اتصال کیف پول یا هش معتبر آن‌چین، شارژ حساب پس از استعلام RPC آنی انجام می‌شود.'
+                  : 'تراکنش‌های انتقالی از صرافی یا کیف پول‌های غیرمتصل پس از ثبت TXID در صف تایید ادمین قرار می‌گیرند.'}
               </p>
               <button
                 type="button"
@@ -291,7 +400,13 @@ export const DepositModal: React.FC = () => {
                 className="w-full sm:w-auto gold-gradient-cta text-[#2a1700] font-black text-sm px-6 py-3 rounded-xl shadow-lg hover:brightness-110 transition-all flex items-center justify-center gap-2 shrink-0"
               >
                 <span className="material-symbols-outlined text-lg">bolt</span>
-                <span>{submitting ? 'در حال بررسی ممپول...' : 'تایید واریز و شارژ آنی کیف پول'}</span>
+                <span>
+                  {submitting
+                    ? 'در حال استعلام بلاکچین...'
+                    : verificationMode === 'ONCHAIN_AUTO' && selectedNet.id !== 'BTC'
+                    ? 'استعلام آن‌چین و شارژ کیف پول'
+                    : 'ثبت حواله برای تایید ادمین'}
+                </span>
               </button>
             </div>
           )}

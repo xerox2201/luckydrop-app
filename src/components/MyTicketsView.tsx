@@ -16,6 +16,7 @@ export const MyTicketsView: React.FC = () => {
     formatAmount,
     navigateTo,
     setActiveTrackingTicket,
+    setViralCardTicket,
   } = useLottery();
 
   const [filterRound, setFilterRound] = useState<string>('ALL');
@@ -269,7 +270,7 @@ export const MyTicketsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Bottom Action Bar: 1-Click Claim Prize or Blockchain Tracker */}
+              {/* Bottom Action Bar: 1-Click Claim Prize, Story Certificate, or Blockchain Tracker */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <div>
                   <span className="text-[11px] text-slate-400 block">جایزه تعلق‌گرفته:</span>
@@ -279,7 +280,16 @@ export const MyTicketsView: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid={`my-tickets-viral-btn-${ticket.ticketCode}`}
+                    onClick={() => setViralCardTicket(ticket)}
+                    className="px-3.5 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs text-amber-300 font-black cursor-pointer"
+                  >
+                    📸 کارت تصویری استوری
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {

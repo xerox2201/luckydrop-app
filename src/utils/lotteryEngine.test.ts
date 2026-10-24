@@ -11,6 +11,13 @@ import {
   deriveProvablyFairBalls,
   DEFAULT_FX_RATES,
   getCnyToTomanRate,
+  calculateZeroLossTicketSplit,
+  evaluateZeroLossDrawSolvency,
+  getBlockchainExplorerTxUrl,
+  evaluateZeroLossLoyaltyChest,
+  formatTelegramAdminAlertText,
+  generateUniqueUserReferralLink,
+  calculateReferralDeductionFromNetProfit,
 } from './lotteryEngine.ts';
 import { computeOracleExchangeRates } from '../services/price-oracle.ts';
 
@@ -135,3 +142,119 @@ test('calculateWaterfallCashflow and deriveProvablyFairBalls remain deterministi
   assert.deepEqual(d1.mainNumbers, d2.mainNumbers);
   assert.equal(d1.mainNumbers.length, 4);
 });
+
+test('calculateZeroLossTicketSplit guarantees 100% zero-loss house math with and without referrer', () => {
+  const noRef = calculateZeroLossTicketSplit(100, false);
+  assert.equal(noRef.prizePoolUsdt, 85);
+  assert.equal(noRef.referralCommissionUsdt, 0);
+  assert.equal(noRef.netOperatorProfitUsdt, 10);
+  assert.equal(noRef.rolloverReserveUsdt, 3);
+  assert.equal(noRef.gasBufferUsdt, 2);
+  assert.equal(noRef.houseDeficitPossible, false);
+
+  const withRef = calculateZeroLossTicketSplit(100, true);
+  assert.equal(withRef.prizePoolUsdt, 85);
+  assert.equal(withRef.referralCommissionUsdt, 2);
+  assert.equal(withRef.netOperatorProfitUsdt, 8);
+  assert.equal(withRef.rolloverReserveUsdt, 3);
+  assert.equal(withRef.gasBufferUsdt, 2);
+  assert.equal(withRef.houseDeficitPossible, false);
+  assert.equal(
+    withRef.prizePoolUsdt +
+      withRef.referralCommissionUsdt +
+      withRef.netOperatorProfitUsdt +
+      withRef.rolloverReserveUsdt +
+      withRef.gasBufferUsdt,
+    100
+  );
+});
+
+test('evaluateZeroLossDrawSolvency prevents house loss when ticket sales are below advertised jackpot', () => {
+  const underCovered = evaluateZeroLossDrawSolvency({
+    realCollectedSalesUsdt: 500,
+    targetJackpotUsdt: 10000,
+    rolloverReserveUsdt: 0,
+    rtpPercent: 85,
+    solvencyMode: 'AUTO_EXTEND',
+  });
+  assert.equal(underCovered.realCollectedSalesUsdt, 500);
+  assert.equal(underCovered.authorizedMaxPayoutUsdt, 425);
+  assert.equal(underCovered.isFullyFundedForTarget, false);
+  assert.equal(underCovered.recommendedAction, 'AUTO_EXTEND_TIMER');
+  assert.equal(underCovered.guaranteedHouseNetProfitUsdt, 40);
+  assert.equal(underCovered.platformLossUsdt, 0);
+
+  const proportional = evaluateZeroLossDrawSolvency({
+    realCollectedSalesUsdt: 500,
+    targetJackpotUsdt: 10000,
+    rolloverReserveUsdt: 0,
+    rtpPercent: 85,
+    solvencyMode: 'PROPORTIONAL_POOL',
+  });
+  assert.equal(proportional.recommendedAction, 'EXECUTE_CAPPED_AT_REAL_POOL');
+  assert.equal(proportional.authorizedMaxPayoutUsdt, 425);
+  assert.equal(proportional.platformLossUsdt, 0);
+  assert.ok(getBlockchainExplorerTxUrl('USDT_TRC20', 'abc123').includes('tronscan.org'));
+});
+
+test('evaluateZeroLossLoyaltyChest strictly caps rewards within the 3% Rollover Reserve with 0 platform loss', () => {
+  const eligible = evaluateZeroLossLoyaltyChest({
+    totalTicketsPurchased: 6,
+    totalSpentUsdt: 30,
+    chestsClaimedCount: 1,
+    availableRolloverReservePoolUsdt: 15.0,
+    seedNonce: 1,
+  });
+  assert.equal(eligible.chestsUnlockedTotal, 2);
+  assert.equal(eligible.chestsAvailableToOpen, 1);
+  assert.ok(eligible.safeRewardUsdt > 0 && eligible.safeRewardUsdt <= 15.0);
+  assert.equal(eligible.houseProfitUntouched, true);
+  assert.equal(eligible.platformLossUsdt, 0);
+
+  const emptyReserve = evaluateZeroLossLoyaltyChest({
+    totalTicketsPurchased: 9,
+    totalSpentUsdt: 45,
+    chestsClaimedCount: 0,
+    availableRolloverReservePoolUsdt: 0,
+    seedNonce: 2,
+  });
+  assert.equal(emptyReserve.safeRewardUsdt, 0);
+  assert.equal(emptyReserve.platformLossUsdt, 0);
+
+  const alertMsg = formatTelegramAdminAlertText({
+    eventType: 'DEPOSIT',
+    userDisplayName: 'امیرحسین',
+    amountUsdt: 250,
+    network: 'USDT_TRC20',
+    details: 'واریز ۲۵۰ تتر',
+  });
+  assert.ok(alertMsg.includes('امیرحسین'));
+  assert.ok(alertMsg.includes('$250.00 USDT'));
+  assert.ok(alertMsg.includes('Zero-Loss Active'));
+});
+
+test('generateUniqueUserReferralLink and calculateReferralDeductionFromNetProfit enforce Firestore-compatible codes and 100% zero-loss profit deduction', () => {
+  const bundle = generateUniqueUserReferralLink({
+    uidOrIdentity: 'uid_abc_12345',
+    customAlias: 'SOVEREIGN',
+    originUrl: 'https://luckydrop.vip',
+  });
+  assert.ok(bundle.referralCode.startsWith('VIP-SOVEREIGN-'));
+  assert.equal(bundle.referralUrl, `https://luckydrop.vip/?ref=${bundle.referralCode}`);
+
+  const ledger = calculateReferralDeductionFromNetProfit({
+    ticketGrossUsdt: 50,
+    hasValidReferrer: true,
+    commissionRateFromSalesPercent: 2,
+  });
+  assert.equal(ledger.prizePool85Usdt, 42.5);
+  assert.equal(ledger.grossLotteryProfit10Usdt, 5.0);
+  assert.equal(ledger.commissionDeductedFromProfit2Usdt, 1.0);
+  assert.equal(ledger.netHouseProfitRetained8Usdt, 4.0);
+  assert.equal(ledger.deductedStrictlyFromNetProfit, true);
+  assert.equal(ledger.prizePoolUntouched, true);
+  assert.equal(ledger.platformLossUsdt, 0);
+});
+
+
+

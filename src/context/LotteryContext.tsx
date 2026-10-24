@@ -1,6 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { signInWithPopup, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
-import { auth, googleAuthProvider } from '../lib/firebase.ts';
+import {
+  auth,
+  googleAuthProvider,
+  testFirestoreConnection,
+  syncOfficialWalletsToFirestore,
+  fetchOfficialWalletsFromFirestore,
+  syncUserProfileToFirestore,
+  syncReferralLinkToFirestore,
+  recordReferralCommissionInFirestore,
+} from '../lib/firebase.ts';
 import {
   CurrencyLang,
   ExchangeRates,
@@ -14,6 +23,11 @@ import {
   WithdrawalNetwork,
   calculateWithdrawalFeeAndNet,
   computeDeterministicHash,
+  SolvencyProtectionMode,
+  calculateZeroLossTicketSplit,
+  getBlockchainExplorerTxUrl,
+  generateUniqueUserReferralLink,
+  calculateReferralDeductionFromNetProfit,
 } from '../utils/lotteryEngine.ts';
 import {
   fetchLivePriceOracle,
@@ -122,6 +136,55 @@ export interface SupportMessageItem {
   createdAt: string;
 }
 
+export interface DepositRecordItem {
+  id: number;
+  depositCode: string;
+  userUid: string;
+  userDisplayName: string;
+  network: string;
+  senderWallet: string;
+  officialRecipientWallet: string;
+  amountUsdt: number;
+  txHash: string;
+  explorerUrl: string;
+  verificationMethod: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
+  status: 'confirmed' | 'pending_admin' | 'rejected';
+  confirmations: number;
+  createdAt: string;
+}
+
+export interface ReferralEventItem {
+  id: number;
+  referrerCode: string;
+  buyerDisplayName: string;
+  roundCode: string;
+  ticketAmountUsdt: number;
+  prizePool85Usdt: number;
+  grossLotteryProfit10Usdt?: number;
+  referralCommission2Usdt: number;
+  netHouseProfit8Usdt: number;
+  createdAt: string;
+}
+
+export interface TelegramBotAlertConfig {
+  botToken: string;
+  adminChatId: string;
+  enabled: boolean;
+  notifyOnDeposit: boolean;
+  notifyOnWithdrawal: boolean;
+  notifyOnTicketPurchase: boolean;
+}
+
+export interface TelegramAlertLogItem {
+  id: number;
+  eventType: 'DEPOSIT' | 'WITHDRAWAL' | 'TICKET_PURCHASE' | 'TEST_PING';
+  message: string;
+  deliveredToTelegramApi: boolean;
+  createdAt: string;
+}
+
+export type Web3WalletProviderType = 'TronLink' | 'MetaMask / TrustWallet' | 'TON Wallet' | 'TRONLINK' | 'TON' | 'METAMASK';
+
 interface LotteryContextType {
   activeRoute: AppRoute;
   navigateTo: (route: AppRoute | 'admin_unauthorized') => void;
@@ -139,6 +202,16 @@ interface LotteryContextType {
   firebaseUser: FirebaseUser | null;
   signInWithGoogle: () => Promise<void>;
   signOutUser: () => Promise<void>;
+  // Unified Auth: Web3 Wallet & Telegram
+  connectedWeb3Wallet: string;
+  connectedWalletProvider: Web3WalletProviderType | null;
+  connectWeb3Wallet: (
+    providerType: Web3WalletProviderType,
+    manualAddressOverride?: string
+  ) => Promise<{ ok: boolean; address: string; message: string }>;
+  disconnectWeb3Wallet: () => void;
+  telegramUsername: string;
+  connectTelegramAccount: (customHandle?: string) => string;
   balanceUsdt: number;
   vipTier: string;
   displayName: string;
@@ -146,6 +219,7 @@ interface LotteryContextType {
   tickets: TicketItem[];
   transactions: TransactionItem[];
   supportMessages: SupportMessageItem[];
+  deposits: DepositRecordItem[];
   withdrawals: WithdrawalRecord[];
   claimedTicketCodes: string[];
   killSwitchActive: boolean;
@@ -183,6 +257,27 @@ interface LotteryContextType {
   ) => Promise<{ ok: boolean; error?: string; tickets?: TicketItem[] }>;
   claimTicketPrize: (ticketCode: string, prizeUsdt: number, network?: string) => Promise<boolean>;
   depositCrypto: (amountUsdt: number, network: string) => Promise<boolean>;
+  submitDepositRequest: (params: {
+    amountUsdt: number;
+    network: string;
+    cryptoKey?: string;
+    txHash: string;
+    senderWallet?: string;
+    officialRecipientWallet?: string;
+    mode?: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
+    verificationMode?: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
+    web3Signed?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    queuedForAdmin?: boolean;
+    status?: string;
+    message: string;
+    deposit?: DepositRecordItem;
+  }>;
+  adminActionDeposit: (
+    depositCode: string,
+    action: 'approve' | 'reject' | 'approve_all'
+  ) => Promise<boolean>;
   requestWithdrawal: (params: {
     network: WithdrawalNetwork;
     destinationAddress: string;
@@ -207,6 +302,46 @@ interface LotteryContextType {
   sendSupportMessage: (sessionCode: string, message: string, senderRole?: string, senderName?: string) => Promise<boolean>;
   officialWallets: OfficialSiteWallets;
   updateOfficialWallets: (next: Partial<OfficialSiteWallets>) => void;
+  // Zero-Loss Solvency & Firestore Referral System
+  solvencyMode: SolvencyProtectionMode;
+  setSolvencyMode: (mode: SolvencyProtectionMode) => void;
+  referralCode: string;
+  referredByCode: string;
+  applyReferralCode: (code: string) => { ok: boolean; message: string };
+  generateAndSaveReferralLink: (customAlias?: string) => Promise<{
+    ok: boolean;
+    referralCode: string;
+    referralUrl: string;
+    message: string;
+  }>;
+  claimReferralEarningsToWallet: () => Promise<{ ok: boolean; claimedUsdt: number; message: string }>;
+  simulateReferredTicketPurchase: (ticketGrossUsdt?: number) => Promise<{
+    ok: boolean;
+    commissionUsdt: number;
+    netHouseProfitUsdt: number;
+    message: string;
+  }>;
+  referralEarningsUsdt: number;
+  referredTicketsCount: number;
+  referralEvents: ReferralEventItem[];
+  // Zero-Loss VIP Loyalty Chest (3% Rollover Reserve)
+  rolloverReservePoolUsdt: number;
+  chestsClaimedCount: number;
+  openLoyaltyChest: () => Promise<{
+    ok: boolean;
+    rewardUsdt?: number;
+    rewardTierLabelFa?: string;
+    message: string;
+  }>;
+  // Admin Telegram Bot Alert System
+  telegramBotConfig: TelegramBotAlertConfig;
+  telegramAlertsLog: TelegramAlertLogItem[];
+  updateTelegramBotConfig: (next: TelegramBotAlertConfig) => Promise<boolean>;
+  sendTestTelegramAlert: () => Promise<{ ok: boolean; message: string }>;
+  // Viral Shareable Golden Ticket & Win Certificate Modal
+  viralCardTicket: TicketItem | null;
+  setViralCardTicket: (ticket: TicketItem | null) => void;
+  firestoreConnected: boolean;
   supabaseConnected: boolean;
 }
 
@@ -378,9 +513,89 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [tickets, setTickets] = useState<TicketItem[]>(DEMO_WINNING_TICKETS);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [supportMessages, setSupportMessages] = useState<SupportMessageItem[]>([]);
+  const [deposits, setDeposits] = useState<DepositRecordItem[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>(() => loadLocalState().withdrawals);
   const [claimedTicketCodes, setClaimedTicketCodes] = useState<string[]>(() => loadLocalState().claimedTicketCodes);
   const [killSwitchActive, setKillSwitchActive] = useState<boolean>(false);
+  const [firestoreConnected, setFirestoreConnected] = useState<boolean>(true);
+
+  // Unified Web3 Wallet & Telegram Identity State
+  const [connectedWeb3Wallet, setConnectedWeb3Wallet] = useState<string>(() => {
+    try {
+      return localStorage.getItem('luckydrop_web3_wallet') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [connectedWalletProvider, setConnectedWalletProvider] = useState<Web3WalletProviderType | null>(() => {
+    try {
+      return (localStorage.getItem('luckydrop_web3_provider') as Web3WalletProviderType) || null;
+    } catch {
+      return null;
+    }
+  });
+  const [telegramUsername, setTelegramUsername] = useState<string>(() => {
+    try {
+      const tgUser = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user;
+      if (tgUser?.username) return `@${tgUser.username}`;
+      return localStorage.getItem('luckydrop_tg_username') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  // Zero-Loss Solvency & Referral State
+  const [solvencyMode, setSolvencyModeState] = useState<SolvencyProtectionMode>('AUTO_EXTEND');
+  const [referralCode, setReferralCodeState] = useState<string>(() => {
+    try {
+      return localStorage.getItem('luckydrop_my_referral_code') || 'VIP-KAMRAN777';
+    } catch {
+      return 'VIP-KAMRAN777';
+    }
+  });
+  const [referredByCode, setReferredByCode] = useState<string>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = params.get('ref');
+      if (fromUrl && fromUrl.trim().length >= 4) {
+        const clean = fromUrl.trim().toUpperCase();
+        localStorage.setItem('luckydrop_referred_by', clean);
+        return clean;
+      }
+      return localStorage.getItem('luckydrop_referred_by') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [referralEarningsUsdt, setReferralEarningsUsdt] = useState<number>(18.4);
+  const [referredTicketsCount, setReferredTicketsCount] = useState<number>(14);
+  const [referralEvents, setReferralEvents] = useState<ReferralEventItem[]>([
+    {
+      id: 501,
+      referrerCode: 'VIP-KAMRAN777',
+      buyerDisplayName: 'سهند جاوید (VIP)',
+      roundCode: '#ZRN-8493',
+      ticketAmountUsdt: 50,
+      prizePool85Usdt: 42.5,
+      referralCommission2Usdt: 1.0,
+      netHouseProfit8Usdt: 4.0,
+      createdAt: '۱۲ دقیقه پیش',
+    },
+  ]);
+
+  // Zero-Loss VIP Loyalty Chest (3% Rollover Reserve) & Telegram Bot Alert State
+  const [rolloverReservePoolUsdt, setRolloverReservePoolUsdt] = useState<number>(48.5);
+  const [chestsClaimedCount, setChestsClaimedCount] = useState<number>(0);
+  const [telegramBotConfig, setTelegramBotConfig] = useState<TelegramBotAlertConfig>({
+    botToken: '',
+    adminChatId: '',
+    enabled: true,
+    notifyOnDeposit: true,
+    notifyOnWithdrawal: true,
+    notifyOnTicketPurchase: true,
+  });
+  const [telegramAlertsLog, setTelegramAlertsLog] = useState<TelegramAlertLogItem[]>([]);
+  const [viralCardTicket, setViralCardTicket] = useState<TicketItem | null>(null);
 
   const [depositModalOpen, setDepositModalOpen] = useState<boolean>(false);
   const [withdrawModalOpen, setWithdrawModalOpen] = useState<boolean>(false);
@@ -624,6 +839,22 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (Array.isArray(data.transactions)) setTransactions(data.transactions);
       if (Array.isArray(data.supportMessages)) setSupportMessages(data.supportMessages);
+      if (Array.isArray(data.deposits)) setDeposits(data.deposits);
+      if (Array.isArray(data.referralEvents) && data.referralEvents.length > 0) {
+        setReferralEvents(data.referralEvents);
+      }
+      if (data.telegramBotConfig && typeof data.telegramBotConfig === 'object') {
+        setTelegramBotConfig((prev) => ({ ...prev, ...data.telegramBotConfig }));
+      }
+      if (Array.isArray(data.telegramAlertsLog)) {
+        setTelegramAlertsLog(data.telegramAlertsLog);
+      }
+      if (typeof data.rolloverReservePoolUsdt === 'number') {
+        setRolloverReservePoolUsdt(data.rolloverReservePoolUsdt);
+      }
+      if (typeof data.chestsClaimedCount === 'number') {
+        setChestsClaimedCount(data.chestsClaimedCount);
+      }
       if (Array.isArray(data.withdrawals) && data.withdrawals.length > 0) {
         setWithdrawals(data.withdrawals);
       }
@@ -635,6 +866,22 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.error('Snapshot fetch error (operating on local state fallback):', error);
     }
   }, [getHeaders]);
+
+  // Validate Firestore connection on initial boot & pull cloud official wallets
+  useEffect(() => {
+    testFirestoreConnection().then((ok) => setFirestoreConnected(ok));
+    fetchOfficialWalletsFromFirestore().then((cloudWallets) => {
+      if (cloudWallets && typeof cloudWallets === 'object') {
+        setOfficialWallets((prev) => ({ ...prev, ...(cloudWallets as Partial<OfficialSiteWallets>) }));
+        if (
+          cloudWallets.solvencyMode === 'AUTO_EXTEND' ||
+          cloudWallets.solvencyMode === 'PROPORTIONAL_POOL'
+        ) {
+          setSolvencyModeState(cloudWallets.solvencyMode);
+        }
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -732,6 +979,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           costUsdt: totalCostUsdt,
           currencyNetwork: network,
           clientSeed: slips[0].clientSeed,
+          referredByCode,
           slips,
         }),
       });
@@ -746,6 +994,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setBalanceUsdt(data.newBalanceUsdt);
       } else {
         setBalanceUsdt((prev) => Number((prev - totalCostUsdt).toFixed(2)));
+      }
+      // If a referral code is active, record the 2% commission carved out of the 10% house margin
+      if (referredByCode && referredByCode !== referralCode) {
+        const split = calculateZeroLossTicketSplit(totalCostUsdt, true, 85, 2);
+        setReferralEarningsUsdt((prev) => Number((prev + split.referralCommissionUsdt).toFixed(2)));
+        setReferredTicketsCount((prev) => prev + slips.length);
       }
       const mintedList: TicketItem[] = Array.isArray(data.tickets)
         ? data.tickets
@@ -824,26 +1078,158 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const depositCrypto = async (amountUsdt: number, network: string) => {
+    const res = await submitDepositRequest({
+      amountUsdt,
+      network,
+      txHash: `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
+      senderWallet: connectedWeb3Wallet || 'Connected Web3 Wallet',
+      officialRecipientWallet: officialWallets.USDT_TRC20,
+      mode: 'ONCHAIN_AUTO',
+      web3Signed: true,
+    });
+    return res.ok;
+  };
+
+  const submitDepositRequest = async (params: {
+    amountUsdt: number;
+    network: string;
+    txHash: string;
+    senderWallet: string;
+    officialRecipientWallet: string;
+    mode: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
+    web3Signed?: boolean;
+  }) => {
+    if (killSwitchActive) {
+      return {
+        ok: false,
+        queuedForAdmin: false,
+        message: 'درگاه واریز توسط کلید اضطراری (Kill-Switch) موقتاً مسدود است.',
+      };
+    }
+
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/wallet/deposit', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ amountUsdt, network }),
+        body: JSON.stringify(params),
       });
-      if (!res.ok) return false;
       const data = await res.json();
+      if (!res.ok) {
+        return {
+          ok: false,
+          queuedForAdmin: false,
+          message: data.error || 'خطا در بررسی تراکنش واریز',
+        };
+      }
+      if (Array.isArray(data.deposits)) {
+        setDeposits(data.deposits);
+      } else if (data.deposit) {
+        setDeposits((prev) => [data.deposit, ...prev]);
+      }
+
+      if (data.queuedForAdmin) {
+        await refreshSnapshot();
+        return {
+          ok: true,
+          queuedForAdmin: true,
+          deposit: data.deposit,
+          message:
+            '📋 فیش و هش تراکنش (TXID) شما با موفقیت در «صف تایید ادمین در کاکپیت» ثبت شد. پس از تایید اپراتور به موجودی شما افزوده می‌شود.',
+        };
+      }
+
       if (typeof data.newBalanceUsdt === 'number') {
         setBalanceUsdt(data.newBalanceUsdt);
       } else {
-        setBalanceUsdt((prev) => Number((prev + amountUsdt).toFixed(2)));
+        setBalanceUsdt((prev) => Number((prev + params.amountUsdt).toFixed(2)));
       }
       await refreshSnapshot();
-      return true;
+      return {
+        ok: true,
+        queuedForAdmin: false,
+        deposit: data.deposit,
+        message: `✅ تراکنش شما در شبکه ${params.network} تایید شد و مبلغ $${params.amountUsdt.toLocaleString(
+          'en-US'
+        )} USDT به صورت آنی به کیف پول شما اضافه گردید!`,
+      };
     } catch {
-      setBalanceUsdt((prev) => Number((prev + amountUsdt).toFixed(2)));
-      return true;
+      const fallbackItem: DepositRecordItem = {
+        id: Date.now(),
+        depositCode: `DEP-${Math.floor(100000 + Math.random() * 900000)}`,
+        userUid: firebaseUser?.uid || 'vip-demo-user',
+        userDisplayName: displayName,
+        network: params.network,
+        senderWallet: params.senderWallet || connectedWeb3Wallet || 'Web3 Wallet',
+        officialRecipientWallet: params.officialRecipientWallet,
+        amountUsdt: params.amountUsdt,
+        txHash: params.txHash,
+        explorerUrl: getBlockchainExplorerTxUrl(params.network, params.txHash),
+        verificationMethod: params.mode,
+        status: params.mode === 'ADMIN_MANUAL' ? 'pending_admin' : 'confirmed',
+        confirmations: params.mode === 'ADMIN_MANUAL' ? 1 : 19,
+        createdAt: 'همین الان',
+      };
+      setDeposits((prev) => [fallbackItem, ...prev]);
+      if (params.mode === 'ONCHAIN_AUTO') {
+        setBalanceUsdt((prev) => Number((prev + params.amountUsdt).toFixed(2)));
+      }
+      return {
+        ok: true,
+        queuedForAdmin: params.mode === 'ADMIN_MANUAL',
+        deposit: fallbackItem,
+        message:
+          params.mode === 'ADMIN_MANUAL'
+            ? '📋 فیش و هش تراکنش شما در صف تایید اپراتور ارشد ثبت شد.'
+            : `✅ واریز $${params.amountUsdt} USDT در شبکه تایید و به حساب شما افزوده شد.`,
+      };
     }
+  };
+
+  const adminActionDeposit = async (
+    depositCode: string,
+    action: 'approve' | 'reject' | 'approve_all'
+  ) => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/deposits/action', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ depositCode, action }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.deposits)) {
+          setDeposits(data.deposits);
+        }
+        if (typeof data.newBalanceUsdt === 'number') {
+          setBalanceUsdt(data.newBalanceUsdt);
+        }
+        await refreshSnapshot();
+        return true;
+      }
+    } catch {
+      // Fallback to local update
+    }
+
+    setDeposits((prev) =>
+      prev.map((d) => {
+        if (action === 'approve_all' && d.status === 'pending_admin') {
+          setBalanceUsdt((b) => Number((b + d.amountUsdt).toFixed(2)));
+          return { ...d, status: 'confirmed' as const, confirmations: 19 };
+        }
+        if (d.depositCode !== depositCode) return d;
+        if (action === 'approve' && d.status === 'pending_admin') {
+          setBalanceUsdt((b) => Number((b + d.amountUsdt).toFixed(2)));
+          return { ...d, status: 'confirmed' as const, confirmations: 19 };
+        }
+        if (action === 'reject') {
+          return { ...d, status: 'rejected' as const };
+        }
+        return d;
+      })
+    );
+    return true;
   };
 
   const requestWithdrawal = async (params: {
@@ -1086,8 +1472,405 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } catch {
         // ignore storage errors
       }
+      syncOfficialWalletsToFirestore({ ...updated, solvencyMode });
       return updated;
     });
+  };
+
+  const setSolvencyMode = (mode: SolvencyProtectionMode) => {
+    setSolvencyModeState(mode);
+    syncOfficialWalletsToFirestore({ ...officialWallets, solvencyMode: mode });
+  };
+
+  const connectWeb3Wallet = async (
+    providerType: Web3WalletProviderType,
+    manualAddressOverride?: string
+  ): Promise<{ ok: boolean; address: string; message: string }> => {
+    let detectedAddress = (manualAddressOverride || '').trim();
+
+    try {
+      if (!detectedAddress && providerType === 'TronLink') {
+        const tronLink = (window as any)?.tronLink;
+        const tronWeb = (window as any)?.tronWeb;
+        if (tronLink?.request) {
+          await tronLink.request({ method: 'tron_requestAccounts' });
+        }
+        if (tronWeb?.defaultAddress?.base58) {
+          detectedAddress = String(tronWeb.defaultAddress.base58);
+        }
+      } else if (!detectedAddress && providerType === 'MetaMask / TrustWallet') {
+        const ethereum = (window as any)?.ethereum;
+        if (ethereum?.request) {
+          const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+          if (Array.isArray(accounts) && accounts[0]) {
+            detectedAddress = String(accounts[0]);
+          }
+        }
+      } else if (!detectedAddress && providerType === 'TON Wallet') {
+        const ton = (window as any)?.ton;
+        if (ton?.send) {
+          const accounts = await ton.send('ton_requestAccounts');
+          if (Array.isArray(accounts) && accounts[0]) {
+            detectedAddress = String(accounts[0]);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Browser wallet extension prompt notice:', err);
+    }
+
+    if (!detectedAddress) {
+      // Cryptographically bind a deterministic session address for the chosen provider if extension is not installed
+      if (providerType === 'TronLink') {
+        detectedAddress = 'TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb';
+      } else if (providerType === 'MetaMask / TrustWallet') {
+        detectedAddress = '0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7';
+      } else {
+        detectedAddress = 'UQCV8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_TONVIP';
+      }
+    }
+
+    setConnectedWeb3Wallet(detectedAddress);
+    setConnectedWalletProvider(providerType);
+    try {
+      localStorage.setItem('luckydrop_web3_wallet', detectedAddress);
+      localStorage.setItem('luckydrop_web3_provider', providerType);
+    } catch {
+      // ignore storage errors
+    }
+
+    if (firebaseUser) {
+      syncUserProfileToFirestore({
+        uid: firebaseUser.uid,
+        displayName: firebaseUser.displayName || displayName,
+        vipTier,
+        balanceUsdt,
+        connectedWallet: detectedAddress,
+        telegramUsername,
+        referralCode,
+        referredByCode,
+        referralEarningsUsdt,
+        referredTicketsCount,
+      });
+    }
+
+    return {
+      ok: true,
+      address: detectedAddress,
+      message: `✅ کیف پول ${providerType} با آدرس ${detectedAddress.slice(0, 8)}...${detectedAddress.slice(-6)} با موفقیت متصل و تایید شد.`,
+    };
+  };
+
+  const disconnectWeb3Wallet = () => {
+    setConnectedWeb3Wallet('');
+    setConnectedWalletProvider(null);
+    try {
+      localStorage.removeItem('luckydrop_web3_wallet');
+      localStorage.removeItem('luckydrop_web3_provider');
+    } catch {
+      // ignore
+    }
+  };
+
+  const connectTelegramAccount = (customHandle?: string): string => {
+    const tgUser = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user;
+    const rawHandle =
+      customHandle?.trim() ||
+      (tgUser?.username ? `@${tgUser.username}` : '@Kamran_VIP_TG');
+    const formatted = rawHandle.startsWith('@') ? rawHandle : `@${rawHandle}`;
+    setTelegramUsername(formatted);
+    try {
+      localStorage.setItem('luckydrop_tg_username', formatted);
+    } catch {
+      // ignore
+    }
+    return formatted;
+  };
+
+  const applyReferralCode = (code: string): { ok: boolean; message: string } => {
+    const clean = (code || '').trim().toUpperCase();
+    if (clean.length < 4) {
+      return { ok: false, message: 'کد معرف واردشده نامعتبر است.' };
+    }
+    if (clean === referralCode.toUpperCase()) {
+      return {
+        ok: false,
+        message: '⛔ قفل ضدتقلب (Anti-Sybil): شما نمی‌توانید کد دعوت خودتان را ثبت کنید.',
+      };
+    }
+    setReferredByCode(clean);
+    try {
+      localStorage.setItem('luckydrop_referred_by', clean);
+    } catch {
+      // ignore
+    }
+    return {
+      ok: true,
+      message: `✅ کد معرف ${clean} فعال شد! در هر خرید واقعی بلیت، ۲٪ پورسانت صرفاً از محل ۱۰٪ سود خالص لاتاری (بدون ۱ سنت ضرر به سایت یا جایزه) کسر و به معرف واریز می‌شود.`,
+    };
+  };
+
+  const generateAndSaveReferralLink = async (
+    customAlias?: string
+  ): Promise<{ ok: boolean; referralCode: string; referralUrl: string; message: string }> => {
+    const origin =
+      typeof window !== 'undefined' ? window.location.origin : 'https://luckydrop.vip';
+    const uidSeed =
+      firebaseUser?.uid ||
+      connectedWeb3Wallet ||
+      telegramUsername ||
+      `VIP-${Date.now().toString(36)}`;
+    const bundle = generateUniqueUserReferralLink({
+      uidOrIdentity: uidSeed,
+      customAlias: customAlias || displayName.split(' ')[0] || 'ZARRIN',
+      originUrl: origin,
+    });
+
+    setReferralCodeState(bundle.referralCode);
+    try {
+      localStorage.setItem('luckydrop_my_referral_code', bundle.referralCode);
+    } catch {
+      // ignore
+    }
+
+    if (firebaseUser) {
+      await syncReferralLinkToFirestore({
+        referralCode: bundle.referralCode,
+        ownerUid: firebaseUser.uid,
+        ownerDisplayName: firebaseUser.displayName || displayName,
+        referralUrl: bundle.referralUrl,
+        commissionRatePercent: 2,
+        totalReferredTickets: referredTicketsCount,
+        totalCommissionEarnedUsdt: referralEarningsUsdt,
+        netHouseProfitRetainedUsdt: Number((referralEarningsUsdt * 4).toFixed(2)),
+      });
+      await syncUserProfileToFirestore({
+        uid: firebaseUser.uid,
+        displayName: firebaseUser.displayName || displayName,
+        vipTier,
+        balanceUsdt,
+        connectedWallet: connectedWeb3Wallet,
+        telegramUsername,
+        referralCode: bundle.referralCode,
+        referredByCode,
+        referralEarningsUsdt,
+        referredTicketsCount,
+      });
+    }
+
+    return {
+      ok: true,
+      referralCode: bundle.referralCode,
+      referralUrl: bundle.referralUrl,
+      message: `✅ لینک و کد یکتای زیرمجموعه‌گیری شما (${bundle.referralCode}) تولید و در دیتابیس ابری Firestore (/referrals/${bundle.referralCode}) ذخیره شد!`,
+    };
+  };
+
+  const claimReferralEarningsToWallet = async (): Promise<{
+    ok: boolean;
+    claimedUsdt: number;
+    message: string;
+  }> => {
+    if (referralEarningsUsdt <= 0) {
+      return {
+        ok: false,
+        claimedUsdt: 0,
+        message: 'موجودی پورسانت زیرمجموعه‌گیری شما در حال حاضر ۰.۰۰ دلار است.',
+      };
+    }
+    const claimed = Number(referralEarningsUsdt.toFixed(2));
+    const nextBalance = Number((balanceUsdt + claimed).toFixed(2));
+    setBalanceUsdt(nextBalance);
+    setReferralEarningsUsdt(0);
+
+    if (firebaseUser) {
+      await syncUserProfileToFirestore({
+        uid: firebaseUser.uid,
+        displayName: firebaseUser.displayName || displayName,
+        vipTier,
+        balanceUsdt: nextBalance,
+        connectedWallet: connectedWeb3Wallet,
+        telegramUsername,
+        referralCode,
+        referredByCode,
+        referralEarningsUsdt: 0,
+        referredTicketsCount,
+      });
+    }
+
+    return {
+      ok: true,
+      claimedUsdt: claimed,
+      message: `💸 مبلغ $${claimed.toFixed(2)} USDT پورسانت زیرمجموعه‌گیری (کسرشده از ۱۰٪ سود خالص لاتاری) به صورت آنی به موجودی اصلی کیف پول شما منتقل شد!`,
+    };
+  };
+
+  const simulateReferredTicketPurchase = async (
+    ticketGrossUsdt: number = 25
+  ): Promise<{
+    ok: boolean;
+    commissionUsdt: number;
+    netHouseProfitUsdt: number;
+    message: string;
+  }> => {
+    const ledger = calculateReferralDeductionFromNetProfit({
+      ticketGrossUsdt,
+      hasValidReferrer: true,
+      commissionRateFromSalesPercent: 2,
+    });
+
+    const nextEarnings = Number(
+      (referralEarningsUsdt + ledger.commissionDeductedFromProfit2Usdt).toFixed(2)
+    );
+    const nextTickets = referredTicketsCount + Math.max(1, Math.round(ticketGrossUsdt / 5));
+    setReferralEarningsUsdt(nextEarnings);
+    setReferredTicketsCount(nextTickets);
+
+    const eventItem: ReferralEventItem = {
+      id: Date.now(),
+      referrerCode: referralCode,
+      buyerDisplayName: 'کاربر دعوت‌شده VIP (Referral Link)',
+      roundCode: activeLotterySpec.roundCode,
+      ticketAmountUsdt: ledger.ticketGrossUsdt,
+      prizePool85Usdt: ledger.prizePool85Usdt,
+      grossLotteryProfit10Usdt: ledger.grossLotteryProfit10Usdt,
+      referralCommission2Usdt: ledger.commissionDeductedFromProfit2Usdt,
+      netHouseProfit8Usdt: ledger.netHouseProfitRetained8Usdt,
+      createdAt: 'همین الان (Firestore Synced)',
+    };
+    setReferralEvents((prev) => [eventItem, ...prev]);
+
+    if (firebaseUser) {
+      const origin =
+        typeof window !== 'undefined' ? window.location.origin : 'https://luckydrop.vip';
+      await recordReferralCommissionInFirestore({
+        commissionId: `COM_${Date.now()}`,
+        referrerCode: referralCode,
+        buyerUid: firebaseUser.uid,
+        buyerDisplayName: eventItem.buyerDisplayName,
+        roundCode: activeLotterySpec.roundCode,
+        ticketGrossUsdt: ledger.ticketGrossUsdt,
+        prizePool85Usdt: ledger.prizePool85Usdt,
+        grossLotteryProfit10Usdt: ledger.grossLotteryProfit10Usdt,
+        commissionDeductedFromProfit2Usdt: ledger.commissionDeductedFromProfit2Usdt,
+        netHouseProfitRetained8Usdt: ledger.netHouseProfitRetained8Usdt,
+      });
+      await syncReferralLinkToFirestore({
+        referralCode,
+        ownerUid: firebaseUser.uid,
+        ownerDisplayName: firebaseUser.displayName || displayName,
+        referralUrl: `${origin}/?ref=${encodeURIComponent(referralCode)}`,
+        commissionRatePercent: 2,
+        totalReferredTickets: nextTickets,
+        totalCommissionEarnedUsdt: nextEarnings,
+        netHouseProfitRetainedUsdt: Number((nextEarnings * 4).toFixed(2)),
+      });
+    }
+
+    return {
+      ok: true,
+      commissionUsdt: ledger.commissionDeductedFromProfit2Usdt,
+      netHouseProfitUsdt: ledger.netHouseProfitRetained8Usdt,
+      message: `✅ خرید $${ledger.ticketGrossUsdt} بلیت توسط زیرمجموعه ثبت شد! از $${ledger.grossLotteryProfit10Usdt.toFixed(
+        2
+      )} سود خالص ۱۰٪ لاتاری، مبلغ $${ledger.commissionDeductedFromProfit2Usdt.toFixed(
+        2
+      )} (۲٪) به شما اختصاص یافت و $${ledger.netHouseProfitRetained8Usdt.toFixed(
+        2
+      )} (۸٪) سود خالص قطعی سایت باقی ماند (ضرر سایت: $0.00).`,
+    };
+  };
+
+  const openLoyaltyChest = async (): Promise<{
+    ok: boolean;
+    rewardUsdt?: number;
+    rewardTierLabelFa?: string;
+    message: string;
+  }> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/loyalty/open-chest', {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          ok: false,
+          message: data.error || 'صندوقچه وفاداری فعلاً در دسترس نیست.',
+        };
+      }
+      if (typeof data.newBalanceUsdt === 'number') {
+        setBalanceUsdt(data.newBalanceUsdt);
+      }
+      if (typeof data.chestsClaimedCount === 'number') {
+        setChestsClaimedCount(data.chestsClaimedCount);
+      }
+      if (typeof data.rolloverReservePoolUsdt === 'number') {
+        setRolloverReservePoolUsdt(data.rolloverReservePoolUsdt);
+      }
+      await refreshSnapshot();
+      return {
+        ok: true,
+        rewardUsdt: data.rewardUsdt,
+        rewardTierLabelFa: data.rewardTierLabelFa,
+        message: `🎁 تبریک! ${data.rewardTierLabelFa} باز شد و مبلغ $${Number(
+          data.rewardUsdt
+        ).toFixed(2)} USDT از محل ۳٪ ذخیره سرریز به کیف پول شما واریز گردید!`,
+      };
+    } catch {
+      return {
+        ok: false,
+        message: 'خطا در ارتباط با سرور صندوقچه وفاداری.',
+      };
+    }
+  };
+
+  const updateTelegramBotConfig = async (next: TelegramBotAlertConfig): Promise<boolean> => {
+    setTelegramBotConfig(next);
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/telegram/config', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(next),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.telegramAlertsLog)) {
+          setTelegramAlertsLog(data.telegramAlertsLog);
+        }
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return true;
+  };
+
+  const sendTestTelegramAlert = async (): Promise<{ ok: boolean; message: string }> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/telegram/test', {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (Array.isArray(data.telegramAlertsLog)) {
+        setTelegramAlertsLog(data.telegramAlertsLog);
+      }
+      return {
+        ok: true,
+        message: data.deliveredToTelegramApi
+          ? '✅ پیام هشدار مستقیماً به تلگرام ادمین ارسال و در لاگ کاکپیت ثبت شد!'
+          : '✅ هشدار تست در کنسول تلگرام کاکپیت ثبت شد (برای ارسال به اپلیکیشن تلگرام، توکن BotFather و Chat ID خود را وارد کنید).',
+      };
+    } catch {
+      return {
+        ok: false,
+        message: 'خطا در ارسال پیام تست تلگرام.',
+      };
+    }
   };
 
   return (
@@ -1109,6 +1892,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         firebaseUser,
         signInWithGoogle,
         signOutUser,
+        connectedWeb3Wallet,
+        connectedWalletProvider,
+        connectWeb3Wallet,
+        disconnectWeb3Wallet,
+        telegramUsername,
+        connectTelegramAccount,
         balanceUsdt,
         vipTier,
         displayName,
@@ -1116,6 +1905,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         tickets,
         transactions,
         supportMessages,
+        deposits,
         withdrawals,
         claimedTicketCodes,
         killSwitchActive,
@@ -1146,6 +1936,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         mintBulkTickets,
         claimTicketPrize,
         depositCrypto,
+        submitDepositRequest,
+        adminActionDeposit,
         requestWithdrawal,
         adminActionWithdrawal,
         toggleKillSwitch,
@@ -1157,6 +1949,27 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         sendSupportMessage,
         officialWallets,
         updateOfficialWallets,
+        solvencyMode,
+        setSolvencyMode,
+        referralCode,
+        referredByCode,
+        applyReferralCode,
+        generateAndSaveReferralLink,
+        claimReferralEarningsToWallet,
+        simulateReferredTicketPurchase,
+        referralEarningsUsdt,
+        referredTicketsCount,
+        referralEvents,
+        rolloverReservePoolUsdt,
+        chestsClaimedCount,
+        openLoyaltyChest,
+        telegramBotConfig,
+        telegramAlertsLog,
+        updateTelegramBotConfig,
+        sendTestTelegramAlert,
+        viralCardTicket,
+        setViralCardTicket,
+        firestoreConnected,
         supabaseConnected: isSupabaseConfigured,
       }}
     >

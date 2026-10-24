@@ -20,6 +20,7 @@ import { LaunchOpsView } from './components/LaunchOpsView.tsx';
 import { TermsRulesView } from './components/TermsRulesView.tsx';
 import { Decoy404View } from './components/Decoy404View.tsx';
 import { DepositModal } from './components/DepositModal.tsx';
+import { ViralTicketCardModal } from './components/ViralTicketCardModal.tsx';
 import { FooterAndChat } from './components/FooterAndChat.tsx';
 
 const MainRouter: React.FC = () => {
@@ -44,6 +45,7 @@ const MainRouter: React.FC = () => {
         {activeRoute === '404' && <Decoy404View />}
       </main>
       <DepositModal />
+      <ViralTicketCardModal />
       <FooterAndChat />
     </div>
   );

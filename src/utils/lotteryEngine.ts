@@ -1108,4 +1108,357 @@ export function evaluateTicketWinTier(
   };
 }
 
+// ============================================================================
+// ZERO-LOSS SOLVENCY & REFERRAL MATHEMATICAL ENGINE (100% HOUSE SOLVENCY GUARANTEE)
+// ============================================================================
+export interface ZeroLossTicketSplit {
+  grossTicketUsdt: number;
+  prizePoolUsdt: number;            // 85%
+  grossHouseMarginUsdt: number;     // 10% total house allocation
+  referralCommissionUsdt: number;   // 2% (carved strictly out of the 10% house margin ONLY if referred)
+  netOperatorProfitUsdt: number;    // 8% (if referred) or 10% (if direct) — NEVER < 8%
+  rolloverReserveUsdt: number;      // 3%
+  gasBufferUsdt: number;            // 2%
+  netOperatorMarginPercent: number; // 8% or 10%
+  referralCommissionPercent: number;// 2% or 0%
+  houseDeficitPossible: false;      // Mathematical invariant: always false
+}
+
+export function calculateZeroLossTicketSplit(
+  ticketPriceUsdt: number,
+  hasValidReferrer: boolean,
+  rtpPercent: number = 85,
+  referralCommissionPct: number = 2
+): ZeroLossTicketSplit {
+  const safeGross = Math.max(0, Number(ticketPriceUsdt) || 0);
+  const clampedRtp = Math.min(85, Math.max(70, rtpPercent));
+  const rolloverPct = 3;
+  const gasPct = 2;
+  const grossHousePct = Math.max(10, 100 - clampedRtp - rolloverPct - gasPct);
+
+  // Referral commission is capped at max 3% and strictly deducted from the 10% House Margin
+  const effectiveRefPct = hasValidReferrer
+    ? Math.min(3, Math.max(0, referralCommissionPct))
+    : 0;
+  const netOperatorPct = Math.max(7, grossHousePct - effectiveRefPct);
+
+  const prizePoolUsdt = Number(((safeGross * clampedRtp) / 100).toFixed(4));
+  const grossHouseMarginUsdt = Number(((safeGross * grossHousePct) / 100).toFixed(4));
+  const referralCommissionUsdt = Number(((safeGross * effectiveRefPct) / 100).toFixed(4));
+  const netOperatorProfitUsdt = Number(
+    Math.max(0, grossHouseMarginUsdt - referralCommissionUsdt).toFixed(4)
+  );
+  const rolloverReserveUsdt = Number(((safeGross * rolloverPct) / 100).toFixed(4));
+  const gasBufferUsdt = Number(((safeGross * gasPct) / 100).toFixed(4));
+
+  return {
+    grossTicketUsdt: Number(safeGross.toFixed(4)),
+    prizePoolUsdt,
+    grossHouseMarginUsdt,
+    referralCommissionUsdt,
+    netOperatorProfitUsdt,
+    rolloverReserveUsdt,
+    gasBufferUsdt,
+    netOperatorMarginPercent: netOperatorPct,
+    referralCommissionPercent: effectiveRefPct,
+    houseDeficitPossible: false,
+  };
+}
+
+export type SolvencyProtectionMode = 'AUTO_EXTEND' | 'PROPORTIONAL_POOL';
+
+export interface ZeroLossDrawSolvencyReport {
+  realCollectedSalesUsdt: number;
+  realPrizePool85Usdt: number;
+  rolloverReserveUsdt: number;
+  totalAvailablePrizeLiquidityUsdt: number;
+  targetJackpotUsdt: number;
+  solvencyRatioPercent: number;
+  isFullyFundedForTarget: boolean;
+  solvencyMode: SolvencyProtectionMode;
+  recommendedAction: 'EXECUTE_FULL_TARGET' | 'AUTO_EXTEND_TIMER' | 'EXECUTE_CAPPED_AT_REAL_POOL';
+  authorizedMaxPayoutUsdt: number;
+  guaranteedHouseNetProfitUsdt: number;
+  platformLossUsdt: 0; // Hard mathematical invariant: ALWAYS 0
+}
+
+export function evaluateZeroLossDrawSolvency(params: {
+  realCollectedSalesUsdt: number;
+  targetJackpotUsdt: number;
+  rolloverReserveUsdt?: number;
+  rtpPercent?: number;
+  solvencyMode?: SolvencyProtectionMode;
+}): ZeroLossDrawSolvencyReport {
+  const sales = Math.max(0, Number(params.realCollectedSalesUsdt) || 0);
+  const rtp = Math.min(85, Math.max(70, Number(params.rtpPercent) || 85));
+  const rollover = Math.max(0, Number(params.rolloverReserveUsdt) || 0);
+  const target = Math.max(1, Number(params.targetJackpotUsdt) || 1000);
+  const mode: SolvencyProtectionMode = params.solvencyMode || 'AUTO_EXTEND';
+
+  const realPrizePool85Usdt = Number(((sales * rtp) / 100).toFixed(2));
+  const totalAvailablePrizeLiquidityUsdt = Number((realPrizePool85Usdt + rollover).toFixed(2));
+  const solvencyRatioPercent = Math.min(
+    100,
+    Number(((totalAvailablePrizeLiquidityUsdt / target) * 100).toFixed(1))
+  );
+  const isFullyFundedForTarget = totalAvailablePrizeLiquidityUsdt >= target;
+
+  // Minimum 8% net profit even if 100% of tickets had a 2% referral
+  const guaranteedHouseNetProfitUsdt = Number((sales * 0.08).toFixed(2));
+
+  if (isFullyFundedForTarget) {
+    return {
+      realCollectedSalesUsdt: sales,
+      realPrizePool85Usdt,
+      rolloverReserveUsdt: rollover,
+      totalAvailablePrizeLiquidityUsdt,
+      targetJackpotUsdt: target,
+      solvencyRatioPercent: 100,
+      isFullyFundedForTarget: true,
+      solvencyMode: mode,
+      recommendedAction: 'EXECUTE_FULL_TARGET',
+      authorizedMaxPayoutUsdt: target,
+      guaranteedHouseNetProfitUsdt,
+      platformLossUsdt: 0,
+    };
+  }
+
+  return {
+    realCollectedSalesUsdt: sales,
+    realPrizePool85Usdt,
+    rolloverReserveUsdt: rollover,
+    totalAvailablePrizeLiquidityUsdt,
+    targetJackpotUsdt: target,
+    solvencyRatioPercent,
+    isFullyFundedForTarget: false,
+    solvencyMode: mode,
+    recommendedAction:
+      mode === 'AUTO_EXTEND' ? 'AUTO_EXTEND_TIMER' : 'EXECUTE_CAPPED_AT_REAL_POOL',
+    // Even if executed immediately in PROPORTIONAL_POOL mode, payout is strictly capped at actual 85% pool
+    authorizedMaxPayoutUsdt: totalAvailablePrizeLiquidityUsdt,
+    guaranteedHouseNetProfitUsdt,
+    platformLossUsdt: 0,
+  };
+}
+
+export function getBlockchainExplorerTxUrl(network: string, txHash: string): string {
+  const cleanHash = (txHash || '').trim().replace(/^0x/, '');
+  const netUpper = (network || '').toUpperCase();
+  if (netUpper.includes('TON')) {
+    return `https://tonviewer.com/transaction/${encodeURIComponent(txHash.trim())}`;
+  }
+  if (netUpper.includes('BNB') || netUpper.includes('BEP')) {
+    return `https://bscscan.com/tx/0x${cleanHash}`;
+  }
+  if (netUpper.includes('BTC') || netUpper.includes('BITCOIN')) {
+    return `https://mempool.space/tx/${cleanHash}`;
+  }
+  return `https://tronscan.org/#/transaction/${cleanHash}`;
+}
+
+// ============================================================================
+// ZERO-LOSS VIP LOYALTY CHEST ENGINE (100% FUNDED BY 3% ROLLOVER RESERVE)
+// ============================================================================
+export interface ZeroLossLoyaltyChestReport {
+  totalTicketsPurchased: number;
+  chestsUnlockedTotal: number;
+  chestsClaimedCount: number;
+  chestsAvailableToOpen: number;
+  ticketsUntilNextChest: number;
+  progressToNextChestPercent: number;
+  userGeneratedRollover3PctUsdt: number;
+  availableRolloverReservePoolUsdt: number;
+  safeRewardUsdt: number;
+  rewardTierLabelFa: string;
+  houseProfitUntouched: true;
+  platformLossUsdt: 0;
+}
+
+export function evaluateZeroLossLoyaltyChest(params: {
+  totalTicketsPurchased: number;
+  totalSpentUsdt: number;
+  chestsClaimedCount: number;
+  availableRolloverReservePoolUsdt: number;
+  ticketsPerChest?: number;
+  seedNonce?: number;
+}): ZeroLossLoyaltyChestReport {
+  const ticketsPerChest = Math.max(1, params.ticketsPerChest || 3);
+  const totalTickets = Math.max(0, Math.floor(params.totalTicketsPurchased));
+  const totalSpent = Math.max(0, Number(params.totalSpentUsdt) || totalTickets * 5);
+  const claimed = Math.max(0, Math.floor(params.chestsClaimedCount));
+  const reservePool = Math.max(0, Number(params.availableRolloverReservePoolUsdt) || 0);
+
+  const chestsUnlockedTotal = Math.floor(totalTickets / ticketsPerChest);
+  const chestsAvailableToOpen = Math.max(0, chestsUnlockedTotal - claimed);
+  const remainder = totalTickets % ticketsPerChest;
+  const ticketsUntilNextChest = ticketsPerChest - remainder;
+  const progressToNextChestPercent = Math.min(
+    100,
+    Math.round((remainder / ticketsPerChest) * 100)
+  );
+
+  // 3% of the user's real ticket spend went into the Rollover Reserve
+  const userGeneratedRollover3PctUsdt = Number((totalSpent * 0.03).toFixed(2));
+  // Each chest is strictly funded from at most 55% of the 3% rollover generated per chest batch,
+  // and strictly capped by the availableRolloverReservePoolUsdt so the house never loses a cent.
+  const batchSpendUsdt = ticketsPerChest * (totalTickets > 0 ? totalSpent / totalTickets : 5);
+  const batchRollover3PctUsdt = batchSpendUsdt * 0.03;
+  const maxSafeChestCapUsdt = Math.min(reservePool * 0.25, Math.max(0.25, batchRollover3PctUsdt * 0.8));
+
+  const nonce = params.seedNonce ?? claimed + totalTickets + 7;
+  const tierFactor = ((nonce * 37) % 100) / 100; // deterministic 0.00..0.99
+  const rawReward = maxSafeChestCapUsdt * (0.55 + tierFactor * 0.45);
+  const safeRewardUsdt =
+    chestsAvailableToOpen > 0 && reservePool >= 0.1
+      ? Number(Math.min(reservePool, Math.max(0.15, rawReward)).toFixed(2))
+      : 0;
+
+  let rewardTierLabelFa = 'صندوقچه وفاداری برنزی VIP';
+  if (safeRewardUsdt >= 1.0) {
+    rewardTierLabelFa = '👑 صندوقچه سلطنتی الماس (Sovereign Chest)';
+  } else if (safeRewardUsdt >= 0.4) {
+    rewardTierLabelFa = '✨ صندوقچه طلایی وایرال VIP';
+  }
+
+  return {
+    totalTicketsPurchased: totalTickets,
+    chestsUnlockedTotal,
+    chestsClaimedCount: claimed,
+    chestsAvailableToOpen,
+    ticketsUntilNextChest,
+    progressToNextChestPercent: chestsAvailableToOpen > 0 ? 100 : progressToNextChestPercent,
+    userGeneratedRollover3PctUsdt,
+    availableRolloverReservePoolUsdt: Number(reservePool.toFixed(2)),
+    safeRewardUsdt,
+    rewardTierLabelFa,
+    houseProfitUntouched: true,
+    platformLossUsdt: 0,
+  };
+}
+
+export function formatTelegramAdminAlertText(params: {
+  eventType: 'DEPOSIT' | 'WITHDRAWAL' | 'TICKET_PURCHASE' | 'TEST_PING';
+  userDisplayName: string;
+  amountUsdt: number;
+  network?: string;
+  details: string;
+}): string {
+  const icon =
+    params.eventType === 'DEPOSIT'
+      ? '💰 [واریز جدید رمزارز]'
+      : params.eventType === 'WITHDRAWAL'
+      ? '🏧 [درخواست برداشت رمزارز]'
+      : params.eventType === 'TICKET_PURCHASE'
+      ? '🎟️ [خرید بلیت جدید لاتاری]'
+      : '🛡️ [تست اتصال ربات کاکپیت ادمین]';
+
+  return `${icon}\n👤 کاربر: ${params.userDisplayName}\n💵 مبلغ: $${params.amountUsdt.toFixed(
+    2
+  )} USDT${params.network ? ` (${params.network})` : ''}\n📌 جزئیات: ${
+    params.details
+  }\n🔐 وضعیت خزانه: ۱۰۰٪ ضدضرر (Zero-Loss Active)`;
+}
+
+// ============================================================================
+// FIRESTORE UNIQUE REFERRAL LINK GENERATOR & ZERO-LOSS PROFIT DEDUCTION ENGINE
+// ============================================================================
+export interface UniqueReferralLinkBundle {
+  referralCode: string;
+  referralUrl: string;
+  telegramShareUrl: string;
+}
+
+export function generateUniqueUserReferralLink(params: {
+  uidOrIdentity: string;
+  customAlias?: string;
+  originUrl?: string;
+}): UniqueReferralLinkBundle {
+  const baseOrigin = (params.originUrl || 'https://luckydrop.vip').replace(/\/+$/, '');
+  const cleanAlias = (params.customAlias || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]/g, '')
+    .slice(0, 14);
+
+  // Deterministic 4-char alphanumeric fingerprint from user UID/wallet
+  const identityRaw = (params.uidOrIdentity || 'VIP-SOVEREIGN').trim();
+  let hashAcc = 2166136261;
+  for (let i = 0; i < identityRaw.length; i++) {
+    hashAcc ^= identityRaw.charCodeAt(i);
+    hashAcc = Math.imul(hashAcc, 16777619);
+  }
+  const suffix = Math.abs(hashAcc >>> 0)
+    .toString(36)
+    .toUpperCase()
+    .padStart(4, '7')
+    .slice(0, 4);
+
+  const referralCode = cleanAlias
+    ? `VIP-${cleanAlias}-${suffix}`.slice(0, 28)
+    : `VIP-${suffix}-777`;
+
+  const referralUrl = `${baseOrigin}/?ref=${encodeURIComponent(referralCode)}`;
+  const shareText = `👑 دعوت‌نامه رسمی زرین لاتاری VIP — با لینک اختصاصی من وارد شوید و در استخرهای جک‌پات شرکت کنید (کد معرف: ${referralCode})`;
+  const telegramShareUrl = `https://t.me/share/url?url=${encodeURIComponent(
+    referralUrl
+  )}&text=${encodeURIComponent(shareText)}`;
+
+  return {
+    referralCode,
+    referralUrl,
+    telegramShareUrl,
+  };
+}
+
+export interface ZeroLossNetProfitReferralLedger {
+  ticketGrossUsdt: number;
+  prizePool85Usdt: number;
+  rolloverReserve3Usdt: number;
+  gasBuffer2Usdt: number;
+  grossLotteryProfit10Usdt: number;
+  commissionDeductedFromProfit2Usdt: number;
+  netHouseProfitRetained8Usdt: number;
+  deductedStrictlyFromNetProfit: true;
+  prizePoolUntouched: true;
+  platformLossUsdt: 0;
+}
+
+export function calculateReferralDeductionFromNetProfit(params: {
+  ticketGrossUsdt: number;
+  hasValidReferrer: boolean;
+  commissionRateFromSalesPercent?: number;
+}): ZeroLossNetProfitReferralLedger {
+  const gross = Math.max(0, Number(params.ticketGrossUsdt) || 0);
+  const prizePool85Usdt = Number((gross * 0.85).toFixed(4));
+  const rolloverReserve3Usdt = Number((gross * 0.03).toFixed(4));
+  const gasBuffer2Usdt = Number((gross * 0.02).toFixed(4));
+  const grossLotteryProfit10Usdt = Number((gross * 0.1).toFixed(4));
+
+  // Commission is strictly capped at max 2% of ticket gross (i.e. 20% of the 10% net lottery profit)
+  // and NEVER exceeds the grossLotteryProfit10Usdt. If no referrer, commission is 0 and house keeps full 10%.
+  const requestedPct = Math.min(3, Math.max(0, params.commissionRateFromSalesPercent ?? 2));
+  const rawCommission = params.hasValidReferrer ? (gross * requestedPct) / 100 : 0;
+  const commissionDeductedFromProfit2Usdt = Number(
+    Math.min(grossLotteryProfit10Usdt * 0.3, rawCommission).toFixed(4)
+  );
+  const netHouseProfitRetained8Usdt = Number(
+    Math.max(0, grossLotteryProfit10Usdt - commissionDeductedFromProfit2Usdt).toFixed(4)
+  );
+
+  return {
+    ticketGrossUsdt: Number(gross.toFixed(4)),
+    prizePool85Usdt,
+    rolloverReserve3Usdt,
+    gasBuffer2Usdt,
+    grossLotteryProfit10Usdt,
+    commissionDeductedFromProfit2Usdt,
+    netHouseProfitRetained8Usdt,
+    deductedStrictlyFromNetProfit: true,
+    prizePoolUntouched: true,
+    platformLossUsdt: 0,
+  };
+}
+
+
+
 

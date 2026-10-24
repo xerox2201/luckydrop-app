@@ -1,0 +1,281 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isVerifiedAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == 'alierfani2200@gmail.com' && request.auth.token.email_verified == true)
+      );
+    }
+
+    // 3. Entity Validation Helpers
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'balanceUsdt', 'referralCode']) &&
+             data.keys().hasOnly([
+               'uid',
+               'displayName',
+               'vipTier',
+               'balanceUsdt',
+               'connectedWallet',
+               'telegramUsername',
+               'referralCode',
+               'referredByCode',
+               'referralEarningsUsdt',
+               'referredTicketsCount',
+               'updatedAt'
+             ]) &&
+             data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.balanceUsdt is number && data.balanceUsdt >= 0 &&
+             data.referralCode is string && data.referralCode.size() >= 3 && data.referralCode.size() <= 32 &&
+             (!('vipTier' in data) || (data.vipTier is string && data.vipTier.size() <= 40)) &&
+             (!('connectedWallet' in data) || (data.connectedWallet is string && data.connectedWallet.size() <= 128)) &&
+             (!('telegramUsername' in data) || (data.telegramUsername is string && data.telegramUsername.size() <= 64)) &&
+             (!('referredByCode' in data) || (data.referredByCode is string && data.referredByCode.size() <= 32)) &&
+             (!('referralEarningsUsdt' in data) || (data.referralEarningsUsdt is number && data.referralEarningsUsdt >= 0)) &&
+             (!('referredTicketsCount' in data) || (data.referredTicketsCount is number && data.referredTicketsCount >= 0)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidPlatformSettings(data) {
+      return data.keys().hasAll(['USDT_TRC20', 'TON', 'TRX', 'BNB', 'BTC', 'COLD_TREASURY']) &&
+             data.keys().hasOnly([
+               'USDT_TRC20',
+               'TON',
+               'TRX',
+               'BNB',
+               'BTC',
+               'COLD_TREASURY',
+               'solvencyMode',
+               'updatedAt'
+             ]) &&
+             data.USDT_TRC20 is string && data.USDT_TRC20.size() >= 10 && data.USDT_TRC20.size() <= 128 &&
+             data.TON is string && data.TON.size() >= 10 && data.TON.size() <= 128 &&
+             data.TRX is string && data.TRX.size() >= 10 && data.TRX.size() <= 128 &&
+             data.BNB is string && data.BNB.size() >= 10 && data.BNB.size() <= 128 &&
+             data.BTC is string && data.BTC.size() >= 10 && data.BTC.size() <= 128 &&
+             data.COLD_TREASURY is string && data.COLD_TREASURY.size() >= 10 && data.COLD_TREASURY.size() <= 128 &&
+             (!('solvencyMode' in data) || (data.solvencyMode is string && data.solvencyMode.size() <= 32)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidDepositRecord(data) {
+      return data.keys().hasAll([
+               'depositCode',
+               'userUid',
+               'network',
+               'amountUsdt',
+               'txHash',
+               'verificationMethod',
+               'status'
+             ]) &&
+             data.keys().hasOnly([
+               'depositCode',
+               'userUid',
+               'userDisplayName',
+               'network',
+               'amountUsdt',
+               'txHash',
+               'verificationMethod',
+               'status',
+               'createdAt'
+             ]) &&
+             data.depositCode is string && data.depositCode.size() >= 3 && data.depositCode.size() <= 64 &&
+             data.userUid is string && data.userUid.size() >= 1 && data.userUid.size() <= 128 &&
+             data.network is string && data.network.size() >= 2 && data.network.size() <= 64 &&
+             data.amountUsdt is number && data.amountUsdt > 0 && data.amountUsdt <= 10000000 &&
+             data.txHash is string && data.txHash.size() >= 8 && data.txHash.size() <= 160 &&
+             data.verificationMethod in ['ONCHAIN_AUTO', 'ADMIN_MANUAL'] &&
+             data.status in ['confirmed', 'pending_admin', 'rejected'] &&
+             (!('userDisplayName' in data) || (data.userDisplayName is string && data.userDisplayName.size() <= 100)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    function isValidReferralLink(data) {
+      return data.keys().hasAll([
+               'referralCode',
+               'ownerUid',
+               'ownerDisplayName',
+               'referralUrl',
+               'commissionRatePercent',
+               'totalReferredTickets',
+               'totalCommissionEarnedUsdt',
+               'netHouseProfitRetainedUsdt'
+             ]) &&
+             data.keys().hasOnly([
+               'referralCode',
+               'ownerUid',
+               'ownerDisplayName',
+               'referralUrl',
+               'commissionRatePercent',
+               'totalReferredTickets',
+               'totalCommissionEarnedUsdt',
+               'netHouseProfitRetainedUsdt',
+               'updatedAt'
+             ]) &&
+             data.referralCode is string && data.referralCode.size() >= 4 && data.referralCode.size() <= 32 &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.ownerDisplayName is string && data.ownerDisplayName.size() >= 1 && data.ownerDisplayName.size() <= 100 &&
+             data.referralUrl is string && data.referralUrl.size() >= 8 && data.referralUrl.size() <= 256 &&
+             data.commissionRatePercent is number && data.commissionRatePercent >= 0 && data.commissionRatePercent <= 3 &&
+             data.totalReferredTickets is number && data.totalReferredTickets >= 0 &&
+             data.totalCommissionEarnedUsdt is number && data.totalCommissionEarnedUsdt >= 0 &&
+             data.netHouseProfitRetainedUsdt is number && data.netHouseProfitRetainedUsdt >= 0 &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    function isValidReferralCommissionLedger(data) {
+      return data.keys().hasAll([
+               'commissionId',
+               'referrerCode',
+               'buyerUid',
+               'roundCode',
+               'ticketGrossUsdt',
+               'prizePool85Usdt',
+               'grossLotteryProfit10Usdt',
+               'commissionDeductedFromProfit2Usdt',
+               'netHouseProfitRetained8Usdt',
+               'platformLossUsdt'
+             ]) &&
+             data.keys().hasOnly([
+               'commissionId',
+               'referrerCode',
+               'buyerUid',
+               'buyerDisplayName',
+               'roundCode',
+               'ticketGrossUsdt',
+               'prizePool85Usdt',
+               'grossLotteryProfit10Usdt',
+               'commissionDeductedFromProfit2Usdt',
+               'netHouseProfitRetained8Usdt',
+               'platformLossUsdt',
+               'createdAt'
+             ]) &&
+             data.commissionId is string && data.commissionId.size() >= 3 && data.commissionId.size() <= 64 &&
+             data.referrerCode is string && data.referrerCode.size() >= 4 && data.referrerCode.size() <= 32 &&
+             data.buyerUid is string && data.buyerUid.size() >= 1 && data.buyerUid.size() <= 128 &&
+             data.roundCode is string && data.roundCode.size() >= 2 && data.roundCode.size() <= 32 &&
+             data.ticketGrossUsdt is number && data.ticketGrossUsdt > 0 &&
+             data.prizePool85Usdt is number && data.prizePool85Usdt >= 0 &&
+             data.grossLotteryProfit10Usdt is number && data.grossLotteryProfit10Usdt >= 0 &&
+             data.commissionDeductedFromProfit2Usdt is number &&
+             data.commissionDeductedFromProfit2Usdt >= 0 &&
+             data.commissionDeductedFromProfit2Usdt <= data.grossLotteryProfit10Usdt &&
+             data.netHouseProfitRetained8Usdt is number && data.netHouseProfitRetained8Usdt >= 0 &&
+             data.platformLossUsdt == 0 &&
+             (!('buyerDisplayName' in data) || (data.buyerDisplayName is string && data.buyerDisplayName.size() <= 100)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+    }
+
+    // 4. Collection Rules
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && request.auth.uid == adminUid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isVerifiedAdmin());
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isVerifiedAdmin());
+      allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId &&
+                    isValidUserProfile(incoming()) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(userId) && isValidUserProfile(incoming()) &&
+                    incoming().uid == existing().uid && (
+                      isVerifiedAdmin() ||
+                      (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly([
+                        'displayName',
+                        'vipTier',
+                        'balanceUsdt',
+                        'connectedWallet',
+                        'telegramUsername',
+                        'referralCode',
+                        'referredByCode',
+                        'referralEarningsUsdt',
+                        'referredTicketsCount',
+                        'updatedAt'
+                      ]))
+                    );
+      allow delete: if false;
+    }
+
+    match /settings/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if false;
+      allow create: if isVerifiedAdmin() && isValidId(docId) && isValidPlatformSettings(incoming());
+      allow update: if isVerifiedAdmin() && isValidId(docId) && isValidPlatformSettings(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly([
+                      'USDT_TRC20',
+                      'TON',
+                      'TRX',
+                      'BNB',
+                      'BTC',
+                      'COLD_TREASURY',
+                      'solvencyMode',
+                      'updatedAt'
+                    ]);
+      allow delete: if false;
+    }
+
+    match /deposits/{depositId} {
+      allow get: if isSignedIn() && isValidId(depositId) && (resource.data.userUid == request.auth.uid || isVerifiedAdmin());
+      allow list: if isSignedIn() && (resource.data.userUid == request.auth.uid || isVerifiedAdmin());
+      allow create: if isSignedIn() && isValidId(depositId) && isValidDepositRecord(incoming()) &&
+                    incoming().userUid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(depositId) && isValidDepositRecord(incoming()) &&
+                    incoming().userUid == existing().userUid &&
+                    existing().status == 'pending_admin' &&
+                    isVerifiedAdmin() &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if false;
+    }
+
+    match /referrals/{referralCode} {
+      allow get: if isValidId(referralCode);
+      allow list: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isVerifiedAdmin());
+      allow create: if isSignedIn() && isValidId(referralCode) && isValidReferralLink(incoming()) &&
+                    incoming().referralCode == referralCode &&
+                    incoming().ownerUid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(referralCode) && isValidReferralLink(incoming()) &&
+                    incoming().referralCode == existing().referralCode &&
+                    incoming().ownerUid == existing().ownerUid && (
+                      isVerifiedAdmin() ||
+                      (request.auth.uid == existing().ownerUid && incoming().diff(existing()).affectedKeys().hasOnly([
+                        'ownerDisplayName',
+                        'referralUrl',
+                        'totalReferredTickets',
+                        'totalCommissionEarnedUsdt',
+                        'netHouseProfitRetainedUsdt',
+                        'updatedAt'
+                      ]))
+                    );
+      allow delete: if false;
+    }
+
+    match /referralCommissions/{commissionId} {
+      allow get: if isSignedIn() && isValidId(commissionId) && (resource.data.buyerUid == request.auth.uid || isVerifiedAdmin());
+      allow list: if isSignedIn() && (resource.data.buyerUid == request.auth.uid || isVerifiedAdmin());
+      allow create: if isSignedIn() && isValidId(commissionId) && isValidReferralCommissionLedger(incoming()) &&
+                    incoming().commissionId == commissionId &&
+                    incoming().buyerUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}
+
