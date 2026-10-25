@@ -723,6 +723,107 @@ export function deriveProvablyFairCrashPoint(params: {
   };
 }
 
+export type DiceRollMode = 'OVER' | 'UNDER';
+
+export const DICE_RTP_PERCENT = 99; // 99% RTP (1% House Edge)
+export const DICE_MIN_WIN_CHANCE = 0.01;
+export const DICE_MAX_WIN_CHANCE = 98.0;
+export const DICE_TREASURY_MAX_PAYOUT_USDT = 25000;
+
+export interface DiceSyncedParameters {
+  mode: DiceRollMode;
+  target: number; // 0.01 to 99.99
+  winChance: number; // 0.01% to 98.00%
+  multiplier: number; // Number((99 / winChance).toFixed(4))
+}
+
+/**
+ * Exact 10,001-outcome 52-bit roll formula (0.00 to 100.00 inclusive):
+ * rollResult = Math.floor(X * 10001) / 100
+ */
+export function calculate52BitDiceRollResult(uniformFloatX: number): number {
+  const clampedX = Math.max(0, Math.min(0.9999999999999999, uniformFloatX));
+  return Math.floor(clampedX * 10001) / 100;
+}
+
+/**
+ * Lottery Jackpot Synergy ("LUCKY 77.77"):
+ * Returns true if the 52-bit roll lands on 77.77, 0.00, or 100.00.
+ */
+export function isDiceLucky7777Roll(rollResult: number): boolean {
+  const rounded = Number(rollResult.toFixed(2));
+  return rounded === 77.77 || rounded === 0.0 || rounded === 100.0;
+}
+
+/**
+ * Bidirectional sync from Win Chance % (clamped to [0.01, 98.00]).
+ */
+export function syncDiceFromWinChance(
+  rawWinChance: number,
+  mode: DiceRollMode
+): DiceSyncedParameters {
+  const safeChance = Math.min(
+    DICE_MAX_WIN_CHANCE,
+    Math.max(DICE_MIN_WIN_CHANCE, Number((Number(rawWinChance) || 50).toFixed(2)))
+  );
+  const multiplier = Number((DICE_RTP_PERCENT / safeChance).toFixed(4));
+  const target =
+    mode === 'UNDER'
+      ? Number(safeChance.toFixed(2))
+      : Number((100 - safeChance).toFixed(2));
+  return {
+    mode,
+    target,
+    winChance: safeChance,
+    multiplier,
+  };
+}
+
+/**
+ * Bidirectional sync from Roll Over / Roll Under Target.
+ */
+export function syncDiceFromTarget(
+  rawTarget: number,
+  mode: DiceRollMode
+): DiceSyncedParameters {
+  const rawNum = Number(rawTarget);
+  const fallbackTarget = 50;
+  const cleanTarget = Number.isFinite(rawNum) ? rawNum : fallbackTarget;
+  const winChance =
+    mode === 'UNDER' ? cleanTarget : Number((100 - cleanTarget).toFixed(2));
+  return syncDiceFromWinChance(winChance, mode);
+}
+
+/**
+ * Bidirectional sync from Multiplier (99% RTP: Multiplier = 99 / winChance).
+ */
+export function syncDiceFromMultiplier(
+  rawMultiplier: number,
+  mode: DiceRollMode
+): DiceSyncedParameters {
+  const minMult = Number((DICE_RTP_PERCENT / DICE_MAX_WIN_CHANCE).toFixed(4)); // 1.0102
+  const maxMult = Number((DICE_RTP_PERCENT / DICE_MIN_WIN_CHANCE).toFixed(4)); // 9900.0000
+  const safeMult = Math.min(
+    maxMult,
+    Math.max(minMult, Number(rawMultiplier) || 1.98)
+  );
+  const derivedWinChance = Number((DICE_RTP_PERCENT / safeMult).toFixed(2));
+  return syncDiceFromWinChance(derivedWinChance, mode);
+}
+
+/**
+ * Flips between Roll Over and Roll Under, inverting the target around 100
+ * while keeping Win Chance % and Multiplier synchronized.
+ */
+export function flipDiceRollMode(
+  currentTarget: number,
+  currentMode: DiceRollMode
+): DiceSyncedParameters {
+  const nextMode: DiceRollMode = currentMode === 'OVER' ? 'UNDER' : 'OVER';
+  const invertedTarget = Number((100 - currentTarget).toFixed(2));
+  return syncDiceFromTarget(invertedTarget, nextMode);
+}
+
 export interface MiniGameEvaluationResult {
   gameId: InstantMiniGameId;
   roundId: string;
@@ -748,12 +849,17 @@ export interface MiniGameEvaluationResult {
   crashPoint?: number;
   crashCashedOutAt?: number;
   crashLuckyAirdropTicket?: boolean;
+  // 52-Bit Dice specific metadata
+  diceMode?: DiceRollMode;
+  diceTarget?: number;
+  diceWinChance?: number;
+  diceLucky7777Ticket?: boolean;
 }
 
 /**
  * Evaluates a real-money Instant Mini-Game round using the exact 52-bit float X in [0, 1)
- * derived from HMAC-SHA256(serverSeed, `${clientSeed}:${nonce}:${gameId}`).
- * House edge is fixed at 1-3% (97-99% RTP) so the platform remains mathematically solvent.
+ * derived from HMAC-SHA256(serverSeed, `${clientSeed}:${nonce}`).
+ * House edge is fixed at 1-2% (98-99% RTP) so the platform remains mathematically solvent.
  */
 export function evaluateProvablyFairMiniGame(params: {
   gameId: InstantMiniGameId;
@@ -761,7 +867,9 @@ export function evaluateProvablyFairMiniGame(params: {
   clientSeed: string;
   nonce: number;
   betAmountUsdt: number;
-  diceRollUnder?: number; // e.g., 50.00 (2..95)
+  diceRollUnder?: number; // legacy or target (0.01..99.99)
+  diceTarget?: number; // 0.01..99.99
+  diceMode?: DiceRollMode; // 'OVER' | 'UNDER'
   coinSide?: 'HEADS' | 'TAILS';
   crashAutoCashoutX?: number; // e.g., 2.00
   plinkoRows?: PlinkoRowCount;
@@ -791,7 +899,10 @@ export function evaluateProvablyFairMiniGame(params: {
     });
 
     const roundId = `MG-PLINKO-${safeNonce}-${plinkoResult.first52BitHex.slice(0, 6).toUpperCase()}`;
-    const payoutUsdt = Number((params.betAmountUsdt * plinkoResult.multiplier).toFixed(2));
+    const payoutUsdt = Math.min(
+      DICE_TREASURY_MAX_PAYOUT_USDT,
+      Number((params.betAmountUsdt * plinkoResult.multiplier).toFixed(2))
+    );
     const won = plinkoResult.multiplier >= 1.0 || plinkoResult.bonusLotteryTicket;
     const pathStr = plinkoResult.directions.map((d) => (d === 1 ? 'R' : 'L')).join('');
 
@@ -820,18 +931,34 @@ export function evaluateProvablyFairMiniGame(params: {
     };
   }
 
-  const message = `${cleanClientSeed}:${safeNonce}:${params.gameId}`;
+  // Exact HMAC_SHA256(serverSeed, `${clientSeed}:${nonce}`) for 52-Bit Dice
+  const message =
+    params.gameId === 'DICE_52'
+      ? `${cleanClientSeed}:${safeNonce}`
+      : `${cleanClientSeed}:${safeNonce}:${params.gameId}`;
   const hmacHex = hmacSha256Hex(cleanServerSeed, message);
   const { first52BitHex, uniformFloatX } = hmacTo52BitUniformFloat(hmacHex);
   const roundId = `MG-${params.gameId}-${safeNonce}-${first52BitHex.slice(0, 6).toUpperCase()}`;
 
   if (params.gameId === 'DICE_52') {
-    const targetUnder = Math.min(95, Math.max(5, Number(params.diceRollUnder) || 50));
-    // Map X in [0, 1) to [0.00, 99.99]
-    const rollValue = Math.floor(uniformFloatX * 10000) / 100;
-    const won = rollValue < targetUnder;
-    const multiplier = Number((97 / targetUnder).toFixed(4));
-    const payoutUsdt = won ? Number((params.betAmountUsdt * multiplier).toFixed(2)) : 0;
+    const mode: DiceRollMode = params.diceMode === 'OVER' ? 'OVER' : 'UNDER';
+    const rawTarget =
+      typeof params.diceTarget === 'number'
+        ? params.diceTarget
+        : typeof params.diceRollUnder === 'number'
+        ? params.diceRollUnder
+        : 50.0;
+    const synced = syncDiceFromTarget(rawTarget, mode);
+
+    // Exact 10,001-outcome roll result (0.00 to 100.00):
+    // rollResult = Math.floor(X * 10001) / 100
+    const rollResult = calculate52BitDiceRollResult(uniformFloatX);
+    const won =
+      synced.mode === 'UNDER' ? rollResult < synced.target : rollResult > synced.target;
+    const rawPayout = won ? Number((params.betAmountUsdt * synced.multiplier).toFixed(2)) : 0;
+    const payoutUsdt = Math.min(DICE_TREASURY_MAX_PAYOUT_USDT, rawPayout);
+    const lucky7777Ticket = isDiceLucky7777Roll(rollResult);
+    const opSymbol = synced.mode === 'UNDER' ? '<' : '>';
 
     return {
       gameId: 'DICE_52',
@@ -843,11 +970,20 @@ export function evaluateProvablyFairMiniGame(params: {
       hmacHex,
       first52BitHex,
       uniformFloatX,
-      outcomeNumeric: rollValue,
-      outcomeLabel: `Roll ${rollValue.toFixed(2)} (Target < ${targetUnder.toFixed(2)})`,
+      outcomeNumeric: rollResult,
+      outcomeLabel: `Dice ${rollResult.toFixed(2)} (Roll ${
+        synced.mode === 'UNDER' ? 'Under' : 'Over'
+      } ${opSymbol} ${synced.target.toFixed(2)} • ${synced.multiplier.toFixed(4)}x)${
+        lucky7777Ticket ? ' + 🎰 LUCKY 77.77 FREE TICKET' : ''
+      }`,
       won,
-      multiplier: won ? multiplier : 0,
+      multiplier: won ? synced.multiplier : 0,
       payoutUsdt,
+      plinkoBonusTicket: lucky7777Ticket,
+      diceMode: synced.mode,
+      diceTarget: synced.target,
+      diceWinChance: synced.winChance,
+      diceLucky7777Ticket: lucky7777Ticket,
     };
   }
 

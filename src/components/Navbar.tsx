@@ -1,35 +1,39 @@
 import React from 'react';
 import { useLottery, AppRoute } from '../context/LotteryContext.tsx';
 import { CurrencyLang } from '../utils/lotteryEngine.ts';
-import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 const PRIMARY_VERTICAL_TABS: {
   id: AppRoute;
+  badgeIcon: string;
   labelFa: string;
   labelEn: string;
   icon: string;
 }[] = [
   {
     id: 'lobby',
-    labelFa: 'لاتاری اصلی (Main Lottery • LuckyDrop)',
-    labelEn: 'Main Lottery (LuckyDrop)',
+    badgeIcon: '🎰',
+    labelFa: 'لاتاری اصلی (LuckyDrop)',
+    labelEn: 'Main Lottery',
     icon: 'confirmation_number',
   },
   {
     id: 'mini-games',
-    labelFa: 'مینی‌گیم‌های آنی (Instant Mini-Games)',
-    labelEn: 'Instant Mini-Games',
+    badgeIcon: '⚡',
+    labelFa: 'بازی‌های آنی (Instant)',
+    labelEn: 'Instant Games',
     icon: 'bolt',
   },
   {
     id: 'transparency',
-    labelFa: 'راستی‌آزمای Provably Fair',
-    labelEn: 'Provably Fair Verifier',
+    badgeIcon: '🛡️',
+    labelFa: 'راستی‌آزما (Fairness)',
+    labelEn: 'Fairness & Verifier',
     icon: 'verified',
   },
   {
     id: 'cockpit',
-    labelFa: 'مدیریت و خزانه (Admin & Treasury)',
+    badgeIcon: '⚙️',
+    labelFa: 'مدیریت و خزانه',
     labelEn: 'Admin & Treasury',
     icon: 'account_balance',
   },
@@ -54,6 +58,7 @@ export const Navbar: React.FC = () => {
     oracleCountdownSec,
     refreshPriceOracleNow,
     balanceUsdt,
+    bonusTokensUsdt,
     formatAmount,
     setDepositModalOpen,
     setWalletDrawerOpen,
@@ -62,257 +67,391 @@ export const Navbar: React.FC = () => {
     signInWithGoogle,
     signOutUser,
     pamLedger,
+    pamReconciliation,
   } = useLottery();
 
   const cnyToToman = Math.round(fxRates.TOMAN / (fxRates.CNY || 6.68));
 
+  // Cross-Sell XP Progress toward next Free Lottery Ticket ($100 Wager Turnover cycle)
+  const totalWageredUsdt = pamReconciliation?.totalDebitsUsdt || 65;
+  const xpProgressPct = Math.min(100, Math.max(8, Math.round((totalWageredUsdt % 100))));
+  const ringRadius = 15;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringStrokeDashoffset = ringCircumference - (xpProgressPct / 100) * ringCircumference;
+
   return (
-    <header className="sticky top-0 z-40 border-b border-amber-500/30 bg-[#070a12]/95 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.85)]">
-      {killSwitchActive && (
-        <div
-          data-testid="killswitch-banner"
-          className="bg-red-600/95 text-white text-center py-2 px-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b border-red-400"
-        >
-          <span className="material-symbols-outlined text-base">warning</span>
-          <span>
-            503 Service Unavailable — سیستم اضطراری توقف (Emergency Kill-Switch) فعال است؛ فروش بلیط و برداشت موقتاً متوقف شده است.
-          </span>
-        </div>
-      )}
-
-      {/* Top Live Price Oracle Ticker Bar */}
-      <div className="border-b border-amber-500/20 bg-gradient-to-r from-[#05080f] via-[#0c1220] to-[#05080f] px-3 lg:px-8 py-2">
-        <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-mono font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>LIVE ORACLE</span>
-            </span>
-            <span className="text-slate-300 hidden md:inline font-medium">
-              {oracleSnapshot?.source || 'TetherLand • Wallex • Binance Spot'}
-            </span>
-            <button
-              type="button"
-              onClick={() => refreshPriceOracleNow()}
-              className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-slate-200 font-mono transition-colors cursor-pointer"
-            >
-              ↻ {oracleCountdownSec}s
-            </button>
-          </div>
-
+    <>
+      <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#0b1620]/90 backdrop-blur-xl shadow-[0_12px_36px_rgba(0,0,0,0.65)]">
+        {killSwitchActive && (
           <div
-            data-testid="live-oracle-rates-strip"
-            className="flex items-center gap-3 sm:gap-5 overflow-x-auto no-scrollbar font-mono text-xs"
-            dir="ltr"
+            data-testid="killswitch-banner"
+            className="bg-[#e9113c] text-white text-center py-2 px-4 text-xs sm:text-sm font-black flex items-center justify-center gap-2 border-b border-rose-300/30"
           >
-            <div className="flex items-center gap-1 whitespace-nowrap">
-              <span className="text-slate-400">1 USDT =</span>
-              <strong className="text-amber-300 font-black">
-                {fxRates.TOMAN.toLocaleString('en-US')} Toman
-              </strong>
-            </div>
-            <span className="text-white/20">|</span>
-            <div className="flex items-center gap-1 whitespace-nowrap">
-              <span className="text-slate-400">1 CNY (¥) =</span>
-              <strong className="text-rose-300 font-black">
-                {cnyToToman.toLocaleString('en-US')} Toman
-              </strong>
-            </div>
-            <span className="text-white/20 hidden sm:inline">|</span>
-            <div className="hidden sm:flex items-center gap-1 whitespace-nowrap">
-              <span className="text-slate-400">TON:</span>
-              <strong className="text-sky-300">${fxRates.TON.toFixed(2)}</strong>
-            </div>
-            <span className="text-white/20 hidden md:inline">|</span>
-            <div className="hidden md:flex items-center gap-1 whitespace-nowrap">
-              <span className="text-slate-400">TRX:</span>
-              <strong className="text-emerald-300">${fxRates.TRX.toFixed(4)}</strong>
-            </div>
+            <span className="material-symbols-outlined text-base">warning</span>
+            <span>
+              503 Service Unavailable — سیستم اضطراری توقف (Emergency Kill-Switch) فعال است؛ فروش بلیط و برداشت موقتاً متوقف شده است.
+            </span>
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Main Header Row */}
-      <div className="max-w-[1440px] mx-auto px-3 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3">
-        {/* Brand Logo */}
-        <button
-          type="button"
-          onClick={() => navigateTo('lobby')}
-          className="flex items-center gap-3 text-right group focus:outline-none shrink-0 cursor-pointer"
-        >
-          <div className="relative w-12 h-12 rounded-2xl overflow-hidden border-2 border-amber-400 bg-gradient-to-br from-amber-300 via-amber-500 to-amber-700 flex items-center justify-center shadow-[0_0_25px_rgba(245,158,11,0.45)] group-hover:scale-105 transition-transform">
-            <svg viewBox="0 0 24 24" className="w-7 h-7 text-slate-950 fill-current drop-shadow">
-              <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z" />
-            </svg>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg sm:text-xl font-black tracking-tight text-white">
-                زرین <span className="gold-shimmer-text">لاتاری</span>
+        {/* Top Live Price Oracle & Sub-Navigation Utility Strip */}
+        <div className="border-b border-white/[0.06] bg-[#0f212e]/90 px-3 lg:px-8 py-1.5">
+          <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#00e701]/15 border border-[#00e701]/40 text-[#00e701] font-mono font-bold text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00e701] animate-pulse" />
+                <span>LIVE ORACLE</span>
               </span>
-              <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-md bg-amber-500/25 text-amber-300 border border-amber-400/50 font-black">
-                PAM + SHA256
+              <span className="text-slate-400 hidden md:inline font-medium text-[11px]">
+                {oracleSnapshot?.source || 'TetherLand • Wallex • Binance Spot'}
               </span>
-            </div>
-            <p className="text-xs text-slate-300 hidden sm:block font-medium">
-              پلتفرم یکپارچه iLottery و بازی‌های آنی Provably Fair
-            </p>
-          </div>
-        </button>
-
-        {/* Secondary Route Links (Desktop) */}
-        <nav className="hidden xl:flex items-center gap-1.5 bg-[#0e1320] p-1.5 rounded-2xl border border-white/10">
-          {SECONDARY_NAV_ITEMS.map((item) => {
-            const active = activeRoute === item.route;
-            return (
               <button
-                key={item.route}
                 type="button"
-                data-testid={`nav-${item.route}`}
-                onClick={() => navigateTo(item.route)}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer ${
-                  active
-                    ? 'gold-gradient-cta text-[#241300] shadow-md'
-                    : 'text-slate-200 hover:text-white hover:bg-white/5'
-                }`}
+                onClick={() => refreshPriceOracleNow()}
+                className="px-2 py-0.5 rounded-md bg-[#213743] hover:bg-[#2f4553] border border-white/10 text-slate-200 font-mono text-[11px] transition-colors cursor-pointer tabular-nums"
               >
-                <span className="material-symbols-outlined text-base">{item.icon}</span>
-                <span>{item.label}</span>
+                ↻ {oracleCountdownSec}s
               </button>
-            );
-          })}
-        </nav>
+            </div>
 
-        {/* Right Controls: Language Switcher + PAM Seamless Wallet Drawer Trigger + Quick Deposit */}
-        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-          {/* Currency / Language Switcher */}
-          <div
-            className="flex items-center bg-[#111726] p-1 rounded-xl border border-amber-500/30"
-            role="group"
-            aria-label="تغییر واحد پول و زبان"
+            {/* Live FX Rates Strip */}
+            <div
+              data-testid="live-oracle-rates-strip"
+              className="flex items-center gap-3 sm:gap-4 overflow-x-auto no-scrollbar font-mono text-[11px] tabular-nums"
+              dir="ltr"
+            >
+              <div className="flex items-center gap-1 whitespace-nowrap">
+                <span className="text-slate-400">1 USDT =</span>
+                <strong className="text-[#fbbf24] font-black">
+                  {fxRates.TOMAN.toLocaleString('en-US')} Toman
+                </strong>
+              </div>
+              <span className="text-white/15">|</span>
+              <div className="flex items-center gap-1 whitespace-nowrap">
+                <span className="text-slate-400">1 CNY =</span>
+                <strong className="text-rose-300 font-black">
+                  {cnyToToman.toLocaleString('en-US')} Toman
+                </strong>
+              </div>
+              <span className="text-white/15 hidden sm:inline">|</span>
+              <div className="hidden sm:flex items-center gap-1 whitespace-nowrap">
+                <span className="text-slate-400">TON:</span>
+                <strong className="text-sky-300">${fxRates.TON.toFixed(2)}</strong>
+              </div>
+              <span className="text-white/15 hidden md:inline">|</span>
+              <div className="hidden md:flex items-center gap-1 whitespace-nowrap">
+                <span className="text-slate-400">TRX:</span>
+                <strong className="text-[#00e701]">${fxRates.TRX.toFixed(4)}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Studio Header Row: Left Brand + Center Categorized Switcher + Right Unified Wallet & XP Ring */}
+        <div className="max-w-[1440px] mx-auto px-3 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3">
+          {/* Left Zone: Brand Identity + Live Online Player Pulse */}
+          <button
+            type="button"
+            onClick={() => navigateTo('lobby')}
+            className="flex items-center gap-3 text-right group focus:outline-none shrink-0 cursor-pointer"
           >
-            {(['FA', 'EN', 'ZH'] as CurrencyLang[]).map((code) => {
-              const isSelected = lang === code;
-              const label = code === 'FA' ? 'تومان' : code === 'EN' ? 'USDT' : '¥ CNY';
+            <div className="relative w-11 h-11 rounded-xl overflow-hidden border border-[#fbbf24]/60 bg-gradient-to-br from-[#fde68a] via-[#fbbf24] to-[#d97706] flex items-center justify-center shadow-[0_4px_18px_rgba(251,191,36,0.35)] group-hover:scale-105 transition-transform">
+              <svg viewBox="0 0 24 24" className="w-6 h-6 text-[#1c1002] fill-current drop-shadow">
+                <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z" />
+              </svg>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base sm:text-lg font-black tracking-tight text-white whitespace-nowrap">
+                  Lucky<span className="gold-shimmer-text">Drop</span>
+                </span>
+                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-[#213743] text-[#fbbf24] border border-[#fbbf24]/30 font-bold hidden sm:inline">
+                  زرین لاتاری
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono tabular-nums">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00e701]" />
+                <span>2,849 Online</span>
+                <span className="hidden sm:inline text-white/20">·</span>
+                <span className="hidden sm:inline text-slate-400">SHA-256</span>
+              </div>
+            </div>
+          </button>
+
+          {/* Center Zone (Desktop): Categorized 4-Pillar Navigation Switcher */}
+          <div
+            data-testid="primary-vertical-tab-switcher"
+            className="hidden lg:flex items-center gap-1.5 bg-[#1a2c38] p-1.5 rounded-2xl border border-white/[0.07] shadow-inner"
+          >
+            {PRIMARY_VERTICAL_TABS.map((tab) => {
+              const isActive =
+                activeRoute === tab.id ||
+                (tab.id === 'lobby' && (activeRoute === 'play' || activeRoute === 'my-tickets'));
               return (
                 <button
-                  key={code}
+                  key={tab.id}
                   type="button"
-                  data-testid={`lang-${code}`}
-                  onClick={() => setLang(code)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-amber-400 text-slate-950 shadow'
-                      : 'text-slate-300 hover:text-white'
+                  data-testid={`vertical-tab-${tab.id}`}
+                  onClick={() => navigateTo(tab.id)}
+                  className={`px-3.5 py-2 rounded-xl font-black text-xs flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? 'bg-[#213743] text-white border border-[#00e701]/60 shadow-[0_0_18px_rgba(0,231,1,0.18)]'
+                      : 'text-slate-300 hover:text-white hover:bg-white/[0.04] border border-transparent'
                   }`}
                 >
-                  {label}
+                  <span className="text-sm leading-none">{tab.badgeIcon}</span>
+                  <span>{tab.labelFa}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* PAM Wallet & Real-Time Transaction Ledger Drawer Button */}
-          <button
-            type="button"
-            data-testid="open-pam-wallet-drawer-btn"
-            onClick={() => setWalletDrawerOpen(true)}
-            className="flex items-center gap-2.5 bg-[#111726] hover:bg-[#172033] border border-emerald-500/45 rounded-2xl px-3.5 py-2 transition-all cursor-pointer shadow-lg"
-            title="مشاهده کیف پول یکپارچه PAM و دفترکل زنده تراکنش‌ها (Transaction Ledger)"
-          >
-            <span className="material-symbols-outlined text-emerald-400 text-xl">
-              account_balance_wallet
-            </span>
-            <div className="text-right leading-tight">
-              <span className="text-[10px] text-emerald-300 font-mono font-bold block">
-                PAM WALLET ({pamLedger.length} TX)
-              </span>
-              <span
-                data-testid="navbar-balance"
-                className="text-xs sm:text-sm font-black text-amber-300 font-mono"
-              >
-                {formatAmount(balanceUsdt)}
-              </span>
-            </div>
-          </button>
-
-          {/* Instant Deposit Modal CTA */}
-          <button
-            type="button"
-            data-testid="open-deposit-modal"
-            onClick={() => setDepositModalOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl emerald-gradient-cta text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer font-black"
-          >
-            <span className="material-symbols-outlined text-base">add_circle</span>
-            <span className="hidden sm:inline">شارژ آنی</span>
-          </button>
-
-          {/* Google Cloud Auth Button */}
-          {firebaseUser ? (
-            <button
-              type="button"
-              onClick={signOutUser}
-              title={`خروج (${firebaseUser.email || firebaseUser.displayName})`}
-              className="hidden md:flex items-center gap-2 bg-[#111726] hover:bg-rose-950/50 border border-emerald-500/40 rounded-xl px-2.5 py-1.5 transition-all cursor-pointer"
+          {/* Right Zone: Currency Switcher + Unified Seamless Wallet Pill + Cross-Sell XP Progress Ring */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Currency / Language Switcher */}
+            <div
+              className="hidden sm:flex items-center bg-[#1a2c38] p-1 rounded-xl border border-white/[0.07]"
+              role="group"
+              aria-label="تغییر واحد پول و زبان"
             >
-              <span className="text-xs font-bold text-emerald-300 max-w-[85px] truncate">
-                {firebaseUser.displayName || 'VIP'}
-              </span>
-              <span className="material-symbols-outlined text-sm text-rose-400">logout</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={signInWithGoogle}
-              className="hidden md:flex items-center gap-1.5 bg-[#111726] hover:bg-white/10 border border-amber-400/40 rounded-xl px-3 py-2 text-xs font-bold text-amber-300 transition-all cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-base">login</span>
-              <span>ورود</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 4-PILLAR UNIFIED iLOTTERY & INSTANT MINI-GAMES TAB SWITCHER */}
-      <div className="border-t border-white/10 bg-[#0a0f1c]/95 px-3 lg:px-8 py-2">
-        <div
-          data-testid="primary-vertical-tab-switcher"
-          className="max-w-[1440px] mx-auto grid grid-cols-2 lg:grid-cols-4 gap-2"
-        >
-          {PRIMARY_VERTICAL_TABS.map((tab) => {
-            const isActive =
-              activeRoute === tab.id ||
-              (tab.id === 'lobby' && (activeRoute === 'play' || activeRoute === 'my-tickets'));
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                data-testid={`vertical-tab-${tab.id}`}
-                onClick={() => navigateTo(tab.id)}
-                className={`py-2.5 px-3.5 rounded-xl font-black text-xs flex items-center justify-between gap-2 border transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-gradient-to-r from-amber-500/25 via-amber-400/20 to-emerald-500/20 border-amber-400 text-white shadow-[0_0_20px_rgba(245,158,11,0.25)]'
-                    : 'bg-[#111726]/80 border-white/10 text-slate-300 hover:text-white hover:border-white/25'
-                }`}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <span
-                    className={`material-symbols-outlined text-base ${
-                      isActive ? 'text-amber-300' : 'text-slate-400'
+              {(['FA', 'EN', 'ZH'] as CurrencyLang[]).map((code) => {
+                const isSelected = lang === code;
+                const label = code === 'FA' ? 'تومان' : code === 'EN' ? 'USDT' : '¥ CNY';
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    data-testid={`lang-${code}`}
+                    onClick={() => setLang(code)}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-[#fbbf24] text-[#1c1002] shadow'
+                        : 'text-slate-300 hover:text-white'
                     }`}
                   >
-                    {tab.icon}
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Unified Seamless Wallet Pill (Main Balance + Bonus Token Counter + Top-Up Trigger) */}
+            <div className="flex items-center bg-[#1a2c38] border border-white/[0.09] rounded-xl p-1 shadow-inner">
+              <button
+                type="button"
+                data-testid="open-pam-wallet-drawer-btn"
+                onClick={() => setWalletDrawerOpen(true)}
+                className="flex items-center gap-2.5 px-2.5 py-1 rounded-lg hover:bg-[#213743] transition-colors cursor-pointer"
+                title="مشاهده کیف پول یکپارچه PAM و دفترکل زنده تراکنش‌ها (Transaction Ledger)"
+              >
+                <div className="text-right leading-tight">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-[#00e701] font-mono font-bold tabular-nums">
+                      PAM ({pamLedger.length} TX)
+                    </span>
+                    <span className="text-[10px] font-mono text-[#fbbf24] bg-[#fbbf24]/15 px-1.5 py-0.2 rounded tabular-nums">
+                      +${bonusTokensUsdt.toFixed(0)} Bonus
+                    </span>
+                  </div>
+                  <span
+                    data-testid="navbar-balance"
+                    className="text-xs sm:text-sm font-black text-white font-mono tabular-nums block"
+                  >
+                    {formatAmount(balanceUsdt)}
                   </span>
-                  <span className="truncate">{tab.labelFa}</span>
                 </div>
-                <span className="text-[10px] font-mono text-amber-300/90 hidden sm:inline shrink-0" dir="ltr">
-                  {tab.labelEn}
-                </span>
               </button>
-            );
-          })}
+
+              {/* Quick Top-Up CTA inside Wallet Pill */}
+              <button
+                type="button"
+                data-testid="open-deposit-modal"
+                onClick={() => setDepositModalOpen(true)}
+                className="px-3 py-2 rounded-lg stake-emerald-cta text-xs font-black flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              >
+                <span className="material-symbols-outlined text-base leading-none">add</span>
+                <span className="hidden sm:inline">شارژ آنی</span>
+              </button>
+            </div>
+
+            {/* Cross-Sell XP Progress Ring (Progress toward next Free Lottery Ticket) */}
+            <button
+              type="button"
+              onClick={() => setWalletDrawerOpen(true)}
+              title={`پیشرفت وفاداری لاتاری: ${xpProgressPct}% تا دریافت بلیت رایگان بعدی`}
+              className="hidden md:flex items-center gap-2 bg-[#1a2c38] hover:bg-[#213743] border border-white/[0.07] rounded-xl px-2.5 py-1.5 transition-colors cursor-pointer"
+            >
+              <div className="relative w-9 h-9 flex items-center justify-center shrink-0">
+                <svg className="w-9 h-9 -rotate-90" viewBox="0 0 36 36">
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r={ringRadius}
+                    fill="none"
+                    stroke="#213743"
+                    strokeWidth="3.2"
+                  />
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r={ringRadius}
+                    fill="none"
+                    stroke="#fbbf24"
+                    strokeWidth="3.2"
+                    strokeDasharray={ringCircumference}
+                    strokeDashoffset={ringStrokeDashoffset}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span className="absolute text-[9px] font-mono font-black text-[#fbbf24] tabular-nums">
+                  {xpProgressPct}%
+                </span>
+              </div>
+              <div className="text-right hidden xl:block leading-tight">
+                <span className="text-[10px] font-bold text-slate-300 block">بلیت رایگان XP</span>
+                <span className="text-[10px] font-mono text-[#00e701] tabular-nums block">
+                  Free Drop Ring
+                </span>
+              </div>
+            </button>
+
+            {/* Google Cloud Auth Button */}
+            {firebaseUser ? (
+              <button
+                type="button"
+                onClick={signOutUser}
+                title={`خروج (${firebaseUser.email || firebaseUser.displayName})`}
+                className="hidden xl:flex items-center gap-1.5 bg-[#1a2c38] hover:bg-rose-950/50 border border-[#00e701]/40 rounded-xl px-2.5 py-2 transition-all cursor-pointer"
+              >
+                <span className="text-xs font-bold text-[#00e701] max-w-[75px] truncate">
+                  {firebaseUser.displayName || 'VIP'}
+                </span>
+                <span className="material-symbols-outlined text-sm text-rose-400">logout</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={signInWithGoogle}
+                className="hidden xl:flex items-center gap-1 bg-[#1a2c38] hover:bg-[#213743] border border-white/10 rounded-xl px-2.5 py-2 text-xs font-bold text-[#fbbf24] transition-all cursor-pointer whitespace-nowrap"
+              >
+                <span className="material-symbols-outlined text-base">login</span>
+                <span>ورود</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-    </header>
+
+        {/* Sub-Bar: Secondary Quick Access Links + Tablet/Mobile Category Switcher */}
+        <div className="border-t border-white/[0.06] bg-[#0f212e]/95 px-3 lg:px-8 py-1.5">
+          <div className="max-w-[1440px] mx-auto flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
+            {/* Secondary Route Links */}
+            <nav className="flex items-center gap-1.5 shrink-0">
+              {SECONDARY_NAV_ITEMS.map((item) => {
+                const active = activeRoute === item.route;
+                return (
+                  <button
+                    key={item.route}
+                    type="button"
+                    data-testid={`nav-${item.route}`}
+                    onClick={() => navigateTo(item.route)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer ${
+                      active
+                        ? 'bg-[#213743] text-[#fbbf24] border border-[#fbbf24]/50 shadow-sm'
+                        : 'text-slate-300 hover:text-white hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Mobile/Tablet Currency Switcher */}
+            <div className="flex sm:hidden items-center gap-1 shrink-0">
+              {(['FA', 'EN', 'ZH'] as CurrencyLang[]).map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setLang(code)}
+                  className={`px-2 py-1 rounded text-[10px] font-black cursor-pointer ${
+                    lang === code ? 'bg-[#fbbf24] text-slate-950' : 'bg-[#1a2c38] text-slate-300'
+                  }`}
+                >
+                  {code === 'FA' ? 'تومان' : code === 'EN' ? 'USDT' : 'CNY'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Mobile-First Fixed Bottom Navigation Bar (< 768px) */}
+      <nav
+        aria-label="ناوبری پایین موبایل"
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#0f212e]/95 backdrop-blur-xl border-t border-white/10 px-2 py-1.5 grid grid-cols-5 gap-1 shadow-[0_-10px_30px_rgba(0,0,0,0.75)]"
+      >
+        <button
+          type="button"
+          onClick={() => navigateTo('lobby')}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl text-[10px] font-black transition-colors cursor-pointer ${
+            activeRoute === 'lobby' || activeRoute === 'play'
+              ? 'text-[#fbbf24] bg-[#213743]'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg leading-none">confirmation_number</span>
+          <span className="mt-0.5 whitespace-nowrap">لاتاری</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigateTo('mini-games')}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl text-[10px] font-black transition-colors cursor-pointer ${
+            activeRoute === 'mini-games'
+              ? 'text-[#00e701] bg-[#213743]'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg leading-none">bolt</span>
+          <span className="mt-0.5 whitespace-nowrap">مینی‌گیم</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setWalletDrawerOpen(true)}
+          className="flex flex-col items-center justify-center py-1 rounded-xl text-[10px] font-black bg-[#00e701] text-[#051c08] shadow-[0_2px_0_#00b801] cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-lg leading-none">account_balance_wallet</span>
+          <span className="mt-0.5 whitespace-nowrap">کیف پول</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigateTo('transparency')}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl text-[10px] font-black transition-colors cursor-pointer ${
+            activeRoute === 'transparency'
+              ? 'text-[#00e701] bg-[#213743]'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg leading-none">verified</span>
+          <span className="mt-0.5 whitespace-nowrap">شفافیت</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigateTo('cockpit')}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl text-[10px] font-black transition-colors cursor-pointer ${
+            activeRoute === 'cockpit'
+              ? 'text-[#fbbf24] bg-[#213743]'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg leading-none">tune</span>
+          <span className="mt-0.5 whitespace-nowrap">کاکپیت</span>
+        </button>
+      </nav>
+    </>
   );
 };

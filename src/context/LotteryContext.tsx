@@ -314,6 +314,8 @@ interface LotteryContextType {
     gameId: InstantMiniGameId;
     betAmountUsdt: number;
     diceRollUnder?: number;
+    diceTarget?: number;
+    diceMode?: 'OVER' | 'UNDER';
     coinSide?: 'HEADS' | 'TAILS';
     crashAutoCashoutX?: number;
     plinkoRows?: PlinkoRowCount;
@@ -1355,6 +1357,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     gameId: InstantMiniGameId;
     betAmountUsdt: number;
     diceRollUnder?: number;
+    diceTarget?: number;
+    diceMode?: 'OVER' | 'UNDER';
     coinSide?: 'HEADS' | 'TAILS';
     crashAutoCashoutX?: number;
     plinkoRows?: PlinkoRowCount;
@@ -1432,6 +1436,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         nonce: seedsBefore.nonce,
         betAmountUsdt: params.betAmountUsdt,
         diceRollUnder: params.diceRollUnder,
+        diceTarget: params.diceTarget,
+        diceMode: params.diceMode,
         coinSide: params.coinSide,
         crashAutoCashoutX: params.crashAutoCashoutX,
         plinkoRows: params.plinkoRows,

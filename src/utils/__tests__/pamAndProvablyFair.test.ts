@@ -14,6 +14,12 @@ import {
   deriveProvablyFairCrashPoint,
   calculateCrashMultiplierAtTime,
   calculateCrashTimeForMultiplier,
+  calculate52BitDiceRollResult,
+  isDiceLucky7777Roll,
+  syncDiceFromWinChance,
+  syncDiceFromTarget,
+  syncDiceFromMultiplier,
+  flipDiceRollMode,
 } from '../provablyFair.ts';
 import { PAMSeamlessWalletEngine } from '../../services/pamWalletEngine.ts';
 
@@ -85,17 +91,54 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
     assert.equal(jackpotEval.prizeUsdt, 250000);
   });
 
-  it('deterministically evaluates Instant Mini-Games (Plinko 8/12/16 Rows, Crash 98% RTP & Dice) using 52-bit HMAC-SHA256', () => {
+  it('deterministically evaluates Instant Mini-Games (Plinko 8/12/16 Rows, Crash 98% RTP & 52-Bit Dice 99% RTP) using 52-bit HMAC-SHA256', () => {
+    // 1. Verify exact 10,001-outcome 52-Bit Dice formula: Math.floor(X * 10001) / 100
+    assert.equal(calculate52BitDiceRollResult(0), 0.0);
+    assert.equal(calculate52BitDiceRollResult(0.5), 50.0);
+    assert.equal(calculate52BitDiceRollResult(0.7777 / 1.0001 + 0.00001), 77.77);
+    assert.equal(calculate52BitDiceRollResult(0.999999), 100.0);
+
+    // Verify Lucky 77.77 Lottery Jackpot Synergy detection
+    assert.equal(isDiceLucky7777Roll(77.77), true);
+    assert.equal(isDiceLucky7777Roll(0.0), true);
+    assert.equal(isDiceLucky7777Roll(100.0), true);
+    assert.equal(isDiceLucky7777Roll(50.25), false);
+
+    // Verify Bidirectional 99% RTP Dice Sync (Multiplier = 99 / winChance)
+    const byChance = syncDiceFromWinChance(49.5, 'OVER');
+    assert.equal(byChance.winChance, 49.5);
+    assert.equal(byChance.target, 50.5);
+    assert.equal(byChance.multiplier, 2.0);
+
+    const flipped = flipDiceRollMode(byChance.target, byChance.mode);
+    assert.equal(flipped.mode, 'UNDER');
+    assert.equal(flipped.target, 49.5);
+    assert.equal(flipped.winChance, 49.5);
+    assert.equal(flipped.multiplier, 2.0);
+
+    const byMult = syncDiceFromMultiplier(4.0, 'UNDER');
+    assert.equal(byMult.winChance, 24.75);
+    assert.equal(byMult.target, 24.75);
+    assert.equal(byMult.multiplier, 4.0);
+
+    const byTarget = syncDiceFromTarget(75.0, 'OVER');
+    assert.equal(byTarget.winChance, 25.0);
+    assert.equal(byTarget.multiplier, 3.96);
+
     const res = evaluateProvablyFairMiniGame({
       gameId: 'DICE_52',
       serverSeed: 'seed_123',
       clientSeed: 'client_456',
       nonce: 1,
       betAmountUsdt: 10,
-      diceRollUnder: 50,
+      diceTarget: 50.5,
+      diceMode: 'OVER',
     });
     assert.ok(res.uniformFloatX >= 0 && res.uniformFloatX < 1);
-    assert.ok(res.outcomeNumeric >= 0 && res.outcomeNumeric < 100);
+    assert.ok(res.outcomeNumeric >= 0 && res.outcomeNumeric <= 100);
+    assert.equal(res.diceMode, 'OVER');
+    assert.equal(res.diceTarget, 50.5);
+    assert.equal(res.diceWinChance, 49.5);
 
     // Verify Crash 98% RTP formula and exponential curve M(t) = e^(0.065 * t)
     const crashA = deriveProvablyFairCrashPoint({

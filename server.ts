@@ -801,6 +801,8 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
     gameId = 'PLINKO',
     betAmountUsdt = 5,
     diceRollUnder = 50,
+    diceTarget,
+    diceMode = 'UNDER',
     coinSide = 'HEADS',
     crashAutoCashoutX = 2.0,
     plinkoRows = 16,
@@ -848,6 +850,8 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
     nonce: seedsBefore.nonce,
     betAmountUsdt: safeBet,
     diceRollUnder: Number(diceRollUnder),
+    diceTarget: typeof diceTarget === 'number' ? Number(diceTarget) : Number(diceRollUnder),
+    diceMode: diceMode === 'OVER' ? 'OVER' : 'UNDER',
     coinSide: coinSide === 'TAILS' ? 'TAILS' : 'HEADS',
     crashAutoCashoutX: Number(crashAutoCashoutX),
     plinkoRows: Number(plinkoRows) === 8 ? 8 : Number(plinkoRows) === 12 ? 12 : 16,
@@ -872,9 +876,9 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
     creditEntry = creditRes.ledgerEntry || null;
   }
 
-  // Step 4: If Plinko landed on the designated "LOTTERY TICKET" Bonus Badge slot, mint a real active VIP Lottery Ticket!
+  // Step 4: If Plinko Bonus Slot OR 52-Bit Dice "LUCKY 77.77" Jackpot Synergy triggered, mint a real active VIP Lottery Ticket!
   let bonusTicketAwarded = null;
-  if (evaluation.plinkoBonusTicket) {
+  if (evaluation.plinkoBonusTicket || evaluation.diceLucky7777Ticket) {
     const activeRound = dbState.rounds.find((r) => r.status === 'ACTIVE') || dbState.rounds[0];
     const targetRoundCode = activeRound?.roundCode || '#ZRN-8493';
     const mainMax = activeRound?.mainMax || 50;
@@ -890,7 +894,8 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
     }
     pickedMain.sort((a, b) => a - b);
     const pickedGolden = goldenMax > 0 ? (seedsBefore.nonce % goldenMax) + 1 : 0;
-    const ticketCode = `PLK-${Math.floor(100000 + Math.random() * 900000)}`;
+    const prefix = evaluation.diceLucky7777Ticket ? 'D77' : 'PLK';
+    const ticketCode = `${prefix}-${Math.floor(100000 + Math.random() * 900000)}`;
     const txHash = `0x${sha256Hex(`${debitUuid}:${ticketCode}`)}`;
 
     bonusTicketAwarded = {
@@ -901,7 +906,9 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
       mainNumbers: JSON.stringify(pickedMain),
       goldenBall: pickedGolden,
       costUsdt: '0.00',
-      currencyNetwork: 'PLINKO BONUS TICKET',
+      currencyNetwork: evaluation.diceLucky7777Ticket
+        ? 'LUCKY 77.77 DICE TICKET'
+        : 'PLINKO BONUS TICKET',
       txHash,
       transactionUuid: `${debitUuid}_bonus_ticket`,
       clientSeed: seedsBefore.clientSeed,
@@ -912,7 +919,9 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
       confirmations: 19,
       prizeWonUsdt: '0.00',
       claimed: false,
-      createdAt: 'همین الان (جایزه اسلات ویژه Plinko)',
+      createdAt: evaluation.diceLucky7777Ticket
+        ? 'همین الان (جایزه ویژه رول 77.77 در Dice 52-Bit)'
+        : 'همین الان (جایزه اسلات ویژه Plinko)',
     };
     dbState.tickets.unshift(bonusTicketAwarded);
   }
