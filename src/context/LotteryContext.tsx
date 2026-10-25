@@ -22,13 +22,35 @@ import {
   generateBulkQuickPickSlips,
   WithdrawalNetwork,
   calculateWithdrawalFeeAndNet,
-  computeDeterministicHash,
   SolvencyProtectionMode,
   calculateZeroLossTicketSplit,
   getBlockchainExplorerTxUrl,
   generateUniqueUserReferralLink,
   calculateReferralDeductionFromNetProfit,
 } from '../utils/lotteryEngine.ts';
+import {
+  ProvablyFairSeedState,
+  VerifiableDrawHistoryRecord,
+  InstantMiniGameId,
+  MiniGameEvaluationResult,
+  PlinkoRowCount,
+  PlinkoRiskLevel,
+  deriveProvablyFairLotteryDraw,
+  evaluateTicketPrizeTier,
+  evaluateProvablyFairMiniGame,
+  sha256Hex,
+  generateCryptographicServerSeed,
+} from '../utils/provablyFair.ts';
+import {
+  PAMSeamlessWalletEngine,
+  PAMPlayerState,
+  PAMLedgerEntry,
+  PAMReconciliationReport,
+  PAMOperationResponse,
+  generateDeterministicUuid,
+  savePAMStateToIndexedDB,
+  loadPAMStateFromIndexedDB,
+} from '../services/pamWalletEngine.ts';
 import {
   fetchLivePriceOracle,
   LiveOracleSnapshot,
@@ -43,6 +65,7 @@ import {
 export type AppRoute =
   | 'lobby'
   | 'play'
+  | 'mini-games'
   | 'deposit'
   | 'withdraw'
   | 'my-tickets'
@@ -76,6 +99,7 @@ export interface LotteryRoundItem {
   drawTimeLabel: string;
   serverSeedHash: string;
   clientSeed: string;
+  nonce?: number;
   winningNumbers: string;
   winningGoldenBall: number;
   totalSalesUsdt: string;
@@ -95,10 +119,14 @@ export interface TicketItem {
   costUsdt: string;
   currencyNetwork: string;
   txHash: string;
+  transactionUuid?: string;
+  payoutTransactionUuid?: string | null;
   clientSeed: string;
   serverSeedHash: string;
+  nonce?: number;
   commitHash: string;
-  status: string;
+  status: 'ACTIVE' | 'WON' | 'LOST' | string;
+  tierLabelFa?: string;
   confirmations: number;
   prizeWonUsdt: string;
   claimed?: boolean;
@@ -145,10 +173,13 @@ export interface DepositRecordItem {
   senderWallet: string;
   officialRecipientWallet: string;
   amountUsdt: number;
+  amountCrypto?: string;
   txHash: string;
   explorerUrl: string;
+  explorerNote?: string;
   verificationMethod: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
-  status: 'confirmed' | 'pending_admin' | 'rejected';
+  verificationMode?: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
+  status: 'confirmed' | 'pending_admin' | 'rejected' | 'CREDITED' | 'PENDING_ADMIN' | 'REJECTED';
   confirmations: number;
   createdAt: string;
 }
@@ -162,7 +193,9 @@ export interface ReferralEventItem {
   prizePool85Usdt: number;
   grossLotteryProfit10Usdt?: number;
   referralCommission2Usdt: number;
+  commissionUsdt?: number;
   netHouseProfit8Usdt: number;
+  netHouseProfitUsdt?: number;
   createdAt: string;
 }
 
@@ -170,20 +203,40 @@ export interface TelegramBotAlertConfig {
   botToken: string;
   adminChatId: string;
   enabled: boolean;
-  notifyOnDeposit: boolean;
-  notifyOnWithdrawal: boolean;
-  notifyOnTicketPurchase: boolean;
+  notifyOnDeposit?: boolean;
+  notifyOnWithdrawal?: boolean;
+  notifyOnTicketPurchase?: boolean;
 }
 
 export interface TelegramAlertLogItem {
   id: number;
   eventType: 'DEPOSIT' | 'WITHDRAWAL' | 'TICKET_PURCHASE' | 'TEST_PING';
+  titleFa?: string;
+  summaryFa?: string;
+  amountUsdt?: number;
   message: string;
   deliveredToTelegramApi: boolean;
+  telegramApiDescription?: string;
   createdAt: string;
 }
 
-export type Web3WalletProviderType = 'TronLink' | 'MetaMask / TrustWallet' | 'TON Wallet' | 'TRONLINK' | 'TON' | 'METAMASK';
+export type Web3WalletProviderType =
+  | 'TronLink'
+  | 'MetaMask / TrustWallet'
+  | 'TON Wallet'
+  | 'TRONLINK'
+  | 'TON'
+  | 'METAMASK';
+
+export interface DrawExecutionResult {
+  drawnMain: number[];
+  drawnGolden: number;
+  hash: string;
+  ticketsEvaluatedCount?: number;
+  winnersCount?: number;
+  totalPayoutUsdt?: number;
+  drawRecord?: VerifiableDrawHistoryRecord;
+}
 
 interface LotteryContextType {
   activeRoute: AppRoute;
@@ -212,11 +265,72 @@ interface LotteryContextType {
   disconnectWeb3Wallet: () => void;
   telegramUsername: string;
   connectTelegramAccount: (customHandle?: string) => string;
+  // Core PAM & Seamless Single Wallet Engine
   balanceUsdt: number;
+  bonusTokensUsdt: number;
+  pamState: PAMPlayerState;
+  pamLedger: PAMLedgerEntry[];
+  pamReconciliation: PAMReconciliationReport | null;
+  provablyFairSeeds: ProvablyFairSeedState;
+  walletDrawerOpen: boolean;
+  setWalletDrawerOpen: (open: boolean) => void;
+  pamAuthenticate: () => Promise<PAMOperationResponse>;
+  pamFetchBalance: () => Promise<PAMOperationResponse>;
+  pamDebit: (params: {
+    transactionUuid?: string;
+    roundId: string;
+    vertical: string;
+    amountUsdt: number;
+    note?: string;
+  }) => Promise<PAMOperationResponse>;
+  pamCredit: (params: {
+    transactionUuid?: string;
+    referenceTransactionUuid?: string | null;
+    roundId: string;
+    vertical: string;
+    amountUsdt: number;
+    note?: string;
+    awardLuckyAirdropTicket?: boolean;
+  }) => Promise<PAMOperationResponse & { bonusTicketAwarded?: TicketItem | null }>;
+  pamRollback: (params: {
+    transactionUuid?: string;
+    referenceTransactionUuid: string;
+    roundId: string;
+    vertical: string;
+    note?: string;
+  }) => Promise<PAMOperationResponse>;
+  pamBonus: (params: {
+    transactionUuid?: string;
+    roundId: string;
+    vertical: string;
+    amountUsdt: number;
+    creditToRealBalance?: boolean;
+    note?: string;
+  }) => Promise<PAMOperationResponse>;
+  pamReconcile: () => Promise<PAMOperationResponse>;
+  updateProvablyFairClientSeed: (nextClientSeed: string) => Promise<ProvablyFairSeedState>;
+  rotateProvablyFairServerSeed: () => Promise<ProvablyFairSeedState>;
+  playInstantMiniGame: (params: {
+    gameId: InstantMiniGameId;
+    betAmountUsdt: number;
+    diceRollUnder?: number;
+    coinSide?: 'HEADS' | 'TAILS';
+    crashAutoCashoutX?: number;
+    plinkoRows?: PlinkoRowCount;
+    plinkoRisk?: PlinkoRiskLevel;
+  }) => Promise<{
+    ok: boolean;
+    error?: string;
+    evaluation?: MiniGameEvaluationResult;
+    bonusTicketAwarded?: TicketItem | null;
+    debitTransactionUuid?: string;
+    balanceUsdt: number;
+  }>;
   vipTier: string;
   displayName: string;
   rounds: LotteryRoundItem[];
   tickets: TicketItem[];
+  drawHistory: VerifiableDrawHistoryRecord[];
   transactions: TransactionItem[];
   supportMessages: SupportMessageItem[];
   deposits: DepositRecordItem[];
@@ -289,7 +403,7 @@ interface LotteryContextType {
   ) => Promise<boolean>;
   toggleKillSwitch: () => Promise<void>;
   setKillSwitchState: (active?: boolean) => Promise<void>;
-  triggerDraw: (roundCode: string) => Promise<{ drawnMain: number[]; drawnGolden: number; hash: string } | null>;
+  triggerDraw: (roundCode: string) => Promise<DrawExecutionResult | null>;
   createNewRound: (input: {
     titleFa: string;
     category: string;
@@ -297,9 +411,15 @@ interface LotteryContextType {
     rtpPercent: number;
     jackpotUsdt: number;
   }) => Promise<boolean>;
+  deleteLotteryRound: (roundCode: string) => Promise<boolean>;
   updateRoundTicketPrice: (roundCode: string, newPriceUsdt: number) => void;
   toggleRoundSales: (roundCode: string) => Promise<void>;
-  sendSupportMessage: (sessionCode: string, message: string, senderRole?: string, senderName?: string) => Promise<boolean>;
+  sendSupportMessage: (
+    sessionCode: string,
+    message: string,
+    senderRole?: string,
+    senderName?: string
+  ) => Promise<boolean>;
   officialWallets: OfficialSiteWallets;
   updateOfficialWallets: (next: Partial<OfficialSiteWallets>) => void;
   // Zero-Loss Solvency & Firestore Referral System
@@ -314,7 +434,11 @@ interface LotteryContextType {
     referralUrl: string;
     message: string;
   }>;
-  claimReferralEarningsToWallet: () => Promise<{ ok: boolean; claimedUsdt: number; message: string }>;
+  claimReferralEarningsToWallet: () => Promise<{
+    ok: boolean;
+    claimedUsdt: number;
+    message: string;
+  }>;
   simulateReferredTicketPurchase: (ticketGrossUsdt?: number) => Promise<{
     ok: boolean;
     commissionUsdt: number;
@@ -337,7 +461,7 @@ interface LotteryContextType {
   telegramBotConfig: TelegramBotAlertConfig;
   telegramAlertsLog: TelegramAlertLogItem[];
   updateTelegramBotConfig: (next: TelegramBotAlertConfig) => Promise<boolean>;
-  sendTestTelegramAlert: () => Promise<{ ok: boolean; message: string }>;
+  sendTestTelegramAlert: () => Promise<{ ok: boolean; message: string; note: string }>;
   // Viral Shareable Golden Ticket & Win Certificate Modal
   viralCardTicket: TicketItem | null;
   setViralCardTicket: (ticket: TicketItem | null) => void;
@@ -370,13 +494,14 @@ const resolveInitialRoute = (): AppRoute => {
   const path = window.location.pathname.toLowerCase();
   const search = window.location.search.toLowerCase();
   if (search.includes('vault=sovereign-gate-777')) return 'cockpit';
+  if (path.startsWith('/mini-games') || path.startsWith('/instant')) return 'mini-games';
   if (path.startsWith('/user-panel') || path.startsWith('/profile')) return 'user-panel';
   if (path.startsWith('/terms') || path.startsWith('/rules')) return 'terms';
   if (path.startsWith('/ops/launch')) return 'launch';
   if (path.startsWith('/ops-k82-cockpit')) return 'cockpit';
   if (path.startsWith('/admin/finances')) return 'finances';
   if (path === '/admin' || path.startsWith('/404')) return '404';
-  if (path.startsWith('/transparency')) return 'transparency';
+  if (path.startsWith('/transparency') || path.startsWith('/verifier')) return 'transparency';
   if (path.startsWith('/status')) return 'status';
   if (path.startsWith('/withdraw')) return 'withdraw';
   if (path.startsWith('/my-tickets')) return 'my-tickets';
@@ -388,6 +513,7 @@ const resolveInitialRoute = (): AppRoute => {
 const ROUTE_TO_PATH: Record<AppRoute, string> = {
   lobby: '/',
   play: '/play',
+  'mini-games': '/mini-games',
   deposit: '/deposit',
   withdraw: '/withdraw',
   'my-tickets': '/my-tickets',
@@ -423,81 +549,30 @@ const buildDefaultConcurrentRounds = (): LotteryRoundItem[] =>
     drawTimeLabel: spec.drawTimeLabel,
     serverSeedHash: spec.serverSeedHash,
     clientSeed: spec.clientSeed,
+    nonce: 1,
     winningNumbers: JSON.stringify(spec.winningNumbers),
     winningGoldenBall: spec.winningGoldenBall,
     totalSalesUsdt: (spec.jackpotUsdt * 1.15).toFixed(2),
     totalPayoutUsdt: spec.jackpotUsdt.toFixed(2),
     operatorProfitUsdt: (spec.jackpotUsdt * 0.1).toFixed(2),
     rolloverReserveUsdt: (spec.jackpotUsdt * 0.03).toFixed(2),
-    status: 'active',
+    status: 'ACTIVE',
   }));
-
-const DEMO_WINNING_TICKETS: TicketItem[] = [
-  {
-    id: 701,
-    ticketCode: 'ZR-884920',
-    userUid: 'vip-demo-user',
-    roundCode: '#ZRN-8493',
-    mainNumbers: '[7,14,23,31,45]',
-    goldenBall: 8,
-    costUsdt: '5.00',
-    currencyNetwork: 'USDT (TRC-20)',
-    txHash: '0x7a4b8f1920c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c739c0',
-    clientSeed: 'zarrin_vip_winner_seed_01',
-    serverSeedHash: '0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-    commitHash: '8f4d92a11b6c738e4a9e201f82c49830',
-    status: 'won',
-    confirmations: 19,
-    prizeWonUsdt: '25.00',
-    claimed: false,
-    createdAt: '۲۰ دقیقه پیش',
-  },
-  {
-    id: 702,
-    ticketCode: 'BLZ-551209',
-    userUid: 'vip-demo-user',
-    roundCode: '#BLZ-2409',
-    mainNumbers: '[4,11,19,27,30]',
-    goldenBall: 6,
-    costUsdt: '2.00',
-    currencyNetwork: 'TON Network',
-    txHash: '0x9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c',
-    clientSeed: 'blitz_ton_seed_88',
-    serverSeedHash: '0x9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
-    commitHash: '4b227777d4dd1fc61c6f884f48641d02',
-    status: 'won',
-    confirmations: 32,
-    prizeWonUsdt: '1500.00',
-    claimed: false,
-    createdAt: '۲ ساعت پیش',
-  },
-  {
-    id: 703,
-    ticketCode: 'FLS-119044',
-    userUid: 'vip-demo-user',
-    roundCode: '#FLS-0060',
-    mainNumbers: '[3,9,17,22]',
-    goldenBall: 0,
-    costUsdt: '1.00',
-    currencyNetwork: 'TRON (TRX)',
-    txHash: '0x1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e',
-    clientSeed: 'flash_hourly_seed_12',
-    serverSeedHash: '0x4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a',
-    commitHash: '7902699be42c8a8e46fbbb4501726517',
-    status: 'won',
-    confirmations: 19,
-    prizeWonUsdt: '25.00',
-    claimed: false,
-    createdAt: '۴۵ دقیقه پیش',
-  },
-];
 
 export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeRoute, setActiveRoute] = useState<AppRoute>(resolveInitialRoute);
   const [stealthCookieAuthorized, setStealthCookieAuthorized] = useState<boolean>(true);
   const [lang, setLangState] = useState<CurrencyLang>('FA');
+  const [walletDrawerOpen, setWalletDrawerOpen] = useState<boolean>(false);
 
-  // 1. Live Price Oracle State (Refreshes every 15s)
+  // Local PAM Seamless Wallet Engine Fallback & IndexedDB Synchronizer
+  const localPamEngineRef = useRef<PAMSeamlessWalletEngine>(new PAMSeamlessWalletEngine());
+  const [pamState, setPamState] = useState<PAMPlayerState>(() => localPamEngineRef.current.getState());
+  const [pamReconciliation, setPamReconciliation] = useState<PAMReconciliationReport | null>(
+    () => localPamEngineRef.current.reconcile().reconciliation || null
+  );
+
+  // Live Price Oracle State (Refreshes every 15s)
   const [fxRates, setFxRates] = useState<ExchangeRates>(DEFAULT_FX_RATES);
   const [oracleSnapshot, setOracleSnapshot] = useState<LiveOracleSnapshot | null>(null);
   const [oracleCountdownSec, setOracleCountdownSec] = useState<number>(15);
@@ -507,10 +582,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const authTokenRef = useRef<string | null>(null);
 
   const [balanceUsdt, setBalanceUsdt] = useState<number>(3030.3);
+  const [bonusTokensUsdt, setBonusTokensUsdt] = useState<number>(25.0);
   const [vipTier, setVipTier] = useState<string>('DIAMOND VIP');
   const [displayName, setDisplayName] = useState<string>('کامران سهرابی (VIP)');
   const [rounds, setRounds] = useState<LotteryRoundItem[]>(buildDefaultConcurrentRounds);
-  const [tickets, setTickets] = useState<TicketItem[]>(DEMO_WINNING_TICKETS);
+  const [tickets, setTickets] = useState<TicketItem[]>([]);
+  const [drawHistory, setDrawHistory] = useState<VerifiableDrawHistoryRecord[]>([]);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [supportMessages, setSupportMessages] = useState<SupportMessageItem[]>([]);
   const [deposits, setDeposits] = useState<DepositRecordItem[]>([]);
@@ -569,19 +646,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
   const [referralEarningsUsdt, setReferralEarningsUsdt] = useState<number>(18.4);
   const [referredTicketsCount, setReferredTicketsCount] = useState<number>(14);
-  const [referralEvents, setReferralEvents] = useState<ReferralEventItem[]>([
-    {
-      id: 501,
-      referrerCode: 'VIP-KAMRAN777',
-      buyerDisplayName: 'سهند جاوید (VIP)',
-      roundCode: '#ZRN-8493',
-      ticketAmountUsdt: 50,
-      prizePool85Usdt: 42.5,
-      referralCommission2Usdt: 1.0,
-      netHouseProfit8Usdt: 4.0,
-      createdAt: '۱۲ دقیقه پیش',
-    },
-  ]);
+  const [referralEvents, setReferralEvents] = useState<ReferralEventItem[]>([]);
 
   // Zero-Loss VIP Loyalty Chest (3% Rollover Reserve) & Telegram Bot Alert State
   const [rolloverReservePoolUsdt, setRolloverReservePoolUsdt] = useState<number>(48.5);
@@ -601,7 +666,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [withdrawModalOpen, setWithdrawModalOpen] = useState<boolean>(false);
   const [aiChatOpen, setAiChatOpen] = useState<boolean>(false);
 
-  // 2. Multi-Lottery Concurrent State
+  // Multi-Lottery Concurrent State
   const [activeLotteryId, setActiveLotteryIdState] = useState<LotteryTypeId>('MEGA_WEEKLY');
   const [lotteryTimers, setLotteryTimers] = useState<Record<LotteryTypeId, number>>(() => ({
     MEGA_WEEKLY: MULTI_LOTTERY_SPECS[0].initialCountdownSec,
@@ -613,7 +678,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const activeLotterySpec =
     MULTI_LOTTERY_SPECS.find((s) => s.id === activeLotteryId) || MULTI_LOTTERY_SPECS[0];
 
-  // 3. Single & Bulk Ticket Cart State
+  // Single & Bulk Ticket Cart State
   const [selectedMainBalls, setSelectedMainBalls] = useState<number[]>([7, 14, 23, 38, 49]);
   const [selectedGoldenBall, setSelectedGoldenBall] = useState<number>(8);
   const [bulkSlips, setBulkSlips] = useState<BulkTicketSlip[]>(() => [
@@ -625,9 +690,31 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     },
   ]);
   const [activeSlipIndex, setActiveSlipIndex] = useState<number>(0);
-  const [activeTrackingTicket, setActiveTrackingTicket] = useState<TicketItem | null>(DEMO_WINNING_TICKETS[0]);
+  const [activeTrackingTicket, setActiveTrackingTicket] = useState<TicketItem | null>(null);
 
-  // Keep selectedMainBalls & selectedGoldenBall synced with activeSlipIndex
+  const syncPamStateEverywhere = useCallback((nextPam: PAMPlayerState, recon?: PAMReconciliationReport) => {
+    localPamEngineRef.current.hydrateState(nextPam);
+    setPamState({ ...nextPam });
+    setBalanceUsdt(nextPam.balanceUsdt);
+    setBonusTokensUsdt(nextPam.bonusTokensUsdt);
+    const computedRecon = recon || localPamEngineRef.current.reconcile().reconciliation || null;
+    setPamReconciliation(computedRecon);
+    savePAMStateToIndexedDB(nextPam);
+  }, []);
+
+  // Hydrate from IndexedDB on initial mount before network snapshot arrives
+  useEffect(() => {
+    loadPAMStateFromIndexedDB().then((cached) => {
+      if (cached && typeof cached.balanceUsdt === 'number') {
+        localPamEngineRef.current.hydrateState(cached);
+        setPamState(cached);
+        setBalanceUsdt(cached.balanceUsdt);
+        setBonusTokensUsdt(cached.bonusTokensUsdt || 25);
+        setPamReconciliation(localPamEngineRef.current.reconcile().reconciliation || null);
+      }
+    });
+  }, []);
+
   const setActiveLotteryId = (id: LotteryTypeId) => {
     setActiveLotteryIdState(id);
     const spec = MULTI_LOTTERY_SPECS.find((s) => s.id === id) || MULTI_LOTTERY_SPECS[0];
@@ -682,7 +769,6 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setSelectedGoldenBall(generated[0].goldenBall);
   };
 
-  // Sync manual ball edits back into bulkSlips[activeSlipIndex]
   useEffect(() => {
     setBulkSlips((prev) => {
       if (!prev[activeSlipIndex]) return prev;
@@ -696,7 +782,6 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [selectedMainBalls, selectedGoldenBall, activeSlipIndex]);
 
-  // Live Price Oracle Refresh Engine (Every 15s)
   const refreshPriceOracleNow = useCallback(async () => {
     const snap = await fetchLivePriceOracle({
       adminMarkupPercent: oracleMarkupPercent,
@@ -714,7 +799,203 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     refreshPriceOracleNow();
   }, [refreshPriceOracleNow]);
 
+  const getHeaders = useCallback(async () => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (auth.currentUser) {
+      try {
+        const token = await auth.currentUser.getIdToken();
+        authTokenRef.current = token;
+      } catch {
+        // Ignore token refresh errors
+      }
+    }
+    if (authTokenRef.current) {
+      headers['Authorization'] = `Bearer ${authTokenRef.current}`;
+    }
+    return headers;
+  }, []);
+
+  const refreshSnapshot = useCallback(async () => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/snapshot', { headers });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState, data.reconciliation);
+      } else if (data.user) {
+        setBalanceUsdt(parseFloat(data.user.balanceUsdt) || 3030.3);
+        setVipTier(data.user.vipTier || 'DIAMOND VIP');
+        setDisplayName(data.user.displayName || 'کاربر ویژه VIP');
+      }
+      if (Array.isArray(data.rounds)) {
+        setRounds(data.rounds);
+      }
+      if (Array.isArray(data.tickets)) {
+        setTickets(data.tickets);
+        if (data.tickets.length > 0) {
+          setActiveTrackingTicket((prev) => {
+            if (!prev) return data.tickets[0];
+            const updatedPrev = data.tickets.find((t: TicketItem) => t.ticketCode === prev.ticketCode);
+            return updatedPrev || data.tickets[0];
+          });
+        }
+      }
+      if (Array.isArray(data.drawHistory)) {
+        setDrawHistory(data.drawHistory);
+      }
+      if (Array.isArray(data.transactions)) setTransactions(data.transactions);
+      if (Array.isArray(data.supportMessages)) setSupportMessages(data.supportMessages);
+      if (Array.isArray(data.deposits)) setDeposits(data.deposits);
+      if (Array.isArray(data.referralEvents)) setReferralEvents(data.referralEvents);
+      if (data.telegramBotConfig && typeof data.telegramBotConfig === 'object') {
+        setTelegramBotConfig((prev) => ({ ...prev, ...data.telegramBotConfig }));
+      }
+      if (Array.isArray(data.telegramAlertsLog)) {
+        setTelegramAlertsLog(data.telegramAlertsLog);
+      }
+      if (typeof data.rolloverReservePoolUsdt === 'number') {
+        setRolloverReservePoolUsdt(data.rolloverReservePoolUsdt);
+      }
+      if (typeof data.chestsClaimedCount === 'number') {
+        setChestsClaimedCount(data.chestsClaimedCount);
+      }
+      if (Array.isArray(data.withdrawals)) {
+        setWithdrawals(data.withdrawals);
+      }
+      if (Array.isArray(data.claimedTicketCodes)) {
+        setClaimedTicketCodes(data.claimedTicketCodes);
+      }
+      if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
+    } catch (error) {
+      console.error('Snapshot fetch error (operating on IndexedDB PAM fallback):', error);
+    }
+  }, [getHeaders, syncPamStateEverywhere]);
+
+  const triggerDraw = useCallback(
+    async (roundCode: string): Promise<DrawExecutionResult | null> => {
+      try {
+        const headers = await getHeaders();
+        const res = await fetch('/api/admin/draw', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ roundCode }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pamState) {
+            syncPamStateEverywhere(data.pamState);
+          }
+          await refreshSnapshot();
+          return {
+            drawnMain: data.drawnMain,
+            drawnGolden: data.drawnGolden,
+            hash: data.hash,
+            ticketsEvaluatedCount: data.ticketsEvaluatedCount,
+            winnersCount: data.winnersCount,
+            totalPayoutUsdt: data.totalPayoutUsdt,
+            drawRecord: data.drawRecord,
+          };
+        }
+      } catch {
+        // Offline / local fallback execution using Provably Fair HMAC-SHA256 engine
+      }
+
+      const localSeeds = localPamEngineRef.current.getState().seeds;
+      const drawProof = deriveProvablyFairLotteryDraw({
+        serverSeed: localSeeds.serverSeed,
+        clientSeed: localSeeds.clientSeed,
+        nonce: localSeeds.nonce,
+        roundCode,
+        mainCount: 5,
+        mainMax: 50,
+        goldenMax: 15,
+      });
+
+      let evaluatedCount = 0;
+      let winnersCount = 0;
+      let totalPayout = 0;
+
+      setTickets((prev) =>
+        prev.map((t) => {
+          if (t.roundCode !== roundCode || t.status.toUpperCase() !== 'ACTIVE') return t;
+          evaluatedCount += 1;
+          let mainArr: number[] = [];
+          try {
+            mainArr = JSON.parse(t.mainNumbers);
+          } catch {
+            mainArr = [7, 14, 23, 38, 49];
+          }
+          const ev = evaluateTicketPrizeTier({
+            ticketMain: mainArr,
+            ticketGolden: t.goldenBall,
+            drawnMain: drawProof.drawnMain,
+            drawnGolden: drawProof.drawnGolden,
+            ticketCostUsdt: parseFloat(t.costUsdt) || 5,
+          });
+          if (ev.won && ev.prizeUsdt > 0) {
+            winnersCount += 1;
+            totalPayout += ev.prizeUsdt;
+            localPamEngineRef.current.credit({
+              transactionUuid: `tx_win_${t.ticketCode}_${drawProof.nonce}`,
+              referenceTransactionUuid: t.transactionUuid || null,
+              roundId: roundCode,
+              vertical: 'LUCKYDROP_LOTTERY',
+              amountUsdt: ev.prizeUsdt,
+              note: `برد قرعه‌کشی ${roundCode} (${ev.tierLabelFa})`,
+            });
+            return {
+              ...t,
+              status: 'WON',
+              prizeWonUsdt: ev.prizeUsdt.toFixed(2),
+              tierLabelFa: ev.tierLabelFa,
+              claimed: true,
+            };
+          }
+          return { ...t, status: 'LOST', prizeWonUsdt: '0.00', tierLabelFa: ev.tierLabelFa };
+        })
+      );
+
+      localPamEngineRef.current.rotateServerSeed();
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
+
+      const localRecord: VerifiableDrawHistoryRecord = {
+        drawId: `DRAW-${roundCode.replace('#', '')}-${drawProof.nonce}`,
+        roundCode,
+        roundTitleFa: `قرعه‌کشی ${roundCode}`,
+        drawnMain: drawProof.drawnMain,
+        drawnGolden: drawProof.drawnGolden,
+        serverSeed: drawProof.serverSeed,
+        serverSeedHash: drawProof.serverSeedHash,
+        clientSeed: drawProof.clientSeed,
+        nonce: drawProof.nonce,
+        primaryHmacHex: drawProof.primaryHmacHex,
+        first52BitHex: drawProof.first52BitHex,
+        uniformFloatX: drawProof.uniformFloatX,
+        ticketsEvaluatedCount: evaluatedCount,
+        winnersCount,
+        totalPayoutUsdt: totalPayout,
+        createdAt: 'همین الان',
+      };
+      setDrawHistory((prev) => [localRecord, ...prev]);
+
+      return {
+        drawnMain: drawProof.drawnMain,
+        drawnGolden: drawProof.drawnGolden,
+        hash: `0x${drawProof.primaryHmacHex}`,
+        ticketsEvaluatedCount: evaluatedCount,
+        winnersCount,
+        totalPayoutUsdt: totalPayout,
+        drawRecord: localRecord,
+      };
+    },
+    [getHeaders, refreshSnapshot, syncPamStateEverywhere]
+  );
+
   // 1-second global ticker for the 15s Oracle countdown + 4 concurrent lottery timers
+  // When any timer hits 0, triggers the real Provably Fair Draw Engine for that round!
   useEffect(() => {
     const interval = setInterval(() => {
       setOracleCountdownSec((prev) => {
@@ -725,17 +1006,23 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return prev - 1;
       });
 
-      setLotteryTimers((prev) => ({
-        MEGA_WEEKLY: prev.MEGA_WEEKLY > 1 ? prev.MEGA_WEEKLY - 1 : MULTI_LOTTERY_SPECS[0].initialCountdownSec,
-        DAILY_BLITZ: prev.DAILY_BLITZ > 1 ? prev.DAILY_BLITZ - 1 : MULTI_LOTTERY_SPECS[1].initialCountdownSec,
-        HOURLY_FLASH: prev.HOURLY_FLASH > 1 ? prev.HOURLY_FLASH - 1 : MULTI_LOTTERY_SPECS[2].initialCountdownSec,
-        TON_SPECIAL: prev.TON_SPECIAL > 1 ? prev.TON_SPECIAL - 1 : MULTI_LOTTERY_SPECS[3].initialCountdownSec,
-      }));
+      setLotteryTimers((prev) => {
+        const next = { ...prev };
+        for (const spec of MULTI_LOTTERY_SPECS) {
+          const id = spec.id;
+          if (prev[id] <= 1) {
+            triggerDraw(spec.roundCode);
+            next[id] = spec.initialCountdownSec;
+          } else {
+            next[id] = prev[id] - 1;
+          }
+        }
+        return next;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [refreshPriceOracleNow]);
+  }, [refreshPriceOracleNow, triggerDraw]);
 
-  // Handle browser back/forward navigation
   useEffect(() => {
     const onPopState = () => {
       setActiveRoute(resolveInitialRoute());
@@ -768,106 +1055,436 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const getHeaders = useCallback(async () => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (auth.currentUser) {
-      try {
-        const token = await auth.currentUser.getIdToken();
-        authTokenRef.current = token;
-      } catch {
-        // Ignore token refresh errors
-      }
-    }
-    if (authTokenRef.current) {
-      headers['Authorization'] = `Bearer ${authTokenRef.current}`;
-    }
-    return headers;
-  }, []);
+  // ==========================================================================
+  // 7 STANDARD PAM SEAMLESS WALLET OPERATIONS (CLIENT <-> SERVER + INDEXEDDB)
+  // ==========================================================================
 
-  const mergeRoundsWithConcurrentSpecs = (serverRounds: LotteryRoundItem[]): LotteryRoundItem[] => {
-    const baseSpecs = buildDefaultConcurrentRounds();
-    const mapByCode = new Map<string, LotteryRoundItem>();
-    for (const b of baseSpecs) {
-      mapByCode.set(b.roundCode, b);
-    }
-    for (const sr of serverRounds) {
-      const existing = mapByCode.get(sr.roundCode);
-      if (existing) {
-        mapByCode.set(sr.roundCode, {
-          ...existing,
-          ...sr,
-          ticketPriceUsdt: existing.ticketPriceUsdt,
-          formatLabel: existing.formatLabel,
-          mainCount: existing.mainCount,
-          mainMax: existing.mainMax,
-          goldenMax: existing.goldenMax,
-          lotteryType: existing.lotteryType,
-        });
-      } else {
-        mapByCode.set(sr.roundCode, sr);
-      }
-    }
-    return Array.from(mapByCode.values());
-  };
-
-  const refreshSnapshot = useCallback(async () => {
+  const pamAuthenticate = async (): Promise<PAMOperationResponse> => {
     try {
       const headers = await getHeaders();
-      const res = await fetch('/api/snapshot', { headers });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.user) {
-        setBalanceUsdt(parseFloat(data.user.balanceUsdt) || 3030.3);
-        setVipTier(data.user.vipTier || 'DIAMOND VIP');
-        setDisplayName(data.user.displayName || 'کاربر ویژه VIP');
+      const res = await fetch('/api/pam/authenticate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          playerId: firebaseUser?.uid || pamState.playerId,
+          displayName: firebaseUser?.displayName || displayName,
+          vipTier,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.playerState) syncPamStateEverywhere(data.playerState);
+        return data;
       }
-      if (Array.isArray(data.rounds)) {
-        setRounds(mergeRoundsWithConcurrentSpecs(data.rounds));
-      }
-      if (Array.isArray(data.tickets)) {
-        const existingCodes = new Set(data.tickets.map((t: TicketItem) => t.ticketCode));
-        const mergedTickets = [
-          ...data.tickets,
-          ...DEMO_WINNING_TICKETS.filter((d) => !existingCodes.has(d.ticketCode)),
-        ];
-        setTickets(mergedTickets);
-        if (mergedTickets.length > 0) {
-          setActiveTrackingTicket((prev) => prev || mergedTickets[0]);
-        }
-      }
-      if (Array.isArray(data.transactions)) setTransactions(data.transactions);
-      if (Array.isArray(data.supportMessages)) setSupportMessages(data.supportMessages);
-      if (Array.isArray(data.deposits)) setDeposits(data.deposits);
-      if (Array.isArray(data.referralEvents) && data.referralEvents.length > 0) {
-        setReferralEvents(data.referralEvents);
-      }
-      if (data.telegramBotConfig && typeof data.telegramBotConfig === 'object') {
-        setTelegramBotConfig((prev) => ({ ...prev, ...data.telegramBotConfig }));
-      }
-      if (Array.isArray(data.telegramAlertsLog)) {
-        setTelegramAlertsLog(data.telegramAlertsLog);
-      }
-      if (typeof data.rolloverReservePoolUsdt === 'number') {
-        setRolloverReservePoolUsdt(data.rolloverReservePoolUsdt);
-      }
-      if (typeof data.chestsClaimedCount === 'number') {
-        setChestsClaimedCount(data.chestsClaimedCount);
-      }
-      if (Array.isArray(data.withdrawals) && data.withdrawals.length > 0) {
-        setWithdrawals(data.withdrawals);
-      }
-      if (Array.isArray(data.claimedTicketCodes)) {
-        setClaimedTicketCodes((prev) => Array.from(new Set([...prev, ...data.claimedTicketCodes])));
-      }
-      if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
-    } catch (error) {
-      console.error('Snapshot fetch error (operating on local state fallback):', error);
+    } catch {
+      // Fallback to local engine
     }
-  }, [getHeaders]);
+    const localRes = localPamEngineRef.current.authenticate({
+      playerId: firebaseUser?.uid || pamState.playerId,
+      displayName: firebaseUser?.displayName || displayName,
+      vipTier,
+    });
+    syncPamStateEverywhere(localPamEngineRef.current.getState());
+    return localRes;
+  };
 
-  // Validate Firestore connection on initial boot & pull cloud official wallets
+  const pamFetchBalance = async (): Promise<PAMOperationResponse> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/balance', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        await refreshSnapshot();
+        return data;
+      }
+    } catch {
+      // Fallback
+    }
+    return localPamEngineRef.current.balance();
+  };
+
+  const pamDebit = async (params: {
+    transactionUuid?: string;
+    roundId: string;
+    vertical: string;
+    amountUsdt: number;
+    note?: string;
+  }): Promise<PAMOperationResponse> => {
+    const txUuid = params.transactionUuid || generateDeterministicUuid('tx_debit');
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/debit', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          transaction_uuid: txUuid,
+          round_id: params.roundId,
+          vertical: params.vertical,
+          amountUsdt: params.amountUsdt,
+          note: params.note,
+        }),
+      });
+      const data = await res.json();
+      await refreshSnapshot();
+      return data;
+    } catch {
+      const localRes = localPamEngineRef.current.debit({
+        transactionUuid: txUuid,
+        roundId: params.roundId,
+        vertical: params.vertical,
+        amountUsdt: params.amountUsdt,
+        note: params.note,
+      });
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
+      return localRes;
+    }
+  };
+
+  const pamCredit = async (params: {
+    transactionUuid?: string;
+    referenceTransactionUuid?: string | null;
+    roundId: string;
+    vertical: string;
+    amountUsdt: number;
+    note?: string;
+    awardLuckyAirdropTicket?: boolean;
+  }): Promise<PAMOperationResponse & { bonusTicketAwarded?: TicketItem | null }> => {
+    const txUuid = params.transactionUuid || generateDeterministicUuid('tx_credit');
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/credit', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          transaction_uuid: txUuid,
+          reference_transaction_uuid: params.referenceTransactionUuid || null,
+          round_id: params.roundId,
+          vertical: params.vertical,
+          amountUsdt: params.amountUsdt,
+          note: params.note,
+          awardLuckyAirdropTicket: Boolean(params.awardLuckyAirdropTicket),
+        }),
+      });
+      const data = await res.json();
+      if (data.bonusTicketAwarded) {
+        setTickets((prev) => [data.bonusTicketAwarded, ...prev]);
+      }
+      await refreshSnapshot();
+      return data;
+    } catch {
+      const localRes = localPamEngineRef.current.credit({
+        transactionUuid: txUuid,
+        referenceTransactionUuid: params.referenceTransactionUuid || null,
+        roundId: params.roundId,
+        vertical: params.vertical,
+        amountUsdt: params.amountUsdt,
+        note: params.note,
+      });
+      let bonusTicketAwarded: TicketItem | null = null;
+      if (localRes.ok && params.awardLuckyAirdropTicket) {
+        const seedsNow = localPamEngineRef.current.getState().seeds;
+        const ticketCode = `AIR-${Math.floor(100000 + Math.random() * 900000)}`;
+        const txHash = `0x${sha256Hex(`${txUuid}:${ticketCode}`)}`;
+        bonusTicketAwarded = {
+          id: Date.now(),
+          ticketCode,
+          userUid: localPamEngineRef.current.getState().playerId,
+          roundCode: '#ZRN-8493',
+          mainNumbers: JSON.stringify([5, 12, 23, 34, 48]),
+          goldenBall: 5,
+          costUsdt: '0.00',
+          currencyNetwork: 'CRASH LUCKY AIRDROP (>=5x)',
+          txHash,
+          transactionUuid: `${txUuid}_airdrop_ticket`,
+          clientSeed: seedsNow.clientSeed,
+          serverSeedHash: seedsNow.serverSeedHash,
+          nonce: seedsNow.nonce,
+          commitHash: txHash.slice(2, 34),
+          status: 'ACTIVE',
+          confirmations: 19,
+          prizeWonUsdt: '0.00',
+          claimed: false,
+          createdAt: 'همین الان (ایردراپ چتر طلایی Crash >= 5.00x)',
+        };
+        setTickets((prev) => [bonusTicketAwarded!, ...prev]);
+      }
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
+      return { ...localRes, bonusTicketAwarded };
+    }
+  };
+
+  const pamRollback = async (params: {
+    transactionUuid?: string;
+    referenceTransactionUuid: string;
+    roundId: string;
+    vertical: string;
+    note?: string;
+  }): Promise<PAMOperationResponse> => {
+    const txUuid = params.transactionUuid || generateDeterministicUuid('tx_rollback');
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/rollback', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          transaction_uuid: txUuid,
+          reference_transaction_uuid: params.referenceTransactionUuid,
+          round_id: params.roundId,
+          vertical: params.vertical,
+          note: params.note,
+        }),
+      });
+      const data = await res.json();
+      await refreshSnapshot();
+      return data;
+    } catch {
+      const localRes = localPamEngineRef.current.rollback({
+        transactionUuid: txUuid,
+        referenceTransactionUuid: params.referenceTransactionUuid,
+        roundId: params.roundId,
+        vertical: params.vertical,
+        note: params.note,
+      });
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
+      return localRes;
+    }
+  };
+
+  const pamBonus = async (params: {
+    transactionUuid?: string;
+    roundId: string;
+    vertical: string;
+    amountUsdt: number;
+    creditToRealBalance?: boolean;
+    note?: string;
+  }): Promise<PAMOperationResponse> => {
+    const txUuid = params.transactionUuid || generateDeterministicUuid('tx_bonus');
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/bonus', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          transaction_uuid: txUuid,
+          round_id: params.roundId,
+          vertical: params.vertical,
+          amountUsdt: params.amountUsdt,
+          creditToRealBalance: params.creditToRealBalance ?? true,
+          note: params.note,
+        }),
+      });
+      const data = await res.json();
+      await refreshSnapshot();
+      return data;
+    } catch {
+      const localRes = localPamEngineRef.current.bonus({
+        transactionUuid: txUuid,
+        roundId: params.roundId,
+        vertical: params.vertical,
+        amountUsdt: params.amountUsdt,
+        creditToRealBalance: params.creditToRealBalance ?? true,
+        note: params.note,
+      });
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
+      return localRes;
+    }
+  };
+
+  const pamReconcile = async (): Promise<PAMOperationResponse> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/reconcile', {
+        method: 'POST',
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.reconciliation) setPamReconciliation(data.reconciliation);
+        return data;
+      }
+    } catch {
+      // Fallback
+    }
+    const localRes = localPamEngineRef.current.reconcile();
+    if (localRes.reconciliation) setPamReconciliation(localRes.reconciliation);
+    return localRes;
+  };
+
+  const updateProvablyFairClientSeed = async (nextClientSeed: string): Promise<ProvablyFairSeedState> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/seeds/client', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ clientSeed: nextClientSeed }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await refreshSnapshot();
+        return data.seeds;
+      }
+    } catch {
+      // Fallback
+    }
+    const seeds = localPamEngineRef.current.updateClientSeed(nextClientSeed);
+    syncPamStateEverywhere(localPamEngineRef.current.getState());
+    return seeds;
+  };
+
+  const rotateProvablyFairServerSeed = async (): Promise<ProvablyFairSeedState> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/seeds/rotate', {
+        method: 'POST',
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await refreshSnapshot();
+        return data.seeds;
+      }
+    } catch {
+      // Fallback
+    }
+    const seeds = localPamEngineRef.current.rotateServerSeed();
+    syncPamStateEverywhere(localPamEngineRef.current.getState());
+    return seeds;
+  };
+
+  const playInstantMiniGame = async (params: {
+    gameId: InstantMiniGameId;
+    betAmountUsdt: number;
+    diceRollUnder?: number;
+    coinSide?: 'HEADS' | 'TAILS';
+    crashAutoCashoutX?: number;
+    plinkoRows?: PlinkoRowCount;
+    plinkoRisk?: PlinkoRiskLevel;
+  }) => {
+    if (killSwitchActive) {
+      return {
+        ok: false,
+        error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: بازی‌های آنی موقتاً متوقف است.',
+        balanceUsdt,
+      };
+    }
+    const currentLiveBalance = localPamEngineRef.current.getState().balanceUsdt;
+    if (currentLiveBalance < params.betAmountUsdt && balanceUsdt < params.betAmountUsdt) {
+      setDepositModalOpen(true);
+      return {
+        ok: false,
+        error: 'موجودی کیف پول PAM شما کافی نیست.',
+        balanceUsdt,
+      };
+    }
+
+    const txUuid = generateDeterministicUuid('mg_debit');
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/pam/mini-game/play', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...params,
+          transaction_uuid: txUuid,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.pamState) {
+          syncPamStateEverywhere(data.pamState);
+        } else {
+          await refreshSnapshot();
+        }
+        if (data.bonusTicketAwarded) {
+          setTickets((prev) => [data.bonusTicketAwarded, ...prev]);
+        }
+        return {
+          ok: true,
+          evaluation: data.evaluation as MiniGameEvaluationResult,
+          bonusTicketAwarded: data.bonusTicketAwarded || null,
+          debitTransactionUuid: data.debitTransactionUuid || txUuid,
+          balanceUsdt: data.balanceUsdt,
+        };
+      }
+      return {
+        ok: false,
+        error: data.error || 'خطا در اجرای بازی آنی',
+        balanceUsdt: data.balanceUsdt ?? balanceUsdt,
+      };
+    } catch {
+      // Local PAM + 52-bit HMAC-SHA256 fallback
+      const seedsBefore = { ...localPamEngineRef.current.getState().seeds };
+      const roundId = `MG-${params.gameId}-${seedsBefore.nonce}`;
+      const debitRes = localPamEngineRef.current.debit({
+        transactionUuid: txUuid,
+        roundId,
+        vertical: `INSTANT_${params.gameId}`,
+        amountUsdt: params.betAmountUsdt,
+        note: `شرط بازی آنی ${params.gameId}`,
+      });
+      if (!debitRes.ok) {
+        return { ok: false, error: debitRes.error, balanceUsdt: debitRes.balanceUsdt };
+      }
+      const evaluation = evaluateProvablyFairMiniGame({
+        gameId: params.gameId,
+        serverSeed: seedsBefore.serverSeed,
+        clientSeed: seedsBefore.clientSeed,
+        nonce: seedsBefore.nonce,
+        betAmountUsdt: params.betAmountUsdt,
+        diceRollUnder: params.diceRollUnder,
+        coinSide: params.coinSide,
+        crashAutoCashoutX: params.crashAutoCashoutX,
+        plinkoRows: params.plinkoRows,
+        plinkoRisk: params.plinkoRisk,
+      });
+      if (evaluation.payoutUsdt > 0) {
+        localPamEngineRef.current.credit({
+          transactionUuid: generateDeterministicUuid('mg_credit'),
+          referenceTransactionUuid: txUuid,
+          roundId,
+          vertical: `INSTANT_${params.gameId}`,
+          amountUsdt: evaluation.payoutUsdt,
+          note: `تسویه ضریب ${params.gameId} (${evaluation.multiplier}x)`,
+        });
+      }
+      let bonusTicketAwarded: TicketItem | null = null;
+      if (evaluation.plinkoBonusTicket) {
+        const ticketCode = `PLK-${Math.floor(100000 + Math.random() * 900000)}`;
+        const txHash = `0x${sha256Hex(`${txUuid}:${ticketCode}`)}`;
+        bonusTicketAwarded = {
+          id: Date.now(),
+          ticketCode,
+          userUid: localPamEngineRef.current.getState().playerId,
+          roundCode: '#ZRN-8493',
+          mainNumbers: JSON.stringify([7, 14, 21, 35, 42]),
+          goldenBall: 7,
+          costUsdt: '0.00',
+          currencyNetwork: 'PLINKO BONUS TICKET',
+          txHash,
+          transactionUuid: `${txUuid}_bonus_ticket`,
+          clientSeed: seedsBefore.clientSeed,
+          serverSeedHash: seedsBefore.serverSeedHash,
+          nonce: seedsBefore.nonce,
+          commitHash: txHash.slice(2, 34),
+          status: 'ACTIVE',
+          confirmations: 19,
+          prizeWonUsdt: '0.00',
+          claimed: false,
+          createdAt: 'همین الان (جایزه اسلات ویژه Plinko)',
+        };
+        setTickets((prev) => [bonusTicketAwarded!, ...prev]);
+      }
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
+      return {
+        ok: true,
+        evaluation,
+        bonusTicketAwarded,
+        debitTransactionUuid: txUuid,
+        balanceUsdt: localPamEngineRef.current.getState().balanceUsdt,
+      };
+    }
+  };
+
   useEffect(() => {
     testFirestoreConnection().then((ok) => setFirestoreConnected(ok));
     fetchOfficialWalletsFromFirestore().then((cloudWallets) => {
@@ -934,7 +1551,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           slipIndex: 1,
           mainNumbers: selectedMainBalls,
           goldenBall: selectedGoldenBall,
-          clientSeed: `zarrin-vip-${Math.random().toString(16).slice(2, 10)}`,
+          clientSeed: pamState.seeds.clientSeed || `zarrin-vip-${Math.random().toString(16).slice(2, 10)}`,
         },
       ],
       activeLotterySpec.roundCode,
@@ -967,18 +1584,20 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
     }
 
+    const txUuid = generateDeterministicUuid('tx_ticket_debit');
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/tickets/purchase', {
         method: 'POST',
         headers,
         body: JSON.stringify({
+          transaction_uuid: txUuid,
           roundCode,
           mainNumbers: slips[0].mainNumbers,
           goldenBall: slips[0].goldenBall,
           costUsdt: totalCostUsdt,
           currencyNetwork: network,
-          clientSeed: slips[0].clientSeed,
+          clientSeed: slips[0].clientSeed || pamState.seeds.clientSeed,
           referredByCode,
           slips,
         }),
@@ -990,12 +1609,11 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         return { ok: false, error: data.error || 'خطا در خرید بلیت' };
       }
-      if (typeof data.newBalanceUsdt === 'number') {
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState);
+      } else if (typeof data.newBalanceUsdt === 'number') {
         setBalanceUsdt(data.newBalanceUsdt);
-      } else {
-        setBalanceUsdt((prev) => Number((prev - totalCostUsdt).toFixed(2)));
       }
-      // If a referral code is active, record the 2% commission carved out of the 10% house margin
       if (referredByCode && referredByCode !== referralCode) {
         const split = calculateZeroLossTicketSplit(totalCostUsdt, true, 85, 2);
         setReferralEarningsUsdt((prev) => Number((prev + split.referralCommissionUsdt).toFixed(2)));
@@ -1012,31 +1630,43 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       await refreshSnapshot();
       return { ok: true, tickets: mintedList };
     } catch {
-      // Resilient local fallback if backend DB is unreachable
+      // Local PAM Seamless Wallet Debit fallback
+      const debitRes = localPamEngineRef.current.debit({
+        transactionUuid: txUuid,
+        roundId: roundCode,
+        vertical: 'LUCKYDROP_LOTTERY',
+        amountUsdt: totalCostUsdt,
+        note: `خرید ${slips.length} کوپن لاتاری (${roundCode})`,
+      });
+      if (!debitRes.ok) {
+        return { ok: false, error: debitRes.error || 'INSUFFICIENT_BALANCE' };
+      }
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
       const fallbackTickets: TicketItem[] = slips.map((slip, idx) => {
-        const ticketCode = `ZR-${Math.floor(100000 + Math.random() * 900000)}`;
-        const txHash = computeDeterministicHash(slip.clientSeed, network, Date.now() + idx);
+        const ticketCode = `ZRN-${Math.floor(100000 + Math.random() * 900000)}`;
+        const txHash = `0x${sha256Hex(`${txUuid}:${ticketCode}:${idx}`)}`;
         return {
           id: Date.now() + idx,
           ticketCode,
-          userUid: 'vip-demo-user',
+          userUid: pamState.playerId,
           roundCode,
           mainNumbers: JSON.stringify(slip.mainNumbers),
           goldenBall: slip.goldenBall,
           costUsdt: (totalCostUsdt / slips.length).toFixed(2),
           currencyNetwork: network,
           txHash,
+          transactionUuid: idx === 0 ? txUuid : `${txUuid}_${idx + 1}`,
           clientSeed: slip.clientSeed,
-          serverSeedHash: activeLotterySpec.serverSeedHash,
+          serverSeedHash: pamState.seeds.serverSeedHash,
+          nonce: pamState.seeds.nonce + idx,
           commitHash: txHash.slice(2, 34),
-          status: 'minted',
+          status: 'ACTIVE',
           confirmations: 19,
           prizeWonUsdt: '0.00',
           claimed: false,
           createdAt: 'همین الان',
         };
       });
-      setBalanceUsdt((prev) => Number((prev - totalCostUsdt).toFixed(2)));
       setTickets((prev) => [...fallbackTickets, ...prev]);
       setActiveTrackingTicket(fallbackTickets[0]);
       return { ok: true, tickets: fallbackTickets };
@@ -1060,14 +1690,18 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const data = await res.json();
         if (typeof data.newBalanceUsdt === 'number') {
           setBalanceUsdt(data.newBalanceUsdt);
-        } else {
-          setBalanceUsdt((prev) => Number((prev + prizeUsdt).toFixed(2)));
         }
-      } else {
-        setBalanceUsdt((prev) => Number((prev + prizeUsdt).toFixed(2)));
       }
     } catch {
-      setBalanceUsdt((prev) => Number((prev + prizeUsdt).toFixed(2)));
+      localPamEngineRef.current.credit({
+        transactionUuid: `tx_claim_${ticketCode}`,
+        referenceTransactionUuid: null,
+        roundId: ticketCode,
+        vertical: 'LUCKYDROP_LOTTERY',
+        amountUsdt: prizeUsdt,
+        note: `دریافت جایزه کوپن ${ticketCode}`,
+      });
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
     }
     const nextClaimed = Array.from(new Set([...claimedTicketCodes, ticketCode]));
     setClaimedTicketCodes(nextClaimed);
@@ -1093,10 +1727,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const submitDepositRequest = async (params: {
     amountUsdt: number;
     network: string;
+    cryptoKey?: string;
     txHash: string;
-    senderWallet: string;
-    officialRecipientWallet: string;
-    mode: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
+    senderWallet?: string;
+    officialRecipientWallet?: string;
+    mode?: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
+    verificationMode?: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
     web3Signed?: boolean;
   }) => {
     if (killSwitchActive) {
@@ -1107,12 +1743,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
     }
 
+    const effectiveMode = params.verificationMode || params.mode || 'ONCHAIN_AUTO';
+
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/wallet/deposit', {
         method: 'POST',
         headers,
-        body: JSON.stringify(params),
+        body: JSON.stringify({ ...params, mode: effectiveMode, verificationMode: effectiveMode }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1124,62 +1762,48 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (Array.isArray(data.deposits)) {
         setDeposits(data.deposits);
-      } else if (data.deposit) {
-        setDeposits((prev) => [data.deposit, ...prev]);
       }
+      await refreshSnapshot();
 
       if (data.queuedForAdmin) {
-        await refreshSnapshot();
         return {
           ok: true,
           queuedForAdmin: true,
+          status: 'PENDING_ADMIN',
           deposit: data.deposit,
           message:
             '📋 فیش و هش تراکنش (TXID) شما با موفقیت در «صف تایید ادمین در کاکپیت» ثبت شد. پس از تایید اپراتور به موجودی شما افزوده می‌شود.',
         };
       }
 
-      if (typeof data.newBalanceUsdt === 'number') {
-        setBalanceUsdt(data.newBalanceUsdt);
-      } else {
-        setBalanceUsdt((prev) => Number((prev + params.amountUsdt).toFixed(2)));
-      }
-      await refreshSnapshot();
       return {
         ok: true,
         queuedForAdmin: false,
+        status: 'CREDITED',
         deposit: data.deposit,
         message: `✅ تراکنش شما در شبکه ${params.network} تایید شد و مبلغ $${params.amountUsdt.toLocaleString(
           'en-US'
-        )} USDT به صورت آنی به کیف پول شما اضافه گردید!`,
+        )} USDT به صورت آنی در دفترکل PAM شارژ گردید!`,
       };
     } catch {
-      const fallbackItem: DepositRecordItem = {
-        id: Date.now(),
-        depositCode: `DEP-${Math.floor(100000 + Math.random() * 900000)}`,
-        userUid: firebaseUser?.uid || 'vip-demo-user',
-        userDisplayName: displayName,
-        network: params.network,
-        senderWallet: params.senderWallet || connectedWeb3Wallet || 'Web3 Wallet',
-        officialRecipientWallet: params.officialRecipientWallet,
-        amountUsdt: params.amountUsdt,
-        txHash: params.txHash,
-        explorerUrl: getBlockchainExplorerTxUrl(params.network, params.txHash),
-        verificationMethod: params.mode,
-        status: params.mode === 'ADMIN_MANUAL' ? 'pending_admin' : 'confirmed',
-        confirmations: params.mode === 'ADMIN_MANUAL' ? 1 : 19,
-        createdAt: 'همین الان',
-      };
-      setDeposits((prev) => [fallbackItem, ...prev]);
-      if (params.mode === 'ONCHAIN_AUTO') {
-        setBalanceUsdt((prev) => Number((prev + params.amountUsdt).toFixed(2)));
+      const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
+      if (effectiveMode === 'ONCHAIN_AUTO') {
+        localPamEngineRef.current.credit({
+          transactionUuid: `tx_dep_${depositCode}`,
+          referenceTransactionUuid: null,
+          roundId: depositCode,
+          vertical: 'CRYPTO_TREASURY',
+          amountUsdt: params.amountUsdt,
+          note: `واریز رمزارزی ${params.network}`,
+        });
+        syncPamStateEverywhere(localPamEngineRef.current.getState());
       }
       return {
         ok: true,
-        queuedForAdmin: params.mode === 'ADMIN_MANUAL',
-        deposit: fallbackItem,
+        queuedForAdmin: effectiveMode === 'ADMIN_MANUAL',
+        status: effectiveMode === 'ADMIN_MANUAL' ? 'PENDING_ADMIN' : 'CREDITED',
         message:
-          params.mode === 'ADMIN_MANUAL'
+          effectiveMode === 'ADMIN_MANUAL'
             ? '📋 فیش و هش تراکنش شما در صف تایید اپراتور ارشد ثبت شد.'
             : `✅ واریز $${params.amountUsdt} USDT در شبکه تایید و به حساب شما افزوده شد.`,
       };
@@ -1198,37 +1822,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         body: JSON.stringify({ depositCode, action }),
       });
       if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.deposits)) {
-          setDeposits(data.deposits);
-        }
-        if (typeof data.newBalanceUsdt === 'number') {
-          setBalanceUsdt(data.newBalanceUsdt);
-        }
         await refreshSnapshot();
         return true;
       }
     } catch {
-      // Fallback to local update
+      // Fallback
     }
-
-    setDeposits((prev) =>
-      prev.map((d) => {
-        if (action === 'approve_all' && d.status === 'pending_admin') {
-          setBalanceUsdt((b) => Number((b + d.amountUsdt).toFixed(2)));
-          return { ...d, status: 'confirmed' as const, confirmations: 19 };
-        }
-        if (d.depositCode !== depositCode) return d;
-        if (action === 'approve' && d.status === 'pending_admin') {
-          setBalanceUsdt((b) => Number((b + d.amountUsdt).toFixed(2)));
-          return { ...d, status: 'confirmed' as const, confirmations: 19 };
-        }
-        if (action === 'reject') {
-          return { ...d, status: 'rejected' as const };
-        }
-        return d;
-      })
-    );
     return true;
   };
 
@@ -1268,43 +1867,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
       const data = await res.json();
       if (res.ok && data.withdrawal) {
-        if (typeof data.newBalanceUsdt === 'number') {
-          setBalanceUsdt(data.newBalanceUsdt);
-        } else {
-          setBalanceUsdt((prev) => Number((prev - feeCalc.grossAmountUsdt).toFixed(2)));
-        }
-        const nextList = [data.withdrawal, ...withdrawals];
-        setWithdrawals(nextList);
-        const local = loadLocalState();
-        saveLocalState({ ...local, withdrawals: nextList });
+        await refreshSnapshot();
         return { ok: true, withdrawal: data.withdrawal };
       }
     } catch {
-      // Fallback to local state engine
+      // Fallback
     }
-
-    const fallbackItem: WithdrawalRecord = {
-      id: Date.now(),
-      withdrawalCode: `WD-${Math.floor(100000 + Math.random() * 900000)}`,
-      userUid: 'vip-demo-user',
-      userDisplayName: displayName,
-      network: params.network,
-      destinationAddress: params.destinationAddress,
-      grossAmountUsdt: feeCalc.grossAmountUsdt,
-      networkFeeUsdt: feeCalc.networkFeeUsdt,
-      netAmountUsdt: feeCalc.netAmountUsdt,
-      netAmountCrypto: feeCalc.netAmountCrypto,
-      twoFactorVerified: true,
-      status: 'pending_review',
-      txHash: `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
-      createdAt: 'همین الان',
-    };
-    setBalanceUsdt((prev) => Number((prev - feeCalc.grossAmountUsdt).toFixed(2)));
-    const nextList = [fallbackItem, ...withdrawals];
-    setWithdrawals(nextList);
-    const local = loadLocalState();
-    saveLocalState({ ...local, withdrawals: nextList });
-    return { ok: true, withdrawal: fallbackItem };
+    return { ok: false, error: 'خطا در ثبت برداشت' };
   };
 
   const adminActionWithdrawal = async (
@@ -1318,27 +1887,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         headers,
         body: JSON.stringify({ withdrawalCode, action }),
       });
+      await refreshSnapshot();
     } catch {
-      // Continue with local state update
+      // ignore
     }
-    setWithdrawals((prev) => {
-      const next = prev.map((w) => {
-        if (action === 'sweep_all') {
-          if (w.status === 'pending_review' || w.status === 'broadcasting') {
-            return { ...w, status: 'completed' as const };
-          }
-          return w;
-        }
-        if (w.withdrawalCode !== withdrawalCode) return w;
-        if (action === 'approve') return { ...w, status: 'completed' as const };
-        if (action === 'broadcast') return { ...w, status: 'broadcasting' as const };
-        if (action === 'reject') return { ...w, status: 'rejected' as const };
-        return w;
-      });
-      const local = loadLocalState();
-      saveLocalState({ ...local, withdrawals: next });
-      return next;
-    });
     return true;
   };
 
@@ -1363,27 +1915,6 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await setKillSwitchState();
   };
 
-  const triggerDraw = async (roundCode: string) => {
-    try {
-      const headers = await getHeaders();
-      const res = await fetch('/api/admin/draw', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ roundCode }),
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      await refreshSnapshot();
-      return {
-        drawnMain: data.drawnMain,
-        drawnGolden: data.drawnGolden,
-        hash: data.hash,
-      };
-    } catch {
-      return null;
-    }
-  };
-
   const createNewRound = async (input: {
     titleFa: string;
     category: string;
@@ -1398,33 +1929,106 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         headers,
         body: JSON.stringify(input),
       });
-      if (!res.ok) return false;
-      await refreshSnapshot();
-      return true;
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.rounds)) {
+          setRounds(data.rounds);
+        } else {
+          await refreshSnapshot();
+        }
+        return true;
+      }
     } catch {
-      return false;
+      // Local fallback if offline
     }
+    const fallbackCode = `#ZRN-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newSeed = generateCryptographicServerSeed();
+    const fallbackRound: LotteryRoundItem = {
+      id: Date.now(),
+      roundCode: fallbackCode,
+      lotteryType: 'MEGA_WEEKLY',
+      titleFa: input.titleFa,
+      titleEn: input.titleFa,
+      titleZh: input.titleFa,
+      subtitleFa: '۵ گوی از ۵۰ + ۱ گوی طلایی',
+      category: input.category,
+      formatLabel: '5/50 + 1/15',
+      mainCount: 5,
+      mainMax: 50,
+      goldenMax: 15,
+      jackpotUsdt: input.jackpotUsdt.toFixed(2),
+      ticketPriceUsdt: input.ticketPriceUsdt.toFixed(2),
+      rtpPercent: input.rtpPercent.toFixed(2),
+      soldPercent: 10,
+      remainingLabel: '۹۰٪ باقی‌مانده',
+      drawTimeLabel: 'فعال در مدار',
+      serverSeedHash: sha256Hex(newSeed),
+      clientSeed: pamState.seeds.clientSeed,
+      winningNumbers: '[7,14,23,38,49]',
+      winningGoldenBall: 8,
+      totalSalesUsdt: '0.00',
+      totalPayoutUsdt: input.jackpotUsdt.toFixed(2),
+      operatorProfitUsdt: (input.jackpotUsdt * 0.1).toFixed(2),
+      rolloverReserveUsdt: (input.jackpotUsdt * 0.03).toFixed(2),
+      status: 'ACTIVE',
+    };
+    setRounds((prev) => [fallbackRound, ...prev]);
+    return true;
+  };
+
+  const deleteLotteryRound = async (roundCode: string): Promise<boolean> => {
+    setRounds((prev) => prev.filter((r) => r.roundCode !== roundCode));
+    try {
+      const headers = await getHeaders();
+      const encoded = encodeURIComponent(roundCode);
+      const res = await fetch(`/api/admin/rounds/${encoded}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.rounds)) {
+          setRounds(data.rounds);
+        }
+        return true;
+      }
+    } catch {
+      // Already removed in local state
+    }
+    return true;
   };
 
   const updateRoundTicketPrice = (roundCode: string, newPriceUsdt: number) => {
     const safePrice = Math.max(0.5, Number(newPriceUsdt) || 5);
     setRounds((prev) =>
       prev.map((r) =>
-        r.roundCode === roundCode
-          ? { ...r, ticketPriceUsdt: safePrice.toFixed(2) }
-          : r
+        r.roundCode === roundCode ? { ...r, ticketPriceUsdt: safePrice.toFixed(2) } : r
       )
     );
+    getHeaders().then((headers) => {
+      fetch('/api/admin/rounds/price', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ roundCode, ticketPriceUsdt: safePrice }),
+      }).catch(() => {});
+    });
   };
 
   const toggleRoundSales = async (roundCode: string) => {
     try {
       const headers = await getHeaders();
-      await fetch('/api/admin/rounds/toggle', {
+      const res = await fetch('/api/admin/rounds/toggle', {
         method: 'POST',
         headers,
         body: JSON.stringify({ roundCode }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.rounds)) {
+          setRounds(data.rounds);
+          return;
+        }
+      }
       await refreshSnapshot();
     } catch (err) {
       console.error('Toggle round error:', err);
@@ -1434,7 +2038,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const sendSupportMessage = async (
     sessionCode: string,
     message: string,
-    senderRole: string = 'admin',
+    senderRole: string = 'OPERATOR',
     senderName: string = 'اپراتور ارشد زرین'
   ) => {
     try {
@@ -1459,7 +2063,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return { ...DEFAULT_OFFICIAL_WALLETS, ...JSON.parse(raw) };
       }
     } catch {
-      // ignore storage errors
+      // ignore
     }
     return DEFAULT_OFFICIAL_WALLETS;
   });
@@ -1470,7 +2074,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         localStorage.setItem('luckydrop_official_wallets_v1', JSON.stringify(updated));
       } catch {
-        // ignore storage errors
+        // ignore
       }
       syncOfficialWalletsToFirestore({ ...updated, solvencyMode });
       return updated;
@@ -1489,7 +2093,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let detectedAddress = (manualAddressOverride || '').trim();
 
     try {
-      if (!detectedAddress && providerType === 'TronLink') {
+      if (!detectedAddress && (providerType === 'TronLink' || providerType === 'TRONLINK')) {
         const tronLink = (window as any)?.tronLink;
         const tronWeb = (window as any)?.tronWeb;
         if (tronLink?.request) {
@@ -1498,7 +2102,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (tronWeb?.defaultAddress?.base58) {
           detectedAddress = String(tronWeb.defaultAddress.base58);
         }
-      } else if (!detectedAddress && providerType === 'MetaMask / TrustWallet') {
+      } else if (
+        !detectedAddress &&
+        (providerType === 'MetaMask / TrustWallet' || providerType === 'METAMASK')
+      ) {
         const ethereum = (window as any)?.ethereum;
         if (ethereum?.request) {
           const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
@@ -1506,7 +2113,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
             detectedAddress = String(accounts[0]);
           }
         }
-      } else if (!detectedAddress && providerType === 'TON Wallet') {
+      } else if (!detectedAddress && (providerType === 'TON Wallet' || providerType === 'TON')) {
         const ton = (window as any)?.ton;
         if (ton?.send) {
           const accounts = await ton.send('ton_requestAccounts');
@@ -1520,10 +2127,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     if (!detectedAddress) {
-      // Cryptographically bind a deterministic session address for the chosen provider if extension is not installed
-      if (providerType === 'TronLink') {
+      if (providerType === 'TronLink' || providerType === 'TRONLINK') {
         detectedAddress = 'TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb';
-      } else if (providerType === 'MetaMask / TrustWallet') {
+      } else if (providerType === 'MetaMask / TrustWallet' || providerType === 'METAMASK') {
         detectedAddress = '0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7';
       } else {
         detectedAddress = 'UQCV8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_TONVIP';
@@ -1536,7 +2142,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.setItem('luckydrop_web3_wallet', detectedAddress);
       localStorage.setItem('luckydrop_web3_provider', providerType);
     } catch {
-      // ignore storage errors
+      // ignore
     }
 
     if (firebaseUser) {
@@ -1575,8 +2181,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const connectTelegramAccount = (customHandle?: string): string => {
     const tgUser = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user;
     const rawHandle =
-      customHandle?.trim() ||
-      (tgUser?.username ? `@${tgUser.username}` : '@Kamran_VIP_TG');
+      customHandle?.trim() || (tgUser?.username ? `@${tgUser.username}` : '@Kamran_VIP_TG');
     const formatted = rawHandle.startsWith('@') ? rawHandle : `@${rawHandle}`;
     setTelegramUsername(formatted);
     try {
@@ -1644,18 +2249,6 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         totalCommissionEarnedUsdt: referralEarningsUsdt,
         netHouseProfitRetainedUsdt: Number((referralEarningsUsdt * 4).toFixed(2)),
       });
-      await syncUserProfileToFirestore({
-        uid: firebaseUser.uid,
-        displayName: firebaseUser.displayName || displayName,
-        vipTier,
-        balanceUsdt,
-        connectedWallet: connectedWeb3Wallet,
-        telegramUsername,
-        referralCode: bundle.referralCode,
-        referredByCode,
-        referralEarningsUsdt,
-        referredTicketsCount,
-      });
     }
 
     return {
@@ -1679,29 +2272,20 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
     }
     const claimed = Number(referralEarningsUsdt.toFixed(2));
-    const nextBalance = Number((balanceUsdt + claimed).toFixed(2));
-    setBalanceUsdt(nextBalance);
+    await pamBonus({
+      transactionUuid: generateDeterministicUuid('tx_ref_claim'),
+      roundId: referralCode,
+      vertical: 'AFFILIATE_REFERRAL',
+      amountUsdt: claimed,
+      creditToRealBalance: true,
+      note: `انتقال پورسانت زیرمجموعه‌گیری (${referralCode}) به کیف پول PAM`,
+    });
     setReferralEarningsUsdt(0);
-
-    if (firebaseUser) {
-      await syncUserProfileToFirestore({
-        uid: firebaseUser.uid,
-        displayName: firebaseUser.displayName || displayName,
-        vipTier,
-        balanceUsdt: nextBalance,
-        connectedWallet: connectedWeb3Wallet,
-        telegramUsername,
-        referralCode,
-        referredByCode,
-        referralEarningsUsdt: 0,
-        referredTicketsCount,
-      });
-    }
 
     return {
       ok: true,
       claimedUsdt: claimed,
-      message: `💸 مبلغ $${claimed.toFixed(2)} USDT پورسانت زیرمجموعه‌گیری (کسرشده از ۱۰٪ سود خالص لاتاری) به صورت آنی به موجودی اصلی کیف پول شما منتقل شد!`,
+      message: `💸 مبلغ $${claimed.toFixed(2)} USDT پورسانت زیرمجموعه‌گیری در دفترکل PAM ثبت و به موجودی کیف پول شما اضافه شد!`,
     };
   };
 
@@ -1735,14 +2319,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       prizePool85Usdt: ledger.prizePool85Usdt,
       grossLotteryProfit10Usdt: ledger.grossLotteryProfit10Usdt,
       referralCommission2Usdt: ledger.commissionDeductedFromProfit2Usdt,
+      commissionUsdt: ledger.commissionDeductedFromProfit2Usdt,
       netHouseProfit8Usdt: ledger.netHouseProfitRetained8Usdt,
+      netHouseProfitUsdt: ledger.netHouseProfitRetained8Usdt,
       createdAt: 'همین الان (Firestore Synced)',
     };
     setReferralEvents((prev) => [eventItem, ...prev]);
 
     if (firebaseUser) {
-      const origin =
-        typeof window !== 'undefined' ? window.location.origin : 'https://luckydrop.vip';
       await recordReferralCommissionInFirestore({
         commissionId: `COM_${Date.now()}`,
         referrerCode: referralCode,
@@ -1754,16 +2338,6 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         grossLotteryProfit10Usdt: ledger.grossLotteryProfit10Usdt,
         commissionDeductedFromProfit2Usdt: ledger.commissionDeductedFromProfit2Usdt,
         netHouseProfitRetained8Usdt: ledger.netHouseProfitRetained8Usdt,
-      });
-      await syncReferralLinkToFirestore({
-        referralCode,
-        ownerUid: firebaseUser.uid,
-        ownerDisplayName: firebaseUser.displayName || displayName,
-        referralUrl: `${origin}/?ref=${encodeURIComponent(referralCode)}`,
-        commissionRatePercent: 2,
-        totalReferredTickets: nextTickets,
-        totalCommissionEarnedUsdt: nextEarnings,
-        netHouseProfitRetainedUsdt: Number((nextEarnings * 4).toFixed(2)),
       });
     }
 
@@ -1800,15 +2374,6 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           message: data.error || 'صندوقچه وفاداری فعلاً در دسترس نیست.',
         };
       }
-      if (typeof data.newBalanceUsdt === 'number') {
-        setBalanceUsdt(data.newBalanceUsdt);
-      }
-      if (typeof data.chestsClaimedCount === 'number') {
-        setChestsClaimedCount(data.chestsClaimedCount);
-      }
-      if (typeof data.rolloverReservePoolUsdt === 'number') {
-        setRolloverReservePoolUsdt(data.rolloverReservePoolUsdt);
-      }
       await refreshSnapshot();
       return {
         ok: true,
@@ -1816,7 +2381,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         rewardTierLabelFa: data.rewardTierLabelFa,
         message: `🎁 تبریک! ${data.rewardTierLabelFa} باز شد و مبلغ $${Number(
           data.rewardUsdt
-        ).toFixed(2)} USDT از محل ۳٪ ذخیره سرریز به کیف پول شما واریز گردید!`,
+        ).toFixed(2)} USDT از محل ۳٪ ذخیره سرریز به کیف پول PAM شما واریز گردید!`,
       };
     } catch {
       return {
@@ -1837,6 +2402,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
       if (res.ok) {
         const data = await res.json();
+        if (data.telegramBotConfig) {
+          setTelegramBotConfig(data.telegramBotConfig);
+        }
         if (Array.isArray(data.telegramAlertsLog)) {
           setTelegramAlertsLog(data.telegramAlertsLog);
         }
@@ -1848,7 +2416,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return true;
   };
 
-  const sendTestTelegramAlert = async (): Promise<{ ok: boolean; message: string }> => {
+  const sendTestTelegramAlert = async (): Promise<{ ok: boolean; message: string; note: string }> => {
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/admin/telegram/test', {
@@ -1859,16 +2427,20 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (Array.isArray(data.telegramAlertsLog)) {
         setTelegramAlertsLog(data.telegramAlertsLog);
       }
+      const msg = data.deliveredToTelegramApi
+        ? `✅ پیام هشدار با موفقیت به تلگرام (${data.apiDescription}) ارسال شد!`
+        : `⚠️ نتیجه اتصال به API تلگرام: ${data.apiDescription || 'لطفاً Bot Token و آیدی چنل (@ChannelName یا -100...) را بررسی کرده و ربات را در کانال Admin کنید.'}`;
       return {
-        ok: true,
-        message: data.deliveredToTelegramApi
-          ? '✅ پیام هشدار مستقیماً به تلگرام ادمین ارسال و در لاگ کاکپیت ثبت شد!'
-          : '✅ هشدار تست در کنسول تلگرام کاکپیت ثبت شد (برای ارسال به اپلیکیشن تلگرام، توکن BotFather و Chat ID خود را وارد کنید).',
+        ok: Boolean(data.deliveredToTelegramApi),
+        message: msg,
+        note: msg,
       };
     } catch {
+      const errMsg = 'خطا در ارسال پیام تست تلگرام.';
       return {
         ok: false,
-        message: 'خطا در ارسال پیام تست تلگرام.',
+        message: errMsg,
+        note: errMsg,
       };
     }
   };
@@ -1899,10 +2471,28 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         telegramUsername,
         connectTelegramAccount,
         balanceUsdt,
+        bonusTokensUsdt,
+        pamState,
+        pamLedger: pamState.ledger,
+        pamReconciliation,
+        provablyFairSeeds: pamState.seeds,
+        walletDrawerOpen,
+        setWalletDrawerOpen,
+        pamAuthenticate,
+        pamFetchBalance,
+        pamDebit,
+        pamCredit,
+        pamRollback,
+        pamBonus,
+        pamReconcile,
+        updateProvablyFairClientSeed,
+        rotateProvablyFairServerSeed,
+        playInstantMiniGame,
         vipTier,
         displayName,
         rounds,
         tickets,
+        drawHistory,
         transactions,
         supportMessages,
         deposits,
@@ -1944,6 +2534,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setKillSwitchState,
         triggerDraw,
         createNewRound,
+        deleteLotteryRound,
         updateRoundTicketPrice,
         toggleRoundSales,
         sendSupportMessage,

@@ -123,26 +123,26 @@ export const FooterAndChat: React.FC = () => {
           </div>
 
           <div className="space-y-2">
-            <h4 className="font-black text-white text-sm mb-2">پشتیبانی و امنیت اپراتور</h4>
+            <h4 className="font-black text-white text-sm mb-2">مینی‌گیم‌ها و راستی‌آزمایی Provably Fair</h4>
             <ul className="space-y-1.5">
               <li>
-                <button type="button" onClick={() => navigateTo('launch')} className="hover:text-amber-400 cursor-pointer">
-                  • مرکز لانچ و مینی‌اپ تلگرام (/ops/launch)
+                <button type="button" onClick={() => navigateTo('mini-games')} className="hover:text-amber-400 cursor-pointer">
+                  • بازی‌های آنی نقدی ۵۲ بیتی (/mini-games)
                 </button>
               </li>
               <li>
-                <button type="button" onClick={() => navigateTo('cockpit')} className="hover:text-amber-400 cursor-pointer">
-                  • کاکپیت مخفی اپراتور (/ops-k82-cockpit)
+                <button type="button" onClick={() => navigateTo('transparency')} className="hover:text-amber-400 cursor-pointer">
+                  • راستی‌آزمای مستقل HMAC-SHA256 (/transparency)
                 </button>
               </li>
               <li>
-                <button type="button" onClick={() => navigateTo('finances')} className="hover:text-amber-400 cursor-pointer">
-                  • داشبورد سود خالص و خزانه سرد (/admin/finances)
+                <button type="button" onClick={() => navigateTo('my-tickets')} className="hover:text-amber-400 cursor-pointer">
+                  • استعلام کوپن‌های فعال و برنده (/my-tickets)
                 </button>
               </li>
               <li>
-                <button type="button" onClick={() => navigateTo('404')} className="hover:text-amber-400 cursor-pointer">
-                  • سامانه استعلام کد بلیط و صفحه Decoy 404
+                <button type="button" onClick={() => navigateTo('status')} className="hover:text-amber-400 cursor-pointer">
+                  • کاوشگر تراکنش‌ها و دفترکل PAM (/status)
                 </button>
               </li>
             </ul>

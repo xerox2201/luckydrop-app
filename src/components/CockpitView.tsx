@@ -19,6 +19,7 @@ export const CockpitView: React.FC = () => {
     toggleKillSwitch,
     triggerDraw,
     createNewRound,
+    deleteLotteryRound,
     toggleRoundSales,
     updateRoundTicketPrice,
     adminActionWithdrawal,
@@ -45,6 +46,8 @@ export const CockpitView: React.FC = () => {
     telegramAlertsLog,
     updateTelegramBotConfig,
     sendTestTelegramAlert,
+    pamReconciliation,
+    setWalletDrawerOpen,
   } = useLottery();
 
   const [walletDraft, setWalletDraft] = useState(officialWallets);
@@ -56,6 +59,12 @@ export const CockpitView: React.FC = () => {
   const [tgChatId, setTgChatId] = useState<string>(telegramBotConfig.adminChatId);
   const [tgBanner, setTgBanner] = useState<string | null>(null);
   const [sendingTgTest, setSendingTgTest] = useState<boolean>(false);
+  const [roundActionBanner, setRoundActionBanner] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (telegramBotConfig.botToken && !tgBotToken) setTgBotToken(telegramBotConfig.botToken);
+    if (telegramBotConfig.adminChatId && !tgChatId) setTgChatId(telegramBotConfig.adminChatId);
+  }, [telegramBotConfig.botToken, telegramBotConfig.adminChatId]);
 
   const handleSaveTelegramBot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,16 +73,24 @@ export const CockpitView: React.FC = () => {
       botToken: tgBotToken,
       adminChatId: tgChatId,
     });
-    setTgBanner('✅ تنظیمات ربات اطلاع‌رسان تلگرام اپراتور ذخیره شد!');
-    setTimeout(() => setTgBanner(null), 3500);
+    setTgBanner('✅ تنظیمات ربات و آیدی چنل/چت تلگرام روی دیسک سرور ذخیره شد! اکنون دکمه «ارسال پیام تست» را بزنید.');
+    setTimeout(() => setTgBanner(null), 5000);
   };
 
   const handleTestTelegramAlert = async () => {
     setSendingTgTest(true);
+    // Ensure current input fields are saved first before firing test ping
+    if (tgBotToken.trim() || tgChatId.trim()) {
+      await updateTelegramBotConfig({
+        enabled: tgEnabled,
+        botToken: tgBotToken,
+        adminChatId: tgChatId,
+      });
+    }
     const res = await sendTestTelegramAlert();
     setSendingTgTest(false);
-    setTgBanner(res.note);
-    setTimeout(() => setTgBanner(null), 4000);
+    setTgBanner(res.message || res.note);
+    setTimeout(() => setTgBanner(null), 8000);
   };
 
   const handleSaveOfficialWallets = (e: React.FormEvent) => {
@@ -90,6 +107,9 @@ export const CockpitView: React.FC = () => {
     drawnMain: number[];
     drawnGolden: number;
     hash: string;
+    ticketsEvaluatedCount?: number;
+    winnersCount?: number;
+    totalPayoutUsdt?: number;
   } | null>(null);
 
   // Create New Round state
@@ -122,7 +142,7 @@ export const CockpitView: React.FC = () => {
     e.preventDefault();
     if (!newTitle.trim()) return;
     setCreatingRound(true);
-    await createNewRound({
+    const ok = await createNewRound({
       titleFa: newTitle,
       category: newCategory,
       ticketPriceUsdt: newPrice,
@@ -130,7 +150,17 @@ export const CockpitView: React.FC = () => {
       jackpotUsdt: newJackpot,
     });
     setCreatingRound(false);
-    setNewTitle('');
+    if (ok) {
+      setRoundActionBanner(`✅ دور جدید قرعه‌کشی «${newTitle}» با موفقیت ساخته و در دیتابیس دائمی ثبت شد!`);
+      setNewTitle('');
+      setTimeout(() => setRoundActionBanner(null), 4500);
+    }
+  };
+
+  const handleDeleteRound = async (roundCode: string, titleFa: string) => {
+    await deleteLotteryRound(roundCode);
+    setRoundActionBanner(`🗑️ استخر «${titleFa} (${roundCode})» به صورت دائمی حذف گردید.`);
+    setTimeout(() => setRoundActionBanner(null), 4500);
   };
 
   const handleSendOperatorReply = async (e: React.FormEvent) => {
@@ -348,15 +378,18 @@ export const CockpitView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Admin Telegram Chat ID:</label>
+              <label className="block text-[11px] text-slate-400 mb-1">Admin Telegram Chat ID / Channel ID:</label>
               <input
                 type="text"
                 dir="ltr"
-                placeholder="e.g. 987654321 or @ZarrinAdminChannel"
+                placeholder="@MyChannelName or -1001234567890 or 987654321"
                 value={tgChatId}
                 onChange={(e) => setTgChatId(e.target.value)}
                 className="w-full bg-[#131824] border border-white/15 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono"
               />
+              <span className="text-[10px] text-slate-400 block mt-1 leading-relaxed">
+                💡 نکته مهم: برای ارسال پیام به کانال تلگرام، ابتدا ربات را در کانال خود <strong>Admin</strong> کرده و تیک <strong>Post Messages</strong> را فعال کنید، سپس یوزرنیم کانال با <code className="text-amber-300">@</code> (مثلاً <code className="text-amber-300">@MyChannel</code>) یا آیدی عددی کانال (<code className="text-amber-300">-100...</code>) را وارد نمایید.
+              </span>
             </div>
 
             <button
@@ -970,7 +1003,9 @@ export const CockpitView: React.FC = () => {
                 className="bg-[#0a0e16] border border-emerald-500/40 rounded-2xl p-4 space-y-3 animate-fadeIn"
               >
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-emerald-400 font-bold">✅ نتیجه قرعه‌کشی با موفقیت در بلاکچین ثبت شد:</span>
+                  <span className="text-emerald-400 font-bold">
+                    ✅ قرعه‌کشی ۵۲ بیتی HMAC-SHA256 اجرا و جوایز به صورت آنی در PAM واریز شد:
+                  </span>
                   <span className="font-mono text-slate-400">{selectedRoundForDraw}</span>
                 </div>
                 <div className="flex items-center justify-center gap-2.5 py-1" dir="ltr">
@@ -987,12 +1022,41 @@ export const CockpitView: React.FC = () => {
                     ★{String(drawnResult.drawnGolden).padStart(2, '0')}
                   </span>
                 </div>
-                <div className="text-[11px] font-mono text-slate-400 break-all">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-[#141923] rounded-xl px-3 py-2">
+                  <span>
+                    بلیت‌های بررسی‌شده:{' '}
+                    <strong className="text-white font-mono">
+                      {drawnResult.ticketsEvaluatedCount ?? 0}
+                    </strong>
+                  </span>
+                  <span>
+                    بلیت‌های برنده:{' '}
+                    <strong className="text-emerald-400 font-mono">
+                      {drawnResult.winnersCount ?? 0}
+                    </strong>
+                  </span>
+                  <span>
+                    واریز خودکار PAM Credit:{' '}
+                    <strong className="text-amber-300 font-mono">
+                      +${(drawnResult.totalPayoutUsdt ?? 0).toFixed(2)} USDT
+                    </strong>
+                  </span>
+                </div>
+                <div className="text-[11px] font-mono text-slate-400 break-all" dir="ltr">
                   Audit Hash: <span className="text-emerald-300">{drawnResult.hash}</span>
                 </div>
               </div>
             )}
           </div>
+
+          {roundActionBanner && (
+            <div
+              data-testid="round-action-banner"
+              className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 text-xs font-bold"
+            >
+              {roundActionBanner}
+            </div>
+          )}
 
           {/* Create New Lottery Round Form */}
           <form
@@ -1005,6 +1069,7 @@ export const CockpitView: React.FC = () => {
                 <label className="block text-[11px] text-slate-400 mb-1">عنوان قرعه‌کشی:</label>
                 <input
                   type="text"
+                  data-testid="new-round-title-input"
                   placeholder="مثلاً: جک‌پات ویژه نوروز (۱۰ شمش طلا)"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
@@ -1049,23 +1114,34 @@ export const CockpitView: React.FC = () => {
               </span>
               <button
                 type="submit"
+                data-testid="create-round-submit-btn"
                 disabled={creatingRound}
-                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs"
+                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs cursor-pointer"
               >
                 {creatingRound ? 'در حال ثبت...' : '+ ایجاد و انتشار استخر جدید'}
               </button>
             </div>
           </form>
 
-          {/* Manage Existing Rounds Status & Ticket Price */}
+          {/* Manage Existing Rounds Status, Ticket Price & Deletion */}
           <div className="rounded-3xl bg-[#141923] border border-white/10 p-6 space-y-3">
-            <h3 className="text-base font-black text-white">
-              مدیریت استخرهای همزمان و قیمت بلیط ({toPersianDigits(rounds.length)})
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-white">
+                مدیریت استخرهای همزمان، قیمت بلیط و حذف دورها ({toPersianDigits(rounds.length)})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setWalletDrawerOpen(true)}
+                className="text-xs font-bold text-emerald-300 hover:underline cursor-pointer"
+              >
+                مشاهده دفترکل PAM ({pamReconciliation?.ledgerEntriesCount || 0} تراکنش) ↗
+              </button>
+            </div>
             <div className="space-y-2.5">
               {rounds.map((r) => (
                 <div
                   key={r.roundCode}
+                  data-testid={`manage-round-row-${r.roundCode}`}
                   className="bg-[#0b0f18] border border-white/5 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
                   <div>
@@ -1079,7 +1155,7 @@ export const CockpitView: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
                     <div className="flex items-center gap-1 bg-[#141923] border border-white/10 rounded-xl px-2 py-1">
                       <span className="text-[10px] text-slate-400">قیمت ($):</span>
                       <input
@@ -1094,14 +1170,24 @@ export const CockpitView: React.FC = () => {
                     </div>
                     <button
                       type="button"
+                      data-testid={`toggle-round-btn-${r.roundCode}`}
                       onClick={() => toggleRoundSales(r.roundCode)}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border ${
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border cursor-pointer ${
                         r.status?.toUpperCase() === 'ACTIVE'
                           ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                          : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                          : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
                       }`}
                     >
                       {r.status?.toUpperCase() === 'ACTIVE' ? 'فعال (توقف فروش)' : 'متوقف (فعال‌سازی)'}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`delete-round-btn-${r.roundCode}`}
+                      onClick={() => handleDeleteRound(r.roundCode, r.titleFa)}
+                      className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/35 cursor-pointer flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-sm">delete</span>
+                      <span>حذف</span>
                     </button>
                   </div>
                 </div>

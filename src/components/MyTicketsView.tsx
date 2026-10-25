@@ -200,24 +200,30 @@ export const MyTicketsView: React.FC = () => {
               <div className="flex items-center justify-between border-b border-white/10 pb-3">
                 <div>
                   <span className="text-xs font-black text-white block">{roundInfo.titleFa}</span>
-                  <span className="text-[11px] font-mono text-amber-400">
+                  <span className="text-[11px] font-mono text-amber-400 block">
                     کد کوپن: {ticket.ticketCode} • دور {ticket.roundCode}
                   </span>
+                  {ticket.transactionUuid && (
+                    <span className="text-[10px] font-mono text-slate-400 block" dir="ltr">
+                      PAM TX: {ticket.transactionUuid}
+                    </span>
+                  )}
                 </div>
                 <span
-                  className={`px-3 py-1 rounded-full text-[11px] font-bold border ${
-                    isClaimed
-                      ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
-                      : hasPrize
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse'
-                      : 'bg-white/5 text-slate-300 border-white/10'
+                  data-testid={`ticket-status-badge-${ticket.ticketCode}`}
+                  className={`px-3 py-1 rounded-full text-[11px] font-mono font-bold border ${
+                    ticket.status.toUpperCase() === 'WON' || hasPrize
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : ticket.status.toUpperCase() === 'LOST'
+                      ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                      : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
                   }`}
                 >
-                  {isClaimed
-                    ? '✅ تسویه شده (Claimed)'
-                    : hasPrize
-                    ? `🏆 برنده ${winEval.tierLabelFa}`
-                    : 'ثبت‌شده در بلاکچین (Active)'}
+                  {ticket.status.toUpperCase() === 'WON'
+                    ? `WON • برنده ($${ticket.prizeWonUsdt})`
+                    : ticket.status.toUpperCase() === 'LOST'
+                    ? 'LOST • پایان‌یافته'
+                    : 'ACTIVE • فعال در قرعه‌کشی'}
                 </span>
               </div>
 

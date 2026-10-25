@@ -8,6 +8,7 @@ import { LotteryProvider, useLottery } from './context/LotteryContext.tsx';
 import { Navbar } from './components/Navbar.tsx';
 import { LobbyView } from './components/LobbyView.tsx';
 import { PlayView } from './components/PlayView.tsx';
+import { InstantMiniGamesView } from './components/InstantMiniGamesView.tsx';
 import { DepositView } from './components/DepositView.tsx';
 import { WithdrawView } from './components/WithdrawView.tsx';
 import { MyTicketsView } from './components/MyTicketsView.tsx';
@@ -20,6 +21,7 @@ import { LaunchOpsView } from './components/LaunchOpsView.tsx';
 import { TermsRulesView } from './components/TermsRulesView.tsx';
 import { Decoy404View } from './components/Decoy404View.tsx';
 import { DepositModal } from './components/DepositModal.tsx';
+import { WalletDrawer } from './components/WalletDrawer.tsx';
 import { ViralTicketCardModal } from './components/ViralTicketCardModal.tsx';
 import { FooterAndChat } from './components/FooterAndChat.tsx';
 
@@ -32,6 +34,7 @@ const MainRouter: React.FC = () => {
       <main className="flex-1">
         {activeRoute === 'lobby' && <LobbyView />}
         {activeRoute === 'play' && <PlayView />}
+        {activeRoute === 'mini-games' && <InstantMiniGamesView />}
         {activeRoute === 'deposit' && <DepositView />}
         {activeRoute === 'withdraw' && <WithdrawView />}
         {activeRoute === 'my-tickets' && <MyTicketsView />}
@@ -44,12 +47,13 @@ const MainRouter: React.FC = () => {
         {activeRoute === 'launch' && <LaunchOpsView />}
         {activeRoute === '404' && <Decoy404View />}
       </main>
+      <WalletDrawer />
       <DepositModal />
       <ViralTicketCardModal />
       <FooterAndChat />
     </div>
   );
-};
+}
 
 export default function App() {
   return (

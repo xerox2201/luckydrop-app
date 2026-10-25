@@ -976,10 +976,10 @@ export const UserPanelView: React.FC = () => {
             <div className="bg-[#090d16]/90 border border-white/10 rounded-2xl p-4 space-y-2">
               <div className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-base">vpn_key</span>
-                <span>۲. مسیر مخفی اختصاصی (/ops-k82-cockpit)</span>
+                <span>۲. احراز هویت دو مرحله‌ای اپراتور ارشد</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                ورود ادمین فقط از طریق آدرس مخفی <code className="text-emerald-300">/ops-k82-cockpit</code> به همراه کلید ارشد + کد ۶ رقمی Google Authenticator انجام می‌شود.
+                ورود به بخش مدیریت و خزانه صرفاً با کلید رمزنگاری‌شده اپراتور و کد ۶ رقمی Google Authenticator مجاز است.
               </p>
             </div>
 
@@ -989,7 +989,7 @@ export const UserPanelView: React.FC = () => {
                 <span>۳. کوکی سخت‌افزاری AES-256-GCM</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                پس از تایید ۲ مرحله‌ای، توکن <code className="text-sky-300">__Host_ld_ops_k82_vault</code> با پرچم{' '}
+                پس از تایید ۲ مرحله‌ای، نشست امنیتی با پرچم{' '}
                 <code className="text-slate-200">HttpOnly; SameSite=Strict</code> صادر می‌گردد.
               </p>
             </div>
@@ -1000,7 +1000,7 @@ export const UserPanelView: React.FC = () => {
                 <span>۴. خروج امن ۱-کلیکی (Zero-Trace Logout)</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                پس از اتمام کار در پنل مدیریت، با زدن دکمه <strong>«خروج امن و قفل کاکپیت»</strong> کوکی امنیتی پاک شده و دسترسی بلافاصله قطع می‌شود.
+                پس از اتمام کار در پنل مدیریت، با زدن دکمه <strong>«خروج امن و قفل سشن»</strong> دسترسی بلافاصله قطع می‌شود.
               </p>
             </div>
           </div>
@@ -1009,18 +1009,19 @@ export const UserPanelView: React.FC = () => {
           <div className="lg:col-span-5 bg-[#080b12] border border-amber-500/40 rounded-3xl p-5 space-y-4">
             <h3 className="text-base font-black text-white flex items-center gap-2">
               <span className="material-symbols-outlined text-amber-400">terminal</span>
-              <span>ترمینال ورود و خروج امن اپراتور ارشد</span>
+              <span>ترمینال احراز هویت اپراتور ارشد</span>
             </h3>
 
             <form onSubmit={handleUnlockAdminSession} className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  کلید ارشد اپراتور (ADMIN_MASTER_SECRET):
+                  کلید ارشد اپراتور (Master Secret Key):
                 </label>
                 <input
-                  type="text"
+                  type="password"
                   value={adminMasterPin}
                   onChange={(e) => setAdminMasterPin(e.target.value)}
+                  placeholder="••••••••••••"
                   className="w-full bg-[#111623] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs font-mono text-amber-300"
                   dir="ltr"
                 />
@@ -1028,10 +1029,10 @@ export const UserPanelView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  کد ۶ رقمی تایید دو مرحله‌ای (Google Authenticator 2FA):
+                  کد ۶ رقمی تایید دو مرحله‌ای (2FA TOTP):
                 </label>
                 <input
-                  type="text"
+                  type="password"
                   maxLength={6}
                   value={adminTotpCode}
                   onChange={(e) => setAdminTotpCode(e.target.value)}
