@@ -9,6 +9,7 @@ import {
 } from '../utils/provablyFair.ts';
 import { crashSoundEngine } from '../utils/crashSoundEngine.ts';
 import { generateDeterministicUuid } from '../services/pamWalletEngine.ts';
+import { tmaCurrencyToUsdt } from '../utils/telegramTma.ts';
 
 export type CrashPhase = 'COUNTDOWN' | 'IN_PROGRESS' | 'CRASHED';
 
@@ -152,6 +153,13 @@ export const CrashGameArena: React.FC<{
 }> = ({ onRoundSettled }) => {
   const {
     balanceUsdt,
+    tonBalance,
+    starsBalance,
+    tonUsdRate,
+    starsUsdRate,
+    activeTmaCurrency,
+    formatCurrency,
+    formatActiveTmaAmount,
     displayName,
     provablyFairSeeds,
     pamDebit,
@@ -162,13 +170,23 @@ export const CrashGameArena: React.FC<{
     navigateTo,
   } = useLottery();
 
-  // Left Control Sidebar State
+  // Left Control Sidebar State (betAmount is in activeTmaCurrency: TON or STARS)
   const [controlTab, setControlTab] = useState<'MANUAL' | 'AUTO'>('MANUAL');
-  const [betAmount, setBetAmount] = useState<number>(10);
+  const [betAmount, setBetAmount] = useState<number>(() =>
+    activeTmaCurrency === 'TON' ? 2 : 100
+  );
   const [autoCashoutX, setAutoCashoutX] = useState<number>(2.0);
   const [autoBetCount, setAutoBetCount] = useState<number>(10);
   const [autoRunning, setAutoRunning] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(() => crashSoundEngine.isMuted());
+
+  useEffect(() => {
+    setBetAmount((prev) => {
+      if (activeTmaCurrency === 'TON' && prev >= 50) return 2;
+      if (activeTmaCurrency === 'STARS' && prev < 10) return 100;
+      return prev;
+    });
+  }, [activeTmaCurrency]);
 
   // Game State Machine: COUNTDOWN -> IN_PROGRESS -> CRASHED
   const [phase, setPhase] = useState<CrashPhase>('COUNTDOWN');
@@ -245,6 +263,7 @@ export const CrashGameArena: React.FC<{
   const lastCountdownBeepSecRef = useRef<number>(6);
   const seedsRef = useRef(provablyFairSeeds);
   const onRoundSettledRef = useRef(onRoundSettled);
+  const formatActiveTmaAmountRef = useRef(formatActiveTmaAmount);
 
   useEffect(() => {
     seedsRef.current = provablyFairSeeds;
@@ -253,6 +272,10 @@ export const CrashGameArena: React.FC<{
   useEffect(() => {
     onRoundSettledRef.current = onRoundSettled;
   }, [onRoundSettled]);
+
+  useEffect(() => {
+    formatActiveTmaAmountRef.current = formatActiveTmaAmount;
+  }, [formatActiveTmaAmount]);
 
   // Initialize parallax starfield once
   useEffect(() => {
@@ -396,15 +419,26 @@ export const CrashGameArena: React.FC<{
   const lockBetForCurrentCountdown = useCallback(
     async (customBetAmount?: number, customAutoCashout?: number) => {
       setErrorBanner(null);
-      const wager = Math.max(0.5, Number((customBetAmount ?? betAmount).toFixed(2)) || 1);
+      const minBet = activeTmaCurrency === 'TON' ? 0.1 : 10;
+      const wagerCurrency =
+        activeTmaCurrency === 'TON'
+          ? Math.max(minBet, Number((customBetAmount ?? betAmount).toFixed(2)) || 1)
+          : Math.max(minBet, Math.round(customBetAmount ?? betAmount) || 50);
+      const wager = tmaCurrencyToUsdt(
+        wagerCurrency,
+        activeTmaCurrency,
+        tonUsdRate,
+        starsUsdRate
+      );
       const targetAuto = Math.max(
         1.01,
         Math.min(10000, Number((customAutoCashout ?? autoCashoutX).toFixed(2)) || 2.0)
       );
 
-      if (balanceUsdt < wager) {
+      const availInCurrency = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
+      if (availInCurrency < wagerCurrency || balanceUsdt < wager) {
         setDepositModalOpen(true);
-        setErrorBanner('موجودی کیف پول PAM شما کافی نیست. لطفاً ابتدا حساب خود را شارژ کنید.');
+        setErrorBanner('موجودی کیف پول شما کافی نیست. لطفاً ابتدا حساب خود را شارژ کنید.');
         setAutoRunning(false);
         return false;
       }
@@ -441,7 +475,18 @@ export const CrashGameArena: React.FC<{
       setPlayerWonLuckyAirdrop(false);
       return true;
     },
-    [betAmount, autoCashoutX, balanceUsdt, pamDebit, setDepositModalOpen]
+    [
+      betAmount,
+      autoCashoutX,
+      activeTmaCurrency,
+      tonUsdRate,
+      starsUsdRate,
+      tonBalance,
+      starsBalance,
+      balanceUsdt,
+      pamDebit,
+      setDepositModalOpen,
+    ]
   );
 
   // Cancel Placed Bet during COUNTDOWN -> Refunds via PAM Rollback
@@ -992,7 +1037,7 @@ export const CrashGameArena: React.FC<{
           }
 
           // Pinned Callout Pill ("You Cashed Out @ X.XXx")
-          const pillText = `${marker.label} (+$${marker.payoutUsdt.toFixed(2)})`;
+          const pillText = `${marker.label} (+${formatActiveTmaAmountRef.current(marker.payoutUsdt)})`;
           ctx.font = '800 11px "JetBrains Mono", monospace';
           const textW = ctx.measureText(pillText).width + 18;
           const pillX = Math.max(padLeft + 6, Math.min(padLeft + plotW - textW - 6, mx - textW / 2));
@@ -1178,15 +1223,29 @@ export const CrashGameArena: React.FC<{
   ]);
 
   const handleHalfBet = () => {
-    setBetAmount((prev) => Math.max(0.5, Number((prev / 2).toFixed(2))));
+    setBetAmount((prev) =>
+      activeTmaCurrency === 'TON'
+        ? Math.max(0.1, Number((prev / 2).toFixed(2)))
+        : Math.max(10, Math.floor(prev / 2))
+    );
   };
 
   const handleDoubleBet = () => {
-    setBetAmount((prev) => Math.min(Math.max(0.5, balanceUsdt), Number((prev * 2).toFixed(2))));
+    const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
+    setBetAmount((prev) =>
+      activeTmaCurrency === 'TON'
+        ? Math.min(Math.max(0.1, avail), Number((prev * 2).toFixed(2)))
+        : Math.min(Math.max(10, avail), prev * 2)
+    );
   };
 
   const handleMaxBet = () => {
-    setBetAmount(Math.max(0.5, Math.min(1000, Number(balanceUsdt.toFixed(2)))));
+    const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
+    setBetAmount(
+      activeTmaCurrency === 'TON'
+        ? Math.max(0.1, Math.min(200, Number(avail.toFixed(2))))
+        : Math.max(10, Math.min(25000, Math.floor(avail)))
+    );
   };
 
   const handleToggleMute = () => {
@@ -1195,484 +1254,441 @@ export const CrashGameArena: React.FC<{
   };
 
   const curveColors = getFlightCurveColors(liveMultiplier, phase === 'CRASHED');
+  const previewBetUsdt = betPlacedForCurrentRound
+    ? activeBetUsdt
+    : tmaCurrencyToUsdt(betAmount, activeTmaCurrency, tonUsdRate, starsUsdRate);
   const currentPotentialWin = Math.min(
     TREASURY_MAX_PAYOUT_CAP_USDT,
-    Number(((betPlacedForCurrentRound ? activeBetUsdt : betAmount) * liveMultiplier).toFixed(2))
+    Number((previewBetUsdt * liveMultiplier).toFixed(2))
   );
+  const totalRoundPoolUsdt =
+    peerBets.reduce((sum, p) => sum + p.betUsdt, 0) +
+    (betPlacedForCurrentRound ? activeBetUsdt : 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3" dir="ltr" data-testid="stake-crash-studio">
       {errorBanner && (
-        <div className="p-3.5 rounded-2xl bg-rose-500/20 border border-rose-400/50 text-rose-200 text-xs font-bold flex items-center justify-between">
+        <div
+          className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center justify-between"
+          dir="rtl"
+        >
           <span>⚠️ {errorBanner}</span>
           <button
             type="button"
             onClick={() => setErrorBanner(null)}
-            className="text-xs underline cursor-pointer"
+            className="text-[11px] underline cursor-pointer"
           >
             بستن
           </button>
         </div>
       )}
 
-      {/* STAKE-STYLE 3-ZONE CRASH STUDIO CONTAINER:
-          Left Sidebar (#1a2c38, inputs #213743) + Top History Ribbon + Center/Right Arena (#0f212e) */}
-      <div
-        dir="ltr"
-        data-testid="stake-crash-studio"
-        className="rounded-3xl overflow-hidden border border-white/15 bg-[#0f212e] shadow-[0_25px_70px_rgba(0,0,0,0.85)] flex flex-col-reverse lg:flex-row"
-      >
-        {/* ZONE A: LEFT CONTROL SIDEBAR (#1a2c38) */}
-        <aside className="w-full lg:w-[340px] xl:w-[360px] shrink-0 bg-[#1a2c38] border-t lg:border-t-0 lg:border-r border-white/10 p-5 flex flex-col justify-between gap-5">
-          <div className="space-y-4">
-            {/* Manual / Auto Mode Tabs */}
-            <div className="grid grid-cols-2 bg-[#0f212e] p-1 rounded-full border border-white/10">
-              <button
-                type="button"
-                data-testid="crash-tab-manual"
-                onClick={() => {
-                  setControlTab('MANUAL');
-                  setAutoRunning(false);
-                }}
-                className={`py-2.5 rounded-full text-xs font-black tracking-wide transition-all cursor-pointer ${
-                  controlTab === 'MANUAL'
-                    ? 'bg-[#2f4553] text-white shadow'
-                    : 'text-slate-400 hover:text-white'
+      {/* =====================================================================
+          TOP: GAME CANVAS CONTAINER
+          w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716]
+          border border-purple-500/25 overflow-hidden relative
+          ===================================================================== */}
+      <div className="w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716] border border-purple-500/25 overflow-hidden relative">
+        {/* Top-Left: Minimal Floating Translucent Pill for Recent Multipliers */}
+        <div
+          data-testid="crash-history-ribbon"
+          className="absolute top-2.5 left-2.5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 max-w-[70%] overflow-x-auto no-scrollbar"
+        >
+          {crashHistory12.slice(0, 5).map((h, idx) => {
+            const isGold = h.crashPoint >= 10;
+            const isGreen = h.crashPoint >= 2 && h.crashPoint < 10;
+            return (
+              <span
+                key={`${h.roundId}-${idx}`}
+                data-testid={`crash-history-pill-${idx}`}
+                className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold tabular-nums shrink-0 ${
+                  isGold
+                    ? 'bg-[#fbbf24] text-slate-950'
+                    : isGreen
+                    ? 'bg-[#00f59b] text-[#041f14]'
+                    : 'bg-purple-950/90 text-purple-200'
                 }`}
               >
-                Manual
-              </button>
-              <button
-                type="button"
-                data-testid="crash-tab-auto"
-                onClick={() => setControlTab('AUTO')}
-                className={`py-2.5 rounded-full text-xs font-black tracking-wide transition-all cursor-pointer ${
-                  controlTab === 'AUTO'
-                    ? 'bg-[#2f4553] text-white shadow'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Auto
-              </button>
-            </div>
+                {h.crashPoint.toFixed(2)}×
+              </span>
+            );
+          })}
+        </div>
 
-            {/* Bet Amount Input (#213743) with 1/2, 2x, Max */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                <label htmlFor="crash-bet-input">Bet Amount (USDT)</label>
-                <span className="font-mono text-emerald-400" data-testid="crash-sidebar-balance">
-                  Bal: ${balanceUsdt.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex items-center bg-[#213743] border-2 border-[#2f4553] focus-within:border-[#557086] rounded-xl overflow-hidden p-1">
-                <div className="pl-2.5 pr-1 flex items-center">
-                  <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px] flex items-center justify-center">
-                    $
-                  </span>
-                </div>
-                <input
-                  id="crash-bet-input"
-                  type="number"
-                  min={0.5}
-                  max={1000}
-                  step={0.5}
-                  data-testid="crash-bet-input"
-                  value={betAmount}
-                  onChange={(e) => setBetAmount(Math.max(0.5, Number(e.target.value) || 0.5))}
-                  className="w-full bg-transparent px-2 py-2 text-sm font-mono font-black text-white focus:outline-none"
-                />
-                <div className="flex items-center gap-1 pr-1 shrink-0">
-                  <button
-                    type="button"
-                    data-testid="crash-bet-half"
-                    onClick={handleHalfBet}
-                    className="px-2.5 py-1.5 rounded-lg bg-[#2f4553] hover:bg-[#3d5666] text-xs font-bold text-white transition-colors cursor-pointer"
-                  >
-                    ½
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="crash-bet-double"
-                    onClick={handleDoubleBet}
-                    className="px-2.5 py-1.5 rounded-lg bg-[#2f4553] hover:bg-[#3d5666] text-xs font-bold text-white transition-colors cursor-pointer"
-                  >
-                    2×
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="crash-bet-max"
-                    onClick={handleMaxBet}
-                    className="px-2.5 py-1.5 rounded-lg bg-[#2f4553] hover:bg-[#3d5666] text-xs font-bold text-amber-300 transition-colors cursor-pointer"
-                  >
-                    Max
-                  </button>
-                </div>
-              </div>
-            </div>
+        {/* Top-Right: Minimal Floating Translucent Pill for Sound & Fairness Icons */}
+        <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="crash-audio-mute-btn"
+            onClick={handleToggleMute}
+            aria-label={isMuted ? 'Unmute Crash Audio' : 'Mute Crash Audio'}
+            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-purple-200/90 hover:text-white flex items-center justify-center cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm">
+              {isMuted ? 'volume_off' : 'volume_up'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigateTo('transparency')}
+            aria-label="Provably Fair Verifier"
+            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer"
+          >
+            <span>🛡️</span>
+            <span>#{roundNonceRef.current}</span>
+          </button>
+        </div>
 
-            {/* Auto-Cashout Multiplier Input (#213743) + Presets 1.5x, 2.0x, 5.0x, 10.0x */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                <label htmlFor="crash-autocashout-input">Cashout At (Multiplier)</label>
-                <span className="text-[11px] font-mono text-amber-300">
-                  ≥5.00x = 🪂 Free Ticket
-                </span>
-              </div>
-              <div className="flex items-center bg-[#213743] border-2 border-[#2f4553] focus-within:border-[#557086] rounded-xl overflow-hidden px-3 py-1.5">
-                <input
-                  id="crash-autocashout-input"
-                  type="number"
-                  min={1.01}
-                  max={10000}
-                  step={0.1}
-                  data-testid="crash-autocashout-input"
-                  value={autoCashoutX}
-                  onChange={(e) =>
-                    setAutoCashoutX(Math.max(1.01, Number(e.target.value) || 2.0))
-                  }
-                  className="w-full bg-transparent py-1 text-sm font-mono font-black text-white focus:outline-none"
-                />
-                <span className="text-xs font-mono font-black text-slate-400">×</span>
-              </div>
+        {/* High-DPI HTML5 Flight Canvas */}
+        <canvas
+          ref={canvasRef}
+          data-testid="crash-3d-canvas"
+          className="w-full h-full block select-none"
+        />
 
-              {/* Quick Multiplier Presets: 1.5x, 2.0x, 5.0x, 10.0x */}
-              <div className="grid grid-cols-4 gap-1.5">
-                {[1.5, 2.0, 5.0, 10.0].map((preset) => {
-                  const active = Math.abs(autoCashoutX - preset) < 0.01;
-                  return (
-                    <button
-                      key={preset}
-                      type="button"
-                      data-testid={`crash-preset-${preset}x`}
-                      onClick={() => setAutoCashoutX(preset)}
-                      className={`py-2 rounded-xl font-mono font-black text-xs border transition-all cursor-pointer ${
-                        active
-                          ? 'bg-[#2f4553] border-emerald-400 text-emerald-300 shadow'
-                          : 'bg-[#213743] border-[#2f4553] text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      {preset.toFixed(1)}x{preset === 5.0 ? ' 🪂' : ''}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {controlTab === 'AUTO' && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                  <label htmlFor="crash-autobet-rounds">Auto Rounds</label>
-                  <span className="text-[11px] text-slate-400">0 = ∞</span>
-                </div>
-                <input
-                  id="crash-autobet-rounds"
-                  type="number"
-                  min={0}
-                  max={500}
-                  value={autoBetCount}
-                  onChange={(e) => setAutoBetCount(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full bg-[#213743] border-2 border-[#2f4553] rounded-xl px-3 py-2 text-sm font-mono font-black text-white"
-                />
-              </div>
-            )}
-
-            {/* MASSIVE TACTILE ACTION BUTTON */}
-            <div className="space-y-2.5 pt-1">
-              {phase === 'IN_PROGRESS' && betPlacedForCurrentRound && !playerCashedOutAt ? (
-                <button
-                  type="button"
-                  data-testid="crash-cashout-now-btn"
-                  onClick={handlePrimaryActionClick}
-                  className="w-full py-4 rounded-xl bg-[#00e701] hover:bg-[#1fff20] text-[#051c08] font-black text-base tracking-wide shadow-[0_5px_0_#009901,0_12px_30px_rgba(0,231,1,0.45)] active:translate-y-[3px] active:shadow-[0_2px_0_#009901] transition-all cursor-pointer flex flex-col items-center justify-center leading-tight"
-                >
-                  <span>Cash Out @ {liveMultiplier.toFixed(2)}x</span>
-                  <span className="text-xs font-mono font-black mt-0.5">
-                    +${currentPotentialWin.toFixed(2)} USDT
-                  </span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="crash-primary-bet-btn"
-                  onClick={handlePrimaryActionClick}
-                  className={`w-full py-4 rounded-xl font-black text-base tracking-wide transition-all cursor-pointer flex flex-col items-center justify-center leading-tight ${
-                    (phase === 'COUNTDOWN' && betPlacedForCurrentRound) || betQueuedForNextRound
-                      ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-[0_5px_0_#9f1239]'
-                      : 'bg-[#00e701] hover:bg-[#1fff20] text-[#051c08] shadow-[0_5px_0_#009901,0_10px_25px_rgba(0,231,1,0.35)] active:translate-y-[3px] active:shadow-[0_2px_0_#009901]'
-                  }`}
-                >
-                  <span>
-                    {phase === 'COUNTDOWN'
-                      ? betPlacedForCurrentRound
-                        ? 'Cancel Bet (Refund)'
-                        : 'Bet (Next Flight)'
-                      : betQueuedForNextRound
-                      ? 'Cancel Queued Bet'
-                      : 'Bet (Next Round)'}
-                  </span>
-                  <span className="text-xs font-mono mt-0.5 opacity-90">
-                    ${betAmount.toFixed(2)} • Auto {autoCashoutX.toFixed(2)}x
-                  </span>
-                </button>
-              )}
-
-              {phase === 'COUNTDOWN' && (
-                <button
-                  type="button"
-                  data-testid="crash-launch-now-btn"
-                  onClick={handleSkipCountdownAndLaunchNow}
-                  className="w-full py-2.5 rounded-xl bg-[#213743] hover:bg-[#2f4553] border border-amber-400/40 text-amber-300 font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>🚀 Launch Flight Immediately (Skip Countdown)</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Treasury Payout Cap & Provably Fair Footer */}
-          <div className="pt-4 border-t border-white/10 space-y-2.5 text-xs">
-            <div className="bg-[#0f212e] rounded-xl p-3 border border-white/10 space-y-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400 font-bold">🛡️ Treasury Max Payout Cap:</span>
-                <span className="font-mono font-bold text-emerald-400">
-                  ${TREASURY_MAX_PAYOUT_CAP_USDT.toLocaleString('en-US')}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400 font-bold">🔒 98% RTP • Nonce:</span>
-                <span className="font-mono font-bold text-amber-300">
-                  #{roundNonceRef.current}
-                </span>
-              </div>
-              <div className="text-[10px] font-mono text-slate-400 truncate">
-                Commit: {provablyFairSeeds.serverSeedHash.slice(0, 24)}...
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setWalletDrawerOpen(true)}
-                className="py-2 px-3 rounded-xl bg-[#0f212e] hover:bg-[#243b4a] border border-white/10 text-emerald-300 font-bold text-[11px] cursor-pointer text-center"
-              >
-                PAM Ledger ↗
-              </button>
-              <button
-                type="button"
-                onClick={() => navigateTo('transparency')}
-                className="py-2 px-3 rounded-xl bg-[#0f212e] hover:bg-[#243b4a] border border-white/10 text-amber-300 font-bold text-[11px] cursor-pointer text-center"
-              >
-                Fairness Verifier ↗
-              </button>
-            </div>
-          </div>
-        </aside>
-
-        {/* ZONE B & C: TOP 12 OUTCOMES RIBBON + CENTER/RIGHT FLIGHT ARENA (#0f212e) */}
-        <div className="flex-1 flex flex-col bg-[#0f212e] overflow-hidden">
-          {/* ZONE B: Top Bar Horizontal Scrolling Ribbon of Last 12 Crash Outcomes */}
-          <div className="bg-[#142634] border-b border-white/10 px-4 py-2.5 flex items-center justify-between gap-3">
+        {/* CENTER HUD READOUT */}
+        <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10 px-4">
+          {phase === 'COUNTDOWN' && (
             <div
-              data-testid="crash-history-ribbon"
-              className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5"
+              data-testid="crash-countdown-hud"
+              className="bg-[#130d24]/90 backdrop-blur-md border border-purple-500/30 rounded-2xl px-6 py-4 text-center space-y-2 shadow-2xl max-w-[260px] w-full"
             >
-              {crashHistory12.map((h, idx) => {
-                const isGold = h.crashPoint >= 10;
-                const isGreen = h.crashPoint >= 2 && h.crashPoint < 10;
-                return (
-                  <div
-                    key={`${h.roundId}-${idx}`}
-                    data-testid={`crash-history-pill-${idx}`}
-                    title={`Round ${h.roundId} • HMAC: ${h.hmacHex.slice(0, 16)}...`}
-                    className={`px-3 py-1 rounded-full font-mono font-black text-xs whitespace-nowrap shrink-0 border transition-all ${
-                      isGold
-                        ? 'bg-[#fbbf24] text-slate-950 border-amber-200 shadow-[0_0_14px_rgba(251,191,36,0.55)]'
-                        : isGreen
-                        ? 'bg-[#00e701] text-slate-950 border-emerald-300 shadow-[0_0_12px_rgba(0,231,1,0.4)]'
-                        : 'bg-[#2f4553] text-slate-200 border-white/10'
-                    }`}
-                  >
-                    {h.crashPoint.toFixed(2)}×
-                  </div>
-                );
-              })}
+              <div className="text-[10px] font-mono font-bold text-purple-300 uppercase tracking-widest">
+                NEXT FLIGHT IN
+              </div>
+              <div className="text-3xl font-extrabold font-mono text-white tabular-nums">
+                {countdownRemaining.toFixed(1)}s
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-[#090612] overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-[#00f59b] to-purple-500 transition-all duration-75"
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(100, (countdownRemaining / COUNTDOWN_DURATION_SEC) * 100)
+                    )}%`,
+                  }}
+                />
+              </div>
             </div>
+          )}
 
-            {/* Mute / Unmute Procedural Turbine Audio Button */}
+          {phase === 'IN_PROGRESS' && (
+            <div className="text-center select-none">
+              <div
+                data-testid="crash-live-multiplier-hud"
+                style={{
+                  color: curveColors.badgeText,
+                  textShadow: `0 0 28px ${curveColors.glow}`,
+                }}
+                className="text-4xl sm:text-5xl font-extrabold font-mono tabular-nums leading-none tracking-tight"
+              >
+                {liveMultiplier.toFixed(2)}×
+              </div>
+              {betPlacedForCurrentRound && !playerCashedOutAt && (
+                <div className="mt-1.5 text-xs font-mono font-semibold text-[#00f59b] tabular-nums">
+                  +{formatActiveTmaAmount(currentPotentialWin)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {phase === 'CRASHED' && (
+            <div
+              data-testid="crash-crashed-hud"
+              className="bg-rose-950/90 border border-rose-500/60 rounded-2xl px-5 py-3 text-center space-y-1 shadow-xl"
+            >
+              <div className="text-[10px] font-mono font-bold text-rose-300 uppercase tracking-wider">
+                💥 CRASHED AT
+              </div>
+              <div className="text-3xl font-extrabold font-mono text-rose-400 tabular-nums leading-none">
+                {currentCrashPoint.toFixed(2)}×
+              </div>
+            </div>
+          )}
+
+          {playerWinAmountUsdt !== null && playerCashedOutAt !== null && (
+            <div
+              data-testid="crash-player-win-banner"
+              className="mt-3 px-4 py-2 rounded-xl bg-[#052e16]/95 border border-[#00f59b] text-white text-xs font-mono font-bold tabular-nums"
+            >
+              🎉 Cashed Out @ {playerCashedOutAt.toFixed(2)}x (+{formatActiveTmaAmount(playerWinAmountUsdt)})
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* =====================================================================
+          BOTTOM CONTROL DECK
+          rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3
+          ===================================================================== */}
+      <div className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3">
+        {/* ROW 1: Bet Amount Input (h-11 rounded-xl bg-[#090612] px-3) with 1/2, 2x, MAX */}
+        <div className="h-11 rounded-xl bg-[#090612] px-3 border border-purple-500/20 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span
+              data-testid="crash-sidebar-balance"
+              className="text-sm shrink-0"
+              title={formatActiveTmaAmount(balanceUsdt)}
+            >
+              {activeTmaCurrency === 'TON' ? '💎' : '⭐'}
+            </span>
+            <input
+              id="crash-bet-input"
+              type="number"
+              min={0.5}
+              max={1000}
+              step={0.5}
+              data-testid="crash-bet-input"
+              value={betAmount}
+              onChange={(e) => setBetAmount(Math.max(0.5, Number(e.target.value) || 0.5))}
+              className="w-full bg-transparent text-center text-sm font-mono font-bold text-white focus:outline-none tabular-nums"
+            />
+          </div>
+
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
-              data-testid="crash-audio-mute-btn"
-              onClick={handleToggleMute}
-              aria-label={isMuted ? 'Unmute Crash Audio' : 'Mute Crash Audio'}
-              className="px-3 py-1.5 rounded-xl bg-[#1a2c38] hover:bg-[#263f50] border border-white/15 text-xs font-bold text-slate-200 flex items-center gap-1.5 cursor-pointer shrink-0"
+              data-testid="crash-bet-half"
+              onClick={handleHalfBet}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
             >
-              <span className="material-symbols-outlined text-base text-amber-300">
-                {isMuted ? 'volume_off' : 'volume_up'}
-              </span>
-              <span className="hidden sm:inline">{isMuted ? 'Muted' : 'Turbine Synth'}</span>
+              1/2
+            </button>
+            <button
+              type="button"
+              data-testid="crash-bet-double"
+              onClick={handleDoubleBet}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
+            >
+              2x
+            </button>
+            <button
+              type="button"
+              data-testid="crash-bet-max"
+              onClick={handleMaxBet}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-[#fbbf24] transition-colors cursor-pointer"
+            >
+              MAX
             </button>
           </div>
+        </div>
 
-          {/* ZONE C: High-DPI HTML5 Flight Canvas + Giant Center HUD + Live Players & Cashouts Overlay */}
-          <div className="relative flex-1 min-h-[430px] sm:min-h-[490px] lg:min-h-[520px] overflow-hidden">
-            <canvas
-              ref={canvasRef}
-              data-testid="crash-3d-canvas"
-              className="w-full h-[430px] sm:h-[490px] lg:h-[520px] block select-none"
+        {/* ROW 2: Auto-Cashout Multiplier Input & Presets in uniform h-10 rounded-xl selector */}
+        <div className="h-10 rounded-xl bg-[#090612] px-2.5 border border-purple-500/20 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[11px] font-medium text-purple-300/60 whitespace-nowrap">
+              Auto Cashout:
+            </span>
+            <input
+              id="crash-autocashout-input"
+              type="number"
+              min={1.01}
+              max={10000}
+              step={0.1}
+              data-testid="crash-autocashout-input"
+              value={autoCashoutX}
+              onChange={(e) => setAutoCashoutX(Math.max(1.01, Number(e.target.value) || 2.0))}
+              className="w-16 bg-transparent text-xs font-mono font-bold text-[#00f59b] focus:outline-none tabular-nums"
             />
-
-            {/* GIANT CENTER HUD READOUT (Tabular-Nums clamp(3rem, 7vw, 5.5rem)) */}
-            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-10 px-4">
-              {phase === 'COUNTDOWN' && (
-                <div
-                  data-testid="crash-countdown-hud"
-                  className="bg-[#1a2c38]/90 border border-sky-400/40 rounded-3xl px-8 py-6 text-center space-y-3 shadow-2xl max-w-sm w-full"
-                >
-                  <div className="text-xs font-mono font-bold text-sky-300 uppercase tracking-widest">
-                    NEXT FLIGHT LAUNCHING IN
-                  </div>
-                  <div className="text-4xl sm:text-5xl font-black font-mono text-white tabular-nums">
-                    {countdownRemaining.toFixed(1)}s
-                  </div>
-                  {/* 5.0s Animated Progress Bar */}
-                  <div className="w-full h-2.5 rounded-full bg-[#0f212e] overflow-hidden border border-white/10">
-                    <div
-                      className="h-full bg-gradient-to-r from-[#00e701] to-sky-400 transition-all duration-75"
-                      style={{
-                        width: `${Math.max(
-                          0,
-                          Math.min(100, (countdownRemaining / COUNTDOWN_DURATION_SEC) * 100)
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="text-[11px] font-mono text-slate-300">
-                    {betPlacedForCurrentRound
-                      ? `✅ Bet Locked: $${activeBetUsdt.toFixed(2)} (Auto @ ${activeBetAutoCashoutX.toFixed(2)}x)`
-                      : 'Place your bet in the left panel before launch'}
-                  </div>
-                </div>
-              )}
-
-              {phase === 'IN_PROGRESS' && (
-                <div className="text-center select-none">
-                  <div
-                    data-testid="crash-live-multiplier-hud"
-                    style={{
-                      fontSize: 'clamp(3rem, 7vw, 5.5rem)',
-                      color: curveColors.badgeText,
-                      textShadow: `0 0 35px ${curveColors.glow}`,
-                    }}
-                    className="font-black font-mono tabular-nums leading-none tracking-tight transition-transform duration-75 scale-105"
-                  >
-                    {liveMultiplier.toFixed(2)}×
-                  </div>
-                  <div className="mt-2 text-xs font-mono font-bold text-slate-300">
-                    {betPlacedForCurrentRound && !playerCashedOutAt
-                      ? `Current Payout: +$${currentPotentialWin.toFixed(2)} USDT`
-                      : playerCashedOutAt
-                      ? `✅ Cashed Out @ ${playerCashedOutAt.toFixed(2)}x (+$${playerWinAmountUsdt?.toFixed(2)})`
-                      : 'Flight in Progress • M(t) = e^(0.065t)'}
-                  </div>
-                </div>
-              )}
-
-              {phase === 'CRASHED' && (
-                <div
-                  data-testid="crash-crashed-hud"
-                  className="bg-rose-950/90 border-2 border-rose-500 rounded-3xl px-7 py-5 text-center space-y-2 shadow-[0_0_50px_rgba(244,63,94,0.5)]"
-                >
-                  <div className="text-xs font-mono font-black text-rose-300 uppercase tracking-widest">
-                    💥 ROCKET CRASHED AT
-                  </div>
-                  <div
-                    style={{ fontSize: 'clamp(2.5rem, 5.5vw, 4.25rem)' }}
-                    className="font-black font-mono text-rose-400 tabular-nums leading-none"
-                  >
-                    {currentCrashPoint.toFixed(2)}×
-                  </div>
-                  {/* Provably Fair Hash Badge Revealed on Crash */}
-                  <div className="pt-1 text-[10px] font-mono text-slate-300 max-w-xs truncate">
-                    HMAC-SHA256: <span className="text-amber-300">{currentHmacHex.slice(0, 22)}...</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Glassmorphic Win Banner when Player Cashes Out */}
-              {playerWinAmountUsdt !== null && playerCashedOutAt !== null && (
-                <div
-                  data-testid="crash-player-win-banner"
-                  className="mt-4 px-5 py-3 rounded-2xl bg-[#052e16]/95 border-2 border-[#00e701] text-white shadow-[0_12px_35px_rgba(0,231,1,0.45)] flex items-center gap-3 animate-[fadeIn_0.2s_ease-out]"
-                >
-                  <span className="text-lg">🎉</span>
-                  <div className="text-left">
-                    <div className="text-xs font-bold text-emerald-300">
-                      You Cashed Out @ {playerCashedOutAt.toFixed(2)}x
-                    </div>
-                    <div className="text-base font-mono font-black text-[#00e701]">
-                      +${playerWinAmountUsdt.toFixed(2)} USDT
-                      {playerWonLuckyAirdrop ? ' + 🪂 1 VIP LOTTERY TICKET!' : ''}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* SLEEK TRANSLUCENT "LIVE PLAYERS & CASHOUTS" OVERLAY FEED ON RIGHT EDGE */}
-            <div
-              data-testid="crash-live-players-feed"
-              className="hidden md:flex flex-col w-52 bg-[#132432]/85 border border-white/10 rounded-2xl p-3 space-y-2 absolute top-3 right-3 z-10 pointer-events-none"
-            >
-              <div className="flex items-center justify-between text-[11px] font-bold text-slate-300 border-b border-white/10 pb-1.5">
-                <span>Live Flight Bets</span>
-                <span className="font-mono text-emerald-400">
-                  {peerBets.length + (betPlacedForCurrentRound ? 1 : 0)} Players
-                </span>
-              </div>
-
-              <div className="space-y-1.5 text-[11px] font-mono">
-                {/* Current User Row if Active Bet */}
-                {betPlacedForCurrentRound && (
-                  <div
-                    className={`px-2 py-1.5 rounded-lg flex items-center justify-between border ${
-                      playerCashedOutAt
-                        ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
-                        : 'bg-amber-500/15 border-amber-400/40 text-amber-200'
-                    }`}
-                  >
-                    <span className="font-bold truncate max-w-[82px]">
-                      You ({displayName.slice(0, 6)})
-                    </span>
-                    <span>
-                      {playerCashedOutAt
-                        ? `${playerCashedOutAt.toFixed(2)}x (+$${playerWinAmountUsdt?.toFixed(1)})`
-                        : `$${activeBetUsdt.toFixed(0)}`}
-                    </span>
-                  </div>
-                )}
-
-                {peerBets.map((peer) => (
-                  <div
-                    key={peer.id}
-                    className={`px-2 py-1 rounded-lg flex items-center justify-between ${
-                      peer.cashedOut
-                        ? 'bg-emerald-500/15 text-[#00e701]'
-                        : phase === 'CRASHED'
-                        ? 'bg-rose-500/10 text-rose-300/70'
-                        : 'bg-white/5 text-slate-300'
-                    }`}
-                  >
-                    <span className="truncate max-w-[88px]">{peer.username}</span>
-                    <span className="font-bold">
-                      {peer.cashedOut
-                        ? `${peer.cashedOutAt?.toFixed(2)}x`
-                        : `$${peer.betUsdt}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
+
+          <div className="flex items-center gap-1 shrink-0">
+            {[1.5, 2.0, 5.0, 10.0].map((preset) => {
+              const active = Math.abs(autoCashoutX - preset) < 0.01;
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  data-testid={`crash-preset-${preset}x`}
+                  onClick={() => setAutoCashoutX(preset)}
+                  className={`h-7 px-2 rounded-lg font-mono text-[11px] font-semibold transition-all cursor-pointer tabular-nums ${
+                    active
+                      ? 'bg-purple-600/40 text-white border border-purple-400/40'
+                      : 'bg-purple-950/60 text-purple-300/70 hover:text-white'
+                  }`}
+                >
+                  {preset.toFixed(1)}x
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ROW 3: Full-Width Tactile Primary CTA Button */}
+        <div className="flex items-center gap-2">
+          {phase === 'IN_PROGRESS' && betPlacedForCurrentRound && !playerCashedOutAt ? (
+            <button
+              type="button"
+              data-testid="crash-cashout-now-btn"
+              onClick={handlePrimaryActionClick}
+              className="w-full h-12 rounded-xl font-bold text-sm text-[#041f14] bg-[#00f59b] shadow-[0_4px_0_#059669] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Cash Out @ {liveMultiplier.toFixed(2)}x</span>
+              <span className="px-2 py-0.5 rounded-lg bg-black/15 text-xs font-mono tabular-nums">
+                +{formatActiveTmaAmount(currentPotentialWin)}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="crash-primary-bet-btn"
+              onClick={handlePrimaryActionClick}
+              className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>
+                {phase === 'COUNTDOWN'
+                  ? betPlacedForCurrentRound
+                    ? 'Cancel Bet'
+                    : 'Place Bet'
+                  : betQueuedForNextRound
+                  ? 'Cancel Queued Bet'
+                  : 'Bet (Next Flight)'}
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-black/25 text-xs font-mono tabular-nums">
+                {formatCurrency(betAmount)}
+              </span>
+            </button>
+          )}
+
+          {phase === 'COUNTDOWN' && (
+            <button
+              type="button"
+              data-testid="crash-launch-now-btn"
+              onClick={handleSkipCountdownAndLaunchNow}
+              title="Launch Flight Now"
+              className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer"
+            >
+              🚀Now
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* =====================================================================
+          LIVE PLAYERS BETS & CASHOUTS BOARD (لیست زنده شرط‌ها و برداشت بازیکنان)
+          ===================================================================== */}
+      <div
+        data-testid="crash-live-players-board"
+        className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-2.5"
+      >
+        <div className="flex items-center justify-between text-xs border-b border-purple-500/15 pb-2" dir="rtl">
+          <div className="flex items-center gap-1.5 font-bold text-white">
+            <span className="w-2 h-2 rounded-full bg-[#00f59b] animate-pulse" />
+            <span>شرط‌ها و برداشت‌های زنده بازیکنان ({peerBets.length + (betPlacedForCurrentRound ? 1 : 0)})</span>
+          </div>
+          <span className="font-mono text-[11px] font-bold text-[#fbbf24] tabular-nums" dir="ltr">
+            Pool: {formatActiveTmaAmount(totalRoundPoolUsdt)}
+          </span>
+        </div>
+
+        {/* Table Header */}
+        <div className="grid grid-cols-12 text-[10px] font-semibold text-purple-300/60 px-2" dir="ltr">
+          <span className="col-span-4">Player</span>
+          <span className="col-span-3 text-right">Bet</span>
+          <span className="col-span-2 text-center">Mult</span>
+          <span className="col-span-3 text-right">Cashout</span>
+        </div>
+
+        {/* Live Players Rows */}
+        <div className="space-y-1.5 max-h-56 overflow-y-auto no-scrollbar" dir="ltr">
+          {/* Pinned Current User Row when bet is placed */}
+          {betPlacedForCurrentRound && (
+            <div
+              data-testid="crash-live-player-self"
+              className={`grid grid-cols-12 items-center px-2.5 py-2 rounded-xl border text-xs font-mono tabular-nums ${
+                playerCashedOutAt !== null
+                  ? 'bg-[#052e16]/60 border-[#00f59b]/50 text-white'
+                  : phase === 'CRASHED'
+                  ? 'bg-rose-950/50 border-rose-500/40 text-rose-200'
+                  : 'bg-purple-900/35 border-purple-400/50 text-white'
+              }`}
+            >
+              <div className="col-span-4 flex items-center gap-1.5 truncate font-sans font-bold text-[#fbbf24]">
+                <span>👤</span>
+                <span className="truncate">{displayName || 'You'}</span>
+              </div>
+              <div className="col-span-3 text-right font-bold text-white">
+                {formatActiveTmaAmount(activeBetUsdt)}
+              </div>
+              <div className="col-span-2 text-center">
+                {playerCashedOutAt !== null ? (
+                  <span className="px-1.5 py-0.5 rounded bg-[#00f59b]/20 text-[#00f59b] font-bold text-[10px]">
+                    {playerCashedOutAt.toFixed(2)}x
+                  </span>
+                ) : phase === 'CRASHED' ? (
+                  <span className="text-rose-400 font-bold text-[10px]">💥</span>
+                ) : (
+                  <span className="text-purple-300 text-[10px]">Flying</span>
+                )}
+              </div>
+              <div className="col-span-3 text-right font-bold">
+                {playerCashedOutAt !== null && playerWinAmountUsdt !== null ? (
+                  <span className="text-[#00f59b]">+{formatActiveTmaAmount(playerWinAmountUsdt)}</span>
+                ) : phase === 'CRASHED' ? (
+                  <span className="text-rose-400/80">0.00</span>
+                ) : (
+                  <span className="text-purple-300/60">...</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Simulated Multiplayer Peers */}
+          {peerBets.map((peer) => {
+            const isCrashedLoss = phase === 'CRASHED' && !peer.cashedOut;
+            return (
+              <div
+                key={peer.id}
+                data-testid={`crash-live-peer-${peer.username}`}
+                className={`grid grid-cols-12 items-center px-2.5 py-1.5 rounded-xl border text-[11px] font-mono tabular-nums transition-colors ${
+                  peer.cashedOut
+                    ? 'bg-[#052e16]/40 border-[#00f59b]/30 text-white'
+                    : isCrashedLoss
+                    ? 'bg-rose-950/25 border-rose-500/20 text-purple-300/50'
+                    : 'bg-[#090612]/90 border-purple-500/15 text-purple-100'
+                }`}
+              >
+                <div className="col-span-4 flex items-center gap-1.5 truncate font-sans font-semibold">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      peer.cashedOut
+                        ? 'bg-[#00f59b]'
+                        : isCrashedLoss
+                        ? 'bg-rose-500'
+                        : 'bg-amber-400 animate-pulse'
+                    }`}
+                  />
+                  <span className="truncate">{peer.username}</span>
+                </div>
+                <div className="col-span-3 text-right text-purple-200">
+                  {formatActiveTmaAmount(peer.betUsdt)}
+                </div>
+                <div className="col-span-2 text-center">
+                  {peer.cashedOut && peer.cashedOutAt ? (
+                    <span className="px-1.5 py-0.5 rounded bg-[#00f59b]/20 text-[#00f59b] font-bold text-[10px]">
+                      {peer.cashedOutAt.toFixed(2)}x
+                    </span>
+                  ) : isCrashedLoss ? (
+                    <span className="text-rose-400 text-[10px]">💥</span>
+                  ) : phase === 'IN_PROGRESS' ? (
+                    <span className="text-amber-300/80 text-[10px]">Flying</span>
+                  ) : (
+                    <span className="text-purple-400/50 text-[10px]">Ready</span>
+                  )}
+                </div>
+                <div className="col-span-3 text-right font-bold">
+                  {peer.cashedOut && peer.payoutUsdt ? (
+                    <span className="text-[#00f59b]">+{formatActiveTmaAmount(peer.payoutUsdt)}</span>
+                  ) : isCrashedLoss ? (
+                    <span className="text-rose-400/60">-</span>
+                  ) : (
+                    <span className="text-purple-400/40">-</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import {
   toPersianDigits,
 } from '../utils/lotteryEngine.ts';
 import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
+import { LiquidNavbar, NimbusIcons } from '@/components/ui/liquid-glass-navbar';
 
 export const MyTicketsView: React.FC = () => {
   const {
@@ -63,23 +64,23 @@ export const MyTicketsView: React.FC = () => {
     setClaimingCode(null);
     if (ok) {
       setClaimBanner(
-        `جایزه بلیت ${ticketCode} به مبلغ $${prizeUsdt.toLocaleString('en-US')} USDT (${formatAmount(
+        `جایزه بلیت ${ticketCode} به مبلغ ${formatAmount(
           prizeUsdt
-        )}) به صورت آنی به موجودی کیف پول شما اضافه شد!`
+        )} به صورت آنی به موجودی کیف پول شما اضافه شد!`
       );
     }
   };
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-8 overflow-x-clip">
-      {/* Header Banner */}
-      <div className="relative rounded-3xl overflow-hidden border border-amber-500/40 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 shadow-2xl">
+      {/* Header Banner — Nimbus Liquid Glass */}
+      <div className="relative rounded-3xl overflow-hidden nimbus-wallet-header p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <img
           src={LUXURY_IMAGES.playTicketsBanner}
           alt="My VIP Tickets"
-          className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none"
+          className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0a0e17]/92 via-[#111625]/85 to-[#1a1328]/90 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0a1322]/90 via-[#101c32]/82 to-[#161a36]/88 pointer-events-none" />
 
         <div className="relative z-10 flex items-start sm:items-center gap-4">
           <img
@@ -137,36 +138,34 @@ export const MyTicketsView: React.FC = () => {
         </div>
       )}
 
-      {/* Filter Tabs by Concurrent Lottery Round */}
-      <div className="flex flex-wrap items-center gap-2 bg-[#131824] p-2 rounded-2xl border border-white/10">
-        <button
-          type="button"
-          onClick={() => setFilterRound('ALL')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            filterRound === 'ALL'
-              ? 'bg-amber-500 text-slate-950 font-black'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          همه دورها ({toPersianDigits(tickets.length)})
-        </button>
-        {MULTI_LOTTERY_SPECS.map((spec) => (
-          <button
-            key={spec.roundCode}
-            type="button"
-            onClick={() => setFilterRound(spec.roundCode)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              filterRound === spec.roundCode
-                ? 'bg-amber-500 text-slate-950 font-black'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            {spec.titleFa.split('(')[0]} ({spec.roundCode})
-          </button>
-        ))}
+      {/* Filter Tabs by Concurrent Lottery Round — Nimbus LiquidNavbar */}
+      <div className="overflow-x-auto no-scrollbar max-w-full" dir="ltr">
+        <LiquidNavbar
+          aria-label="فیلتر دورهای قرعه‌کشی"
+          tone="dark"
+          size="md"
+          compact={false}
+          sound={true}
+          value={filterRound}
+          onValueChange={(id) => setFilterRound(id)}
+          items={[
+            {
+              id: 'ALL',
+              label: `همه دورها (${toPersianDigits(tickets.length)})`,
+              fx: 'glow',
+              icon: NimbusIcons.spark,
+            },
+            ...MULTI_LOTTERY_SPECS.map((spec, idx) => ({
+              id: spec.roundCode,
+              label: `${spec.titleFa.split('(')[0].trim()} (${spec.roundCode})`,
+              fx: (['drop', 'spin', 'wave', 'pop'] as const)[idx % 4],
+              icon: NimbusIcons.droplet,
+            })),
+          ]}
+        />
       </div>
 
-      {/* Tickets List */}
+      {/* Tickets List — Nimbus Liquid Glass Ticket Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6" data-testid="my-tickets-grid">
         {filteredTickets.map((ticket) => {
           const mainArr = parseMainNumbers(ticket.mainNumbers);
@@ -190,10 +189,10 @@ export const MyTicketsView: React.FC = () => {
             <div
               key={ticket.ticketCode}
               data-testid={`my-ticket-card-${ticket.ticketCode}`}
-              className={`rounded-3xl bg-[#141923] border p-6 space-y-4 transition-all ${
+              className={`nimbus-ticket-card rounded-3xl p-6 space-y-4 ${
                 hasPrize
-                  ? 'border-emerald-500/45 shadow-[0_15px_40px_rgba(16,185,129,0.12)]'
-                  : 'border-white/10'
+                  ? 'ring-2 ring-emerald-400/60 shadow-[0_15px_40px_rgba(16,185,129,0.22)]'
+                  : ''
               }`}
             >
               {/* Top Row */}
@@ -220,7 +219,7 @@ export const MyTicketsView: React.FC = () => {
                   }`}
                 >
                   {ticket.status.toUpperCase() === 'WON'
-                    ? `WON • برنده ($${ticket.prizeWonUsdt})`
+                    ? `WON • برنده (${formatAmount(Number(ticket.prizeWonUsdt))})`
                     : ticket.status.toUpperCase() === 'LOST'
                     ? 'LOST • پایان‌یافته'
                     : 'ACTIVE • فعال در قرعه‌کشی'}
@@ -279,10 +278,9 @@ export const MyTicketsView: React.FC = () => {
               {/* Bottom Action Bar: 1-Click Claim Prize, Story Certificate, or Blockchain Tracker */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <div>
-                  <span className="text-[11px] text-slate-400 block">جایزه تعلق‌گرفته:</span>
-                  <span className="text-lg font-black text-emerald-400 font-mono">
-                    ${effectivePrize.toLocaleString('en-US', { minimumFractionDigits: 2 })} USDT{' '}
-                    <span className="text-xs text-amber-300">({formatAmount(effectivePrize)})</span>
+                  <span className="text-[11px] font-medium text-purple-300/50 block">جایزه تعلق‌گرفته:</span>
+                  <span className="text-base font-bold tracking-wide text-[#00f59b] tabular-nums" dir="ltr">
+                    {formatAmount(effectivePrize)}
                   </span>
                 </div>
 

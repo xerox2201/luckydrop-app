@@ -8,6 +8,7 @@ import {
   MiniGameEvaluationResult,
 } from '../utils/provablyFair.ts';
 import { plinkoSoundEngine } from '../utils/plinkoSoundEngine.ts';
+import { tmaCurrencyToUsdt } from '../utils/telegramTma.ts';
 
 interface TrailPoint {
   x: number;
@@ -166,6 +167,13 @@ export const PlinkoGameArena: React.FC<{
 }> = ({ onRoundSettled }) => {
   const {
     balanceUsdt,
+    tonBalance,
+    starsBalance,
+    tonUsdRate,
+    starsUsdRate,
+    activeTmaCurrency,
+    formatCurrency,
+    formatActiveTmaAmount,
     provablyFairSeeds,
     playInstantMiniGame,
     setDepositModalOpen,
@@ -173,13 +181,23 @@ export const PlinkoGameArena: React.FC<{
     navigateTo,
   } = useLottery();
 
-  // Stake Left Control Sidebar State
+  // Stake Left Control Sidebar State (betAmount is in activeTmaCurrency: TON or STARS)
   const [controlTab, setControlTab] = useState<'MANUAL' | 'AUTO'>('MANUAL');
-  const [betAmount, setBetAmount] = useState<number>(5);
+  const [betAmount, setBetAmount] = useState<number>(() =>
+    activeTmaCurrency === 'TON' ? 1 : 50
+  );
   const [risk, setRisk] = useState<PlinkoRiskLevel>('MEDIUM');
   const [rows, setRows] = useState<PlinkoRowCount>(16);
   const [autoBetCount, setAutoBetCount] = useState<number>(10); // 0 = infinite
   const [autoRunning, setAutoRunning] = useState<boolean>(false);
+
+  useEffect(() => {
+    setBetAmount((prev) => {
+      if (activeTmaCurrency === 'TON' && prev >= 50) return 1;
+      if (activeTmaCurrency === 'STARS' && prev < 10) return 50;
+      return prev;
+    });
+  }, [activeTmaCurrency]);
   const [isMuted, setIsMuted] = useState<boolean>(() => plinkoSoundEngine.isMuted());
   const [activeBallsCount, setActiveBallsCount] = useState<number>(0);
   const [landedHistory, setLandedHistory] = useState<LandedHistoryBadge[]>([]);
@@ -204,10 +222,12 @@ export const PlinkoGameArena: React.FC<{
   // Smooth morph animation when switching rows/risk
   const morphAlphaRef = useRef<number>(1);
   const onRoundSettledRef = useRef(onRoundSettled);
+  const formatActiveTmaAmountRef = useRef(formatActiveTmaAmount);
 
   useEffect(() => {
     onRoundSettledRef.current = onRoundSettled;
-  }, [onRoundSettled]);
+    formatActiveTmaAmountRef.current = formatActiveTmaAmount;
+  }, [onRoundSettled, formatActiveTmaAmount]);
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -267,10 +287,22 @@ export const PlinkoGameArena: React.FC<{
   // Drop a single Provably Fair ball connected to the PAM Seamless Wallet
   const handleDropSingleBall = useCallback(async () => {
     setErrorBanner(null);
-    const cleanBet = Math.max(0.5, Number(betAmount.toFixed(2)) || 1);
-    if (balanceUsdt < cleanBet) {
+    const minBet = activeTmaCurrency === 'TON' ? 0.1 : 10;
+    const cleanBetCurrency =
+      activeTmaCurrency === 'TON'
+        ? Math.max(minBet, Number(betAmount.toFixed(2)) || 1)
+        : Math.max(minBet, Math.round(betAmount) || 50);
+    const wagerUsdt = tmaCurrencyToUsdt(
+      cleanBetCurrency,
+      activeTmaCurrency,
+      tonUsdRate,
+      starsUsdRate
+    );
+    const availInCurrency = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
+
+    if (availInCurrency < cleanBetCurrency || balanceUsdt < wagerUsdt) {
       setDepositModalOpen(true);
-      setErrorBanner('موجودی کیف پول PAM کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید.');
+      setErrorBanner('موجودی کیف پول کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید.');
       setAutoRunning(false);
       return false;
     }
@@ -283,7 +315,7 @@ export const PlinkoGameArena: React.FC<{
 
     const res = await playInstantMiniGame({
       gameId: 'PLINKO',
-      betAmountUsdt: cleanBet,
+      betAmountUsdt: wagerUsdt,
       plinkoRows: currentRows,
       plinkoRisk: currentRisk,
     });
@@ -311,7 +343,7 @@ export const PlinkoGameArena: React.FC<{
       directions,
       targetBucketIndex: targetBucket,
       multiplier: ev.multiplier,
-      betAmountUsdt: cleanBet,
+      betAmountUsdt: wagerUsdt,
       payoutUsdt: ev.payoutUsdt,
       bonusTicket: Boolean(ev.plinkoBonusTicket),
       roundId: ev.roundId,
@@ -330,7 +362,17 @@ export const PlinkoGameArena: React.FC<{
     ballsRef.current.push(newBall);
     setActiveBallsCount(ballsRef.current.length);
     return true;
-  }, [betAmount, balanceUsdt, playInstantMiniGame, setDepositModalOpen]);
+  }, [
+    betAmount,
+    activeTmaCurrency,
+    tonUsdRate,
+    starsUsdRate,
+    tonBalance,
+    starsBalance,
+    balanceUsdt,
+    playInstantMiniGame,
+    setDepositModalOpen,
+  ]);
 
   // Rapid multi-ball burst helper (drops 5 balls spaced by 110ms)
   const handleDropBurst5 = useCallback(() => {
@@ -411,10 +453,10 @@ export const PlinkoGameArena: React.FC<{
       ctx.fillRect(0, 0, W, H);
 
       const spotGrad = ctx.createRadialGradient(
-        W * 0.48,
+        W * 0.5,
         H * 0.44,
         18,
-        W * 0.48,
+        W * 0.5,
         H * 0.46,
         Math.max(W, H) * 0.65
       );
@@ -424,9 +466,8 @@ export const PlinkoGameArena: React.FC<{
       ctx.fillStyle = spotGrad;
       ctx.fillRect(0, 0, W, H);
 
-      // Subtle studio grid / light beams at the top chute
-      const chuteCenterX = W * 0.475; // Slightly left of center to leave room for right-edge Live History Strip
-      const topNozzleY = 26;
+      // Perfectly centered top chute
+      const topNozzleY = 36;
 
       // 2. FLOATING AMBIENT DUST PARTICLES
       for (const p of dustRef.current) {
@@ -436,8 +477,8 @@ export const PlinkoGameArena: React.FC<{
           p.y = 0.96;
           p.x = Math.random();
         }
-        if (p.x < 0.02) p.x = 0.94;
-        if (p.x > 0.94) p.x = 0.02;
+        if (p.x < 0.02) p.x = 0.98;
+        if (p.x > 0.98) p.x = 0.02;
 
         ctx.beginPath();
         ctx.arc(p.x * W, p.y * H, p.radius, 0, Math.PI * 2);
@@ -445,7 +486,7 @@ export const PlinkoGameArena: React.FC<{
         ctx.fill();
       }
 
-      // 3. PYRAMID GEOMETRY CALCULATION (8, 12, or 16 rows)
+      // 3. PYRAMID GEOMETRY CALCULATION (8, 12, or 16 rows) — 100% HORIZONTALLY CENTERED
       const activeRows = rowsRef.current;
       const activeRisk = riskRef.current;
       const multipliers = PLINKO_MULTIPLIER_TABLES[activeRows][activeRisk];
@@ -454,10 +495,8 @@ export const PlinkoGameArena: React.FC<{
         morphAlphaRef.current = Math.min(1, morphAlphaRef.current + dt * 4.5);
       }
 
-      // Reserve right 66px on desktop (52px on mobile) for the Live History Strip
-      const rightReserve = W > 620 ? 74 : 52;
-      const usableW = W - rightReserve - 24;
-      const centerX = 12 + usableW / 2;
+      const usableW = W - 24;
+      const centerX = W / 2;
 
       const pyramidTopY = 58;
       const bucketRowHeight = W > 620 ? 38 : 32;
@@ -790,13 +829,13 @@ export const PlinkoGameArena: React.FC<{
             // 2. Play procedural Web Audio bucket landing sound
             plinkoSoundEngine.playBucketLand(ball.multiplier, ball.bonusTicket);
 
-            // 3. Float +$WinAmount popup upward
+            // 3. Float +WinAmount popup upward
             popupsRef.current.push({
               id: ball.id,
               x: bucketCoords.x,
               y: bucketTopY - 8,
               vy: -58,
-              text: `+$${ball.payoutUsdt.toFixed(2)}`,
+              text: `+${formatActiveTmaAmountRef.current(ball.payoutUsdt)}`,
               subText: ball.bonusTicket ? '👑 +1 VIP LOTTERY TICKET!' : `${ball.multiplier}x`,
               color:
                 ball.multiplier >= 10 || ball.bonusTicket
@@ -833,8 +872,8 @@ export const PlinkoGameArena: React.FC<{
 
             if (ball.bonusTicket) {
               setBonusBanner(
-                `👑 تبریک! توپ شما وارد اسلات ویژه LOTTERY TICKET شد و علاوه بر برد نقدی $${ball.payoutUsdt.toFixed(
-                  2
+                `👑 تبریک! توپ شما وارد اسلات ویژه LOTTERY TICKET شد و علاوه بر برد ${formatActiveTmaAmountRef.current(
+                  ball.payoutUsdt
                 )}، یک بلیت رایگان VIP لاتاری برای شما صادر گردید!`
               );
             }
@@ -994,7 +1033,7 @@ export const PlinkoGameArena: React.FC<{
         ctx.restore();
       }
 
-      // 9. RENDER FLOATING +$WinAmount POPUPS
+      // 9. RENDER FLOATING +WinAmount POPUPS
       for (let i = popupsRef.current.length - 1; i >= 0; i--) {
         const pop = popupsRef.current[i];
         pop.y += pop.vy * dt;
@@ -1034,15 +1073,29 @@ export const PlinkoGameArena: React.FC<{
   }, [spawnWinConfetti]);
 
   const handleHalfBet = () => {
-    setBetAmount((prev) => Math.max(0.5, Number((prev / 2).toFixed(2))));
+    setBetAmount((prev) =>
+      activeTmaCurrency === 'TON'
+        ? Math.max(0.1, Number((prev / 2).toFixed(2)))
+        : Math.max(10, Math.floor(prev / 2))
+    );
   };
 
   const handleDoubleBet = () => {
-    setBetAmount((prev) => Math.min(Math.max(0.5, balanceUsdt), Number((prev * 2).toFixed(2))));
+    const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
+    setBetAmount((prev) =>
+      activeTmaCurrency === 'TON'
+        ? Math.min(Math.max(0.1, avail), Number((prev * 2).toFixed(2)))
+        : Math.min(Math.max(10, avail), prev * 2)
+    );
   };
 
   const handleMaxBet = () => {
-    setBetAmount(Math.max(0.5, Math.min(1000, Number(balanceUsdt.toFixed(2)))));
+    const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
+    setBetAmount(
+      activeTmaCurrency === 'TON'
+        ? Math.max(0.1, Math.min(200, Number(avail.toFixed(2))))
+        : Math.max(10, Math.min(25000, Math.floor(avail)))
+    );
   };
 
   const handleToggleMute = () => {
@@ -1051,362 +1104,233 @@ export const PlinkoGameArena: React.FC<{
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3" dir="ltr" data-testid="stake-plinko-studio">
       {bonusBanner && (
         <div
           data-testid="plinko-bonus-ticket-banner"
-          className="p-4 rounded-2xl bg-amber-500/20 border border-amber-400 text-amber-200 text-xs sm:text-sm font-black flex items-center justify-between gap-3 shadow-lg"
+          className="p-3 rounded-2xl bg-[#130d24]/90 border border-[#fbbf24]/50 text-[#fbbf24] text-xs font-semibold flex items-center justify-between gap-2"
+          dir="rtl"
         >
           <span>{bonusBanner}</span>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => navigateTo('my-tickets')}
-              className="px-3 py-1.5 rounded-xl bg-amber-400 text-slate-950 font-black text-xs cursor-pointer"
-            >
-              مشاهده بلیت رایگان ↗
-            </button>
-            <button
-              type="button"
-              onClick={() => setBonusBanner(null)}
-              className="text-xs text-amber-300 underline cursor-pointer"
-            >
-              بستن
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => navigateTo('my-tickets')}
+            className="px-2.5 py-1 rounded-lg bg-[#fbbf24] text-slate-950 font-bold text-[11px] cursor-pointer shrink-0"
+          >
+            مشاهده ↗
+          </button>
         </div>
       )}
 
       {errorBanner && (
-        <div className="p-3.5 rounded-2xl bg-rose-500/20 border border-rose-400/50 text-rose-200 text-xs font-bold flex items-center justify-between">
+        <div
+          className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center justify-between"
+          dir="rtl"
+        >
           <span>⚠️ {errorBanner}</span>
           <button
             type="button"
             onClick={() => setErrorBanner(null)}
-            className="text-xs underline cursor-pointer"
+            className="text-[11px] underline cursor-pointer"
           >
             بستن
           </button>
         </div>
       )}
 
-      {/* STAKE-STYLE SPLIT STUDIO CONTAINER:
-          Desktop: Left Control Sidebar (#1a2c38) + Right Game Arena (#0f212e)
-          Mobile: Game Arena on top, Controls below (flex-col-reverse lg:flex-row) */}
-      <div
-        dir="ltr"
-        data-testid="stake-plinko-studio"
-        className="rounded-3xl overflow-hidden border border-white/15 bg-[#0f212e] shadow-[0_25px_70px_rgba(0,0,0,0.85)] flex flex-col-reverse lg:flex-row"
-      >
-        {/* LEFT CONTROL PANEL (#1a2c38) */}
-        <aside className="w-full lg:w-[330px] xl:w-[350px] shrink-0 bg-[#1a2c38] border-t lg:border-t-0 lg:border-r border-white/10 p-5 flex flex-col justify-between gap-5">
-          <div className="space-y-4">
-            {/* Manual / Auto Mode Tabs */}
-            <div className="grid grid-cols-2 bg-[#0f212e] p-1 rounded-full border border-white/10">
-              <button
-                type="button"
-                data-testid="plinko-tab-manual"
-                onClick={() => {
-                  setControlTab('MANUAL');
-                  setAutoRunning(false);
-                }}
-                className={`py-2.5 rounded-full text-xs font-black tracking-wide transition-all cursor-pointer ${
-                  controlTab === 'MANUAL'
-                    ? 'bg-[#2f4553] text-white shadow'
-                    : 'text-slate-400 hover:text-white'
+      {/* =====================================================================
+          TOP: GAME CANVAS CONTAINER
+          w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716]
+          border border-purple-500/25 overflow-hidden relative
+          ===================================================================== */}
+      <div className="w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716] border border-purple-500/25 overflow-hidden relative">
+        {/* Top-Left: Minimal Floating Translucent Pill for Recent Multipliers */}
+        <div
+          data-testid="plinko-live-history-strip"
+          className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 max-w-[72%] overflow-x-auto no-scrollbar"
+        >
+          {landedHistory.length === 0 ? (
+            <span className="text-[11px] font-medium text-purple-300/60 tabular-nums">
+              {rows}R • {risk}
+              {activeBallsCount > 0 ? ` • ${activeBallsCount}●` : ''}
+            </span>
+          ) : (
+            landedHistory.slice(0, 5).map((item, idx) => (
+              <span
+                key={item.id}
+                data-testid={`plinko-history-badge-${idx}`}
+                className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold tabular-nums shrink-0 ${
+                  item.multiplier >= 10
+                    ? 'bg-[#fbbf24] text-slate-950'
+                    : item.multiplier >= 2
+                    ? 'bg-[#00f59b] text-[#041f14]'
+                    : 'bg-purple-950/90 text-purple-200'
                 }`}
               >
-                Manual
-              </button>
-              <button
-                type="button"
-                data-testid="plinko-tab-auto"
-                onClick={() => setControlTab('AUTO')}
-                className={`py-2.5 rounded-full text-xs font-black tracking-wide transition-all cursor-pointer ${
-                  controlTab === 'AUTO'
-                    ? 'bg-[#2f4553] text-white shadow'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Auto
-              </button>
-            </div>
+                {item.multiplier}x
+              </span>
+            ))
+          )}
+        </div>
 
-            {/* Bet Amount Input with 1/2, 2x, and Max inside the input box */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                <label htmlFor="plinko-bet-input">Bet Amount (USDT)</label>
-                <span className="font-mono text-emerald-400" data-testid="plinko-sidebar-balance">
-                  Bal: ${balanceUsdt.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex items-center bg-[#0f212e] border-2 border-[#2f4553] focus-within:border-[#557086] rounded-xl overflow-hidden p-1">
-                <div className="pl-2.5 pr-1 flex items-center">
-                  <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px] flex items-center justify-center">
-                    $
-                  </span>
-                </div>
-                <input
-                  id="plinko-bet-input"
-                  type="number"
-                  min={0.5}
-                  max={1000}
-                  step={0.5}
-                  data-testid="plinko-bet-input"
-                  value={betAmount}
-                  onChange={(e) => setBetAmount(Math.max(0.5, Number(e.target.value) || 0.5))}
-                  className="w-full bg-transparent px-2 py-2 text-sm font-mono font-black text-white focus:outline-none"
-                />
-                <div className="flex items-center gap-1 pr-1 shrink-0">
-                  <button
-                    type="button"
-                    data-testid="plinko-bet-half"
-                    onClick={handleHalfBet}
-                    className="px-2.5 py-1.5 rounded-lg bg-[#2f4553] hover:bg-[#3d5666] text-xs font-bold text-white transition-colors cursor-pointer"
-                  >
-                    ½
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="plinko-bet-double"
-                    onClick={handleDoubleBet}
-                    className="px-2.5 py-1.5 rounded-lg bg-[#2f4553] hover:bg-[#3d5666] text-xs font-bold text-white transition-colors cursor-pointer"
-                  >
-                    2×
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="plinko-bet-max"
-                    onClick={handleMaxBet}
-                    className="px-2.5 py-1.5 rounded-lg bg-[#2f4553] hover:bg-[#3d5666] text-xs font-bold text-amber-300 transition-colors cursor-pointer"
-                  >
-                    Max
-                  </button>
-                </div>
-              </div>
-            </div>
+        {/* Top-Right: Minimal Floating Translucent Pill for Sound & Fairness Icons */}
+        <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="plinko-audio-mute-btn"
+            onClick={handleToggleMute}
+            aria-label={isMuted ? 'Unmute Plinko Audio' : 'Mute Plinko Audio'}
+            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-purple-200/90 hover:text-white flex items-center justify-center cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm">
+              {isMuted ? 'volume_off' : 'volume_up'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigateTo('transparency')}
+            aria-label="Provably Fair Verifier"
+            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer"
+          >
+            <span>🛡️</span>
+            <span>#{provablyFairSeeds.nonce}</span>
+          </button>
+        </div>
 
-            {/* Risk Selector (Low, Medium, High) */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold text-slate-300 block">Risk Level</span>
-              <div className="grid grid-cols-3 gap-2">
-                {(['LOW', 'MEDIUM', 'HIGH'] as PlinkoRiskLevel[]).map((level) => {
-                  const active = risk === level;
-                  return (
-                    <button
-                      key={level}
-                      type="button"
-                      data-testid={`plinko-risk-${level}`}
-                      onClick={() => setRisk(level)}
-                      className={`py-2.5 rounded-xl text-xs font-black border transition-all cursor-pointer ${
-                        active
-                          ? 'bg-[#2f4553] border-emerald-400 text-white shadow-md'
-                          : 'bg-[#0f212e] border-[#2f4553] text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {level === 'LOW' ? 'Low' : level === 'MEDIUM' ? 'Medium' : 'High'}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+        {/* 60FPS Retina HTML5 Canvas */}
+        <canvas
+          ref={canvasRef}
+          data-testid="plinko-3d-canvas"
+          className="w-full h-full block select-none"
+        />
+      </div>
 
-            {/* Rows Selector (8, 12, 16) */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold text-slate-300 block">Rows Pyramid</span>
-              <div className="grid grid-cols-3 gap-2">
-                {([8, 12, 16] as PlinkoRowCount[]).map((rCount) => {
-                  const active = rows === rCount;
-                  return (
-                    <button
-                      key={rCount}
-                      type="button"
-                      data-testid={`plinko-rows-${rCount}`}
-                      onClick={() => setRows(rCount)}
-                      className={`py-2.5 rounded-xl text-xs font-mono font-black border transition-all cursor-pointer ${
-                        active
-                          ? 'bg-[#2f4553] border-amber-400 text-amber-300 shadow-md'
-                          : 'bg-[#0f212e] border-[#2f4553] text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {rCount} Rows
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Auto-Bet Count Selector (Visible in AUTO mode) */}
-            {controlTab === 'AUTO' && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                  <label htmlFor="plinko-autobet-count">Number of Bets</label>
-                  <span className="text-[11px] text-slate-400">0 = ∞</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    id="plinko-autobet-count"
-                    type="number"
-                    min={0}
-                    max={500}
-                    value={autoBetCount}
-                    onChange={(e) => setAutoBetCount(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-full bg-[#0f212e] border-2 border-[#2f4553] rounded-xl px-3 py-2 text-sm font-mono font-black text-white"
-                  />
-                  {[10, 25, 0].map((cnt) => (
-                    <button
-                      key={cnt}
-                      type="button"
-                      onClick={() => setAutoBetCount(cnt)}
-                      className="px-2.5 py-2 rounded-xl bg-[#2f4553] hover:bg-[#3d5666] text-xs font-mono font-bold text-white cursor-pointer"
-                    >
-                      {cnt === 0 ? '∞' : cnt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* PROMINENT EMERALD-GREEN #00e701 "Bet / Drop Ball" BUTTON WITH 3D TACTILE PRESS EFFECT */}
-            {controlTab === 'MANUAL' ? (
-              <div className="space-y-2.5 pt-1">
-                <button
-                  type="button"
-                  data-testid="plinko-drop-ball-btn"
-                  onClick={handleDropSingleBall}
-                  className="w-full py-4 rounded-xl bg-[#00e701] hover:bg-[#1fff20] text-[#051c08] font-black text-base tracking-wide shadow-[0_5px_0_#009901,0_10px_25px_rgba(0,231,1,0.35)] active:translate-y-[3px] active:shadow-[0_2px_0_#009901] transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>Bet / Drop Ball</span>
-                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-black/15">
-                    ${betAmount.toFixed(2)}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="plinko-burst-5-btn"
-                  onClick={handleDropBurst5}
-                  className="w-full py-2.5 rounded-xl bg-[#2f4553] hover:bg-[#3b5566] border border-amber-400/40 text-amber-300 font-black text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>⚡ Multi-Ball Rapid Burst (×5 Balls)</span>
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                data-testid="plinko-autobet-toggle-btn"
-                onClick={() => setAutoRunning((prev) => !prev)}
-                className={`w-full py-4 rounded-xl font-black text-base tracking-wide transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                  autoRunning
-                    ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-[0_5px_0_#9f1239]'
-                    : 'bg-[#00e701] hover:bg-[#1fff20] text-[#051c08] shadow-[0_5px_0_#009901]'
-                }`}
-              >
-                <span>{autoRunning ? 'Stop Autobet' : 'Start Autobet'}</span>
-              </button>
-            )}
+      {/* =====================================================================
+          BOTTOM CONTROL DECK
+          rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3
+          ===================================================================== */}
+      <div className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3">
+        {/* ROW 1: Bet Amount Input (h-11 rounded-xl bg-[#090612] px-3) with 1/2, 2x, MAX */}
+        <div className="h-11 rounded-xl bg-[#090612] px-3 border border-purple-500/20 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span
+              data-testid="plinko-sidebar-balance"
+              className="text-sm shrink-0"
+              title={formatActiveTmaAmount(balanceUsdt)}
+            >
+              {activeTmaCurrency === 'TON' ? '💎' : '⭐'}
+            </span>
+            <input
+              id="plinko-bet-input"
+              type="number"
+              min={0.5}
+              max={1000}
+              step={0.5}
+              data-testid="plinko-bet-input"
+              value={betAmount}
+              onChange={(e) => setBetAmount(Math.max(0.5, Number(e.target.value) || 0.5))}
+              className="w-full bg-transparent text-center text-sm font-mono font-bold text-white focus:outline-none tabular-nums"
+            />
           </div>
 
-          {/* Bottom Provably Fair & PAM Ledger Footer inside Sidebar */}
-          <div className="pt-4 border-t border-white/10 space-y-2.5 text-xs">
-            <div className="bg-[#0f212e] rounded-xl p-3 border border-white/10 space-y-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400 font-bold">🔒 HMAC-SHA256 Nonce:</span>
-                <span className="font-mono font-bold text-amber-300">
-                  #{provablyFairSeeds.nonce}
-                </span>
-              </div>
-              <div className="text-[10px] font-mono text-slate-400 truncate">
-                Hash: {provablyFairSeeds.serverSeedHash.slice(0, 24)}...
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setWalletDrawerOpen(true)}
-                className="py-2 px-3 rounded-xl bg-[#0f212e] hover:bg-[#243b4a] border border-white/10 text-emerald-300 font-bold text-[11px] cursor-pointer text-center"
-              >
-                PAM Ledger ↗
-              </button>
-              <button
-                type="button"
-                onClick={() => navigateTo('transparency')}
-                className="py-2 px-3 rounded-xl bg-[#0f212e] hover:bg-[#243b4a] border border-white/10 text-amber-300 font-bold text-[11px] cursor-pointer text-center"
-              >
-                Fairness Verifier ↗
-              </button>
-            </div>
-          </div>
-        </aside>
-
-        {/* RIGHT GAME ARENA (#0f212e) WITH 2.5D/3D CANVAS & LIVE HISTORY STRIP */}
-        <div className="relative flex-1 min-h-[450px] sm:min-h-[510px] lg:min-h-[550px] bg-[#0f212e] flex flex-col justify-between overflow-hidden">
-          {/* Top Overlay Utility Bar: Active Balls Badge, Bonus Slot Legend & Mute/Unmute Web Audio Synth */}
-          <div className="relative z-10 flex items-center justify-between px-4 pt-3 pointer-events-none">
-            <div className="flex flex-wrap items-center gap-2 pointer-events-auto">
-              <span className="px-3 py-1 rounded-full bg-[#1a2c38]/90 border border-white/10 text-[11px] font-mono font-bold text-slate-200">
-                STAKE ORIGINALS PLINKO • {rows} ROWS • {risk}
-              </span>
-              <span className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-[11px] font-bold text-amber-300">
-                👑 Slot #2 & #{rows} = Bonus VIP Lottery Ticket
-              </span>
-              {activeBallsCount > 0 && (
-                <span
-                  data-testid="plinko-active-balls-badge"
-                  className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-[11px] font-mono font-bold text-emerald-300"
-                >
-                  ● {activeBallsCount} Balls in Flight
-                </span>
-              )}
-            </div>
-
-            {/* Mute / Unmute Procedural Web Audio Synthesizer Button */}
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
-              data-testid="plinko-audio-mute-btn"
-              onClick={handleToggleMute}
-              aria-label={isMuted ? 'Unmute Plinko Audio' : 'Mute Plinko Audio'}
-              className="pointer-events-auto px-3 py-1.5 rounded-xl bg-[#1a2c38] hover:bg-[#263f50] border border-white/15 text-xs font-bold text-slate-200 flex items-center gap-1.5 cursor-pointer shadow"
+              data-testid="plinko-bet-half"
+              onClick={handleHalfBet}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
             >
-              <span className="material-symbols-outlined text-base text-amber-300">
-                {isMuted ? 'volume_off' : 'volume_up'}
-              </span>
-              <span className="hidden sm:inline">{isMuted ? 'Muted' : 'Synth Audio'}</span>
+              1/2
+            </button>
+            <button
+              type="button"
+              data-testid="plinko-bet-double"
+              onClick={handleDoubleBet}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
+            >
+              2x
+            </button>
+            <button
+              type="button"
+              data-testid="plinko-bet-max"
+              onClick={handleMaxBet}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-[#fbbf24] transition-colors cursor-pointer"
+            >
+              MAX
             </button>
           </div>
+        </div>
 
-          {/* 60FPS Retina HTML5 Canvas */}
-          <canvas
-            ref={canvasRef}
-            data-testid="plinko-3d-canvas"
-            className="w-full flex-1 h-[410px] sm:h-[470px] lg:h-[505px] block select-none"
-          />
-
-          {/* LIVE HISTORY STRIP ON THE RIGHT EDGE (Last 6 Landed Multipliers with Spring Slide) */}
-          <div
-            data-testid="plinko-live-history-strip"
-            className="absolute right-2.5 sm:right-3.5 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2 w-12 sm:w-14 pointer-events-none"
-          >
-            {landedHistory.map((item, idx) => {
-              const colors = getBucketColors(item.multiplier);
+        {/* ROW 2: Game-Specific Secondary Controls (Risk & Rows in uniform h-10 rounded-xl segmented selectors) */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* Risk Segmented Selector */}
+          <div className="h-10 rounded-xl bg-[#090612] p-1 border border-purple-500/20 grid grid-cols-3 gap-1">
+            {(['LOW', 'MEDIUM', 'HIGH'] as PlinkoRiskLevel[]).map((level) => {
+              const active = risk === level;
               return (
-                <div
-                  key={item.id}
-                  data-testid={`plinko-history-badge-${idx}`}
-                  style={{
-                    background: `linear-gradient(180deg, ${colors.topStop} 0%, ${colors.bottomStop} 100%)`,
-                    color: colors.textColor,
-                    boxShadow: `0 3px 0 ${colors.lipColor}, 0 6px 14px rgba(0,0,0,0.45)`,
-                  }}
-                  className="h-10 sm:h-11 rounded-xl flex flex-col items-center justify-center font-mono font-black text-xs border border-white/25 transition-all duration-300 animate-[fadeIn_0.22s_ease-out]"
+                <button
+                  key={level}
+                  type="button"
+                  data-testid={`plinko-risk-${level}`}
+                  onClick={() => setRisk(level)}
+                  className={`rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                    active
+                      ? 'bg-purple-600/40 text-white border border-purple-400/40'
+                      : 'text-purple-300/60 hover:text-white'
+                  }`}
                 >
-                  <span>{item.multiplier}x</span>
-                  {item.bonusTicket && <span className="text-[8px] leading-none">👑TKT</span>}
-                </div>
+                  {level === 'LOW' ? 'Low' : level === 'MEDIUM' ? 'Med' : 'High'}
+                </button>
               );
             })}
           </div>
+
+          {/* Rows Segmented Selector */}
+          <div className="h-10 rounded-xl bg-[#090612] p-1 border border-purple-500/20 grid grid-cols-3 gap-1">
+            {([8, 12, 16] as PlinkoRowCount[]).map((rCount) => {
+              const active = rows === rCount;
+              return (
+                <button
+                  key={rCount}
+                  type="button"
+                  data-testid={`plinko-rows-${rCount}`}
+                  onClick={() => setRows(rCount)}
+                  className={`rounded-lg text-[11px] font-mono font-semibold transition-all cursor-pointer tabular-nums ${
+                    active
+                      ? 'bg-purple-600/40 text-[#fbbf24] border border-purple-400/40'
+                      : 'text-purple-300/60 hover:text-white'
+                  }`}
+                >
+                  {rCount}R
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ROW 3: Full-Width Tactile Primary CTA Button + Compact Burst/Auto Triggers */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="plinko-drop-ball-btn"
+            onClick={handleDropSingleBall}
+            className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <span>Drop Ball</span>
+            <span className="px-2 py-0.5 rounded-lg bg-black/25 text-xs font-mono tabular-nums">
+              {formatCurrency(betAmount)}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="plinko-burst-5-btn"
+            onClick={handleDropBurst5}
+            title="Multi-Ball Burst (5x)"
+            className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer"
+          >
+            ⚡5x
+          </button>
         </div>
       </div>
     </div>

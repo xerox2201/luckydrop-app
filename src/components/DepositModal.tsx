@@ -1,416 +1,184 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { useLottery } from '../context/LotteryContext.tsx';
-import { convertUsdtToCrypto, toPersianDigits } from '../utils/lotteryEngine.ts';
-
-interface NetworkOption {
-  id: 'USDT_TRC20' | 'TON' | 'TRX' | 'BTC' | 'BNB';
-  name: string;
-  badge: string;
-  confirmTime: string;
-  feeLabel: string;
-  address: string;
-  color: string;
-  cryptoKey: 'USDT' | 'TON' | 'TRX' | 'BTC' | 'BNB';
-}
-
-const NETWORKS: NetworkOption[] = [
-  {
-    id: 'USDT_TRC20',
-    name: 'Tether (USDT - TRC20)',
-    badge: 'محبوب‌ترین در ایران',
-    confirmTime: 'کمتر از ۳۰ ثانیه (۱ تایید شبکه ترون)',
-    feeLabel: 'رایگان (پوشش گس توسط زرین لاتاری)',
-    address: 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE',
-    color: 'emerald',
-    cryptoKey: 'USDT',
-  },
-  {
-    id: 'TON',
-    name: 'The Open Network (TON)',
-    badge: 'بومی تلگرام • فوق سریع',
-    confirmTime: 'کمتر از ۵ ثانیه (تایید آنی شاردینگ)',
-    feeLabel: '۰.۰۰۵ TON',
-    address: 'UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
-    color: 'sky',
-    cryptoKey: 'TON',
-  },
-  {
-    id: 'TRX',
-    name: 'TRON Native (TRX)',
-    badge: 'کارمزد نزدیک به صفر',
-    confirmTime: 'حدود ۱۵ ثانیه',
-    feeLabel: 'رایگان',
-    address: 'TXk8Y2khEsLJW1ChVWFMSMeRDow5KcbL99',
-    color: 'rose',
-    cryptoKey: 'TRX',
-  },
-  {
-    id: 'BTC',
-    name: 'Bitcoin (Native SegWit)',
-    badge: 'مخصوص واریزهای سنگین VIP',
-    confirmTime: 'حدود ۱۰ دقیقه (۱ تایید بلاک)',
-    feeLabel: 'کارمزد استاندارد شبکه',
-    address: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-    color: 'amber',
-    cryptoKey: 'BTC',
-  },
-  {
-    id: 'BNB',
-    name: 'BNB Smart Chain (BEP-20)',
-    badge: 'بایننس اسمارت چین',
-    confirmTime: 'کمتر از ۱۵ ثانیه',
-    feeLabel: '۰.۰۰۰۲ BNB',
-    address: '0x71C8F9409a89bC20D471980D772094B112039A8F',
-    color: 'yellow',
-    cryptoKey: 'BNB',
-  },
-];
+import {
+  formatCurrency,
+  truncateTonAddress,
+  HapticEngine,
+} from '../utils/telegramTma.ts';
 
 export const DepositModal: React.FC = () => {
   const {
     depositModalOpen,
     setDepositModalOpen,
-    fxRates,
-    formatAmount,
-    submitDepositRequest,
+    activeTmaCurrency,
+    setActiveTmaCurrency,
+    connectedTonWallet,
+    connectTonWalletOneTap,
+    depositTonInstant,
+    depositTelegramStarsInstant,
     navigateTo,
-    officialWallets,
-    connectedWeb3Wallet,
-    connectedWalletProvider,
-    connectWeb3Wallet,
   } = useLottery();
 
-  const [selectedNet, setSelectedNet] = useState<NetworkOption>(NETWORKS[0]);
-  const [amountUsdt, setAmountUsdt] = useState<number>(100);
-  const [verificationMode, setVerificationMode] = useState<'ONCHAIN_AUTO' | 'ADMIN_MANUAL'>('ONCHAIN_AUTO');
-  const [txHashInput, setTxHashInput] = useState<string>('');
-  const [copied, setCopied] = useState<boolean>(false);
+  const [tonAmount, setTonAmount] = useState<number>(5);
+  const [starsAmount, setStarsAmount] = useState<number>(500);
   const [submitting, setSubmitting] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<{ text: string; isPending: boolean } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   if (!depositModalOpen) return null;
 
-  const liveAddress = officialWallets[selectedNet.id] || selectedNet.address;
-  const cryptoAmount = convertUsdtToCrypto(amountUsdt, selectedNet.cryptoKey, fxRates);
-
-  const handleCopy = () => {
-    navigator.clipboard?.writeText(liveAddress);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleConnectWalletForNetwork = async () => {
-    if (selectedNet.id === 'USDT_TRC20' || selectedNet.id === 'TRX') {
-      await connectWeb3Wallet('TRONLINK');
-    } else if (selectedNet.id === 'TON') {
-      await connectWeb3Wallet('TON');
-    } else {
-      await connectWeb3Wallet('METAMASK');
+  const handleConfirm = async () => {
+    HapticEngine.impactOccurred('medium');
+    if (activeTmaCurrency === 'TON') {
+      if (!connectedTonWallet) {
+        await connectTonWalletOneTap('Tonkeeper');
+        return;
+      }
+      setSubmitting(true);
+      const res = await depositTonInstant(tonAmount, connectedTonWallet.address);
+      setSubmitting(false);
+      setStatusMessage(res.message);
+      if (res.ok) {
+        setTimeout(() => {
+          setStatusMessage(null);
+          setDepositModalOpen(false);
+          navigateTo('wallet');
+        }, 1200);
+      }
+      return;
     }
-  };
 
-  const handleConfirmDeposit = async () => {
     setSubmitting(true);
-    setStatusMessage(null);
-    const cleanTx =
-      txHashInput.trim() ||
-      (verificationMode === 'ONCHAIN_AUTO'
-        ? `0x${Date.now().toString(16)}${Math.random().toString(16).slice(2, 18)}`
-        : `MANUAL_TX_${Date.now().toString(36).toUpperCase()}`);
-
-    const res = await submitDepositRequest({
-      amountUsdt,
-      network: selectedNet.id,
-      cryptoKey: selectedNet.cryptoKey,
-      txHash: cleanTx,
-      verificationMode: selectedNet.id === 'BTC' ? 'ADMIN_MANUAL' : verificationMode,
-      senderWallet: connectedWeb3Wallet || undefined,
-    });
+    const res = await depositTelegramStarsInstant(starsAmount);
     setSubmitting(false);
+    setStatusMessage(res.message);
     if (res.ok) {
-      setStatusMessage({
-        text: res.message,
-        isPending: res.status === 'PENDING_ADMIN',
-      });
       setTimeout(() => {
         setStatusMessage(null);
         setDepositModalOpen(false);
-        navigateTo('deposit');
-      }, 1400);
+        navigateTo('wallet');
+      }, 1200);
     }
   };
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
       role="dialog"
       aria-modal="true"
+      onClick={() => setDepositModalOpen(false)}
     >
-      <div className="relative w-full max-w-2xl rounded-3xl bg-[#111622] border border-amber-500/30 shadow-[0_25px_70px_rgba(0,0,0,0.85)] overflow-hidden">
-        {/* Header */}
-        <div className="px-6 py-5 bg-gradient-to-r from-[#1a2234] to-[#121724] border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400">
-              <span className="material-symbols-outlined text-2xl">qr_code_scanner</span>
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-white">
-                درگاه واریز مستقیم رمزارز (Web3 HD Gateway)
-              </h3>
-              <p className="text-xs text-slate-400">
-                آدرس اختصاصی یکبارمصرف با واریز آنی به قرارداد هوشمند بدون احراز هویت (No-KYC)
-              </p>
-            </div>
-          </div>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[400px] rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex flex-col gap-4"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold tracking-wide text-white">
+            شارژ کیف پول (TON &amp; Stars)
+          </h3>
           <button
             type="button"
             onClick={() => setDepositModalOpen(false)}
-            className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center"
+            className="p-1.5 rounded-xl bg-purple-500/15 text-purple-200/80 hover:text-white cursor-pointer"
           >
-            <span className="material-symbols-outlined">close</span>
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-5 max-h-[82vh] overflow-y-auto">
-          {/* Step 1: Select Network */}
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2.5">
-              ۱. شبکه بلاکچین مورد نظر را انتخاب کنید:
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              {NETWORKS.map((net) => {
-                const active = selectedNet.id === net.id;
-                return (
-                  <button
-                    key={net.id}
-                    type="button"
-                    onClick={() => setSelectedNet(net)}
-                    className={`p-3 rounded-2xl border text-right transition-all ${
-                      active
-                        ? 'bg-amber-500/15 border-amber-400 text-white shadow-[0_0_20px_rgba(245,158,11,0.2)]'
-                        : 'bg-[#171d2b] border-white/10 text-slate-400 hover:text-white hover:border-white/20'
-                    }`}
-                  >
-                    <div className="text-xs font-black truncate">{net.cryptoKey}</div>
-                    <div className="text-[10px] text-amber-300/90 truncate mt-0.5">{net.id.replace('_', ' ')}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        {/* Currency Switcher */}
+        <div className="grid grid-cols-2 gap-2" dir="ltr">
+          <button
+            type="button"
+            onClick={() => setActiveTmaCurrency('TON')}
+            className={`h-10 rounded-xl border text-xs font-semibold cursor-pointer ${
+              activeTmaCurrency === 'TON'
+                ? 'bg-purple-600/35 border-purple-400/50 text-white'
+                : 'bg-[#070510] border-purple-500/20 text-purple-200/80'
+            }`}
+          >
+            💎 TON Connect
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTmaCurrency('STARS')}
+            className={`h-10 rounded-xl border text-xs font-semibold cursor-pointer ${
+              activeTmaCurrency === 'STARS'
+                ? 'bg-purple-600/35 border-purple-400/50 text-white'
+                : 'bg-[#070510] border-purple-500/20 text-purple-200/80'
+            }`}
+          >
+            ⭐ Telegram Stars
+          </button>
+        </div>
 
-          {/* Step 2: Select Deposit Amount */}
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">
-              ۲. مقدار شارژ کیف پول (بر پایه تتر USDT):
-            </label>
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {[25, 100, 500, 1000].map((preset) => (
+        {activeTmaCurrency === 'TON' ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between rounded-xl bg-[#070510] border border-purple-500/20 px-3 py-2" dir="ltr">
+              <span className="text-xs font-semibold text-purple-200/80">TON Wallet</span>
+              <span className="text-[11px] font-medium text-purple-300/50 tabular-nums">
+                {connectedTonWallet
+                  ? truncateTonAddress(connectedTonWallet.address)
+                  : 'Not Connected'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2" dir="ltr">
+              {[2, 5, 10, 25].map((preset) => (
                 <button
                   key={preset}
                   type="button"
-                  onClick={() => setAmountUsdt(preset)}
-                  className={`py-2 rounded-xl text-xs font-bold border transition-all ${
-                    amountUsdt === preset
-                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
-                      : 'bg-[#171d2b] border-white/10 text-slate-300 hover:bg-white/5'
+                  onClick={() => setTonAmount(preset)}
+                  className={`h-9 rounded-xl border text-xs font-semibold tabular-nums cursor-pointer ${
+                    tonAmount === preset
+                      ? 'bg-purple-600/35 border-purple-400/50 text-white'
+                      : 'bg-[#070510] border-purple-500/20 text-purple-200/80'
                   }`}
                 >
-                  ${preset} USDT
+                  {formatCurrency(preset, 'TON')}
                 </button>
               ))}
             </div>
-            <div className="flex items-center justify-between bg-[#0c1018] border border-white/10 rounded-2xl px-4 py-3">
-              <div>
-                <span className="text-[11px] text-slate-400 block">معادل دقیق قابل واریز در شبکه:</span>
-                <span className="text-lg font-black text-amber-400 font-mono">
-                  {cryptoAmount} {selectedNet.cryptoKey}
-                </span>
-              </div>
-              <div className="text-left">
-                <span className="text-[11px] text-slate-400 block">ارزش معادل:</span>
-                <span className="text-sm font-bold text-emerald-400">{formatAmount(amountUsdt)}</span>
-              </div>
-            </div>
           </div>
-
-          {/* Step 3: Vector QR & Copyable Address */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 bg-[#161c2a] border border-white/10 rounded-2xl p-4 items-center">
-            {/* Dynamic SVG QR Code */}
-            <div className="md:col-span-4 flex flex-col items-center justify-center bg-white p-3 rounded-2xl shadow-inner">
-              <svg viewBox="0 0 120 120" className="w-32 h-32 text-slate-950" fill="currentColor">
-                <rect x="8" y="8" width="32" height="32" rx="4" fill="none" stroke="currentColor" strokeWidth="6" />
-                <rect x="18" y="18" width="12" height="12" rx="2" />
-                <rect x="80" y="8" width="32" height="32" rx="4" fill="none" stroke="currentColor" strokeWidth="6" />
-                <rect x="90" y="18" width="12" height="12" rx="2" />
-                <rect x="8" y="80" width="32" height="32" rx="4" fill="none" stroke="currentColor" strokeWidth="6" />
-                <rect x="18" y="90" width="12" height="12" rx="2" />
-                {/* Dynamic deterministic matrix pattern */}
-                <rect x="48" y="12" width="8" height="8" />
-                <rect x="62" y="12" width="8" height="16" />
-                <rect x="48" y="28" width="10" height="10" />
-                <rect x="12" y="48" width="14" height="8" />
-                <rect x="34" y="48" width="16" height="16" rx="3" fill="#f59e0b" />
-                <rect x="56" y="48" width="12" height="8" />
-                <rect x="74" y="52" width="16" height="8" />
-                <rect x="96" y="48" width="14" height="14" />
-                <rect x="48" y="68" width="12" height="12" />
-                <rect x="68" y="68" width="8" height="22" />
-                <rect x="84" y="72" width="24" height="10" />
-                <rect x="48" y="92" width="16" height="16" />
-                <rect x="84" y="92" width="12" height="18" />
-                <rect x="102" y="96" width="10" height="14" />
-              </svg>
-              <span className="text-[10px] font-mono font-bold text-slate-800 mt-1">
-                {selectedNet.id} HD QR
-              </span>
-            </div>
-
-            {/* Address & Telemetry */}
-            <div className="md:col-span-8 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-300">{selectedNet.name}</span>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
-                  {selectedNet.badge}
-                </span>
-              </div>
-
-              <div className="bg-[#0a0e16] border border-white/10 rounded-xl p-3 flex items-center justify-between gap-2">
-                <code className="text-xs text-amber-200 font-mono break-all select-all">
-                  {liveAddress}
-                </code>
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold shrink-0 flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-sm">
-                    {copied ? 'check' : 'content_copy'}
-                  </span>
-                  <span>{copied ? 'کپی شد!' : 'کپی آدرس'}</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-                <div className="bg-white/5 rounded-lg p-2">
-                  <span className="block text-slate-500">زمان تایید بلاک:</span>
-                  <strong className="text-slate-200">{selectedNet.confirmTime}</strong>
-                </div>
-                <div className="bg-white/5 rounded-lg p-2">
-                  <span className="block text-slate-500">کارمزد شبکه:</span>
-                  <strong className="text-emerald-400">{selectedNet.feeLabel}</strong>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Dual-Mode Verification Selector */}
-          <div className="bg-[#0d121d] border border-white/10 rounded-2xl p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-black text-white">
-                ۳. روش تایید تراکنش واریزی:
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setVerificationMode('ONCHAIN_AUTO')}
-                  disabled={selectedNet.id === 'BTC'}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all ${
-                    verificationMode === 'ONCHAIN_AUTO' && selectedNet.id !== 'BTC'
-                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
-                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white disabled:opacity-40'
-                  }`}
-                >
-                  ⚡ اتصال مستقیم کیف پول (تایید خودکار شبکه)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVerificationMode('ADMIN_MANUAL')}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-black border transition-all ${
-                    verificationMode === 'ADMIN_MANUAL' || selectedNet.id === 'BTC'
-                      ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  🛡️ ثبت TXID (تایید توسط ادمین خزانه)
-                </button>
-              </div>
-            </div>
-
-            {verificationMode === 'ONCHAIN_AUTO' && selectedNet.id !== 'BTC' ? (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
-                <div className="text-xs text-slate-300">
-                  {connectedWeb3Wallet ? (
-                    <span className="text-emerald-300 font-bold">
-                      ✅ کیف پول متصل ({connectedWalletProvider}):{' '}
-                      <code className="font-mono text-amber-200">{connectedWeb3Wallet}</code>
-                    </span>
-                  ) : (
-                    <span>
-                      کیف پول Web3 خود (TronLink / TON / MetaMask) را متصل کنید تا واریز به صورت خودکار توسط شبکه تایید شود.
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleConnectWalletForNetwork}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-xs font-black shrink-0"
-                >
-                  {connectedWeb3Wallet ? 'تغییر کیف پول متصل' : 'اتصال کیف پول Web3'}
-                </button>
-              </div>
-            ) : null}
-
-            <div>
-              <input
-                type="text"
-                dir="ltr"
-                value={txHashInput}
-                onChange={(e) => setTxHashInput(e.target.value)}
-                placeholder="شناسه تراکنش (TXID / Hash) را وارد کنید..."
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[#070a10] border border-white/15 text-xs font-mono text-amber-200 focus:outline-none focus:border-amber-400"
-              />
-            </div>
-          </div>
-
-          {/* Action CTA */}
-          {statusMessage ? (
-            <div
-              className={`p-4 rounded-2xl border text-center font-bold text-sm ${
-                statusMessage.isPending
-                  ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                  : 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
-              }`}
-            >
-              {statusMessage.text}
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
-              <p className="text-xs text-slate-400">
-                {verificationMode === 'ONCHAIN_AUTO' && selectedNet.id !== 'BTC'
-                  ? 'در حالت اتصال کیف پول یا هش معتبر آن‌چین، شارژ حساب پس از استعلام RPC آنی انجام می‌شود.'
-                  : 'تراکنش‌های انتقالی از صرافی یا کیف پول‌های غیرمتصل پس از ثبت TXID در صف تایید ادمین قرار می‌گیرند.'}
-              </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2" dir="ltr">
+            {[250, 500, 1000, 2500].map((preset) => (
               <button
+                key={preset}
                 type="button"
-                disabled={submitting}
-                data-testid="confirm-crypto-deposit"
-                onClick={handleConfirmDeposit}
-                className="w-full sm:w-auto gold-gradient-cta text-[#2a1700] font-black text-sm px-6 py-3 rounded-xl shadow-lg hover:brightness-110 transition-all flex items-center justify-center gap-2 shrink-0"
+                onClick={() => setStarsAmount(preset)}
+                className={`h-10 rounded-xl border text-xs font-semibold tabular-nums cursor-pointer ${
+                  starsAmount === preset
+                    ? 'bg-purple-600/35 border-purple-400/50 text-white'
+                    : 'bg-[#070510] border-purple-500/20 text-purple-200/80'
+                }`}
               >
-                <span className="material-symbols-outlined text-lg">bolt</span>
-                <span>
-                  {submitting
-                    ? 'در حال استعلام بلاکچین...'
-                    : verificationMode === 'ONCHAIN_AUTO' && selectedNet.id !== 'BTC'
-                    ? 'استعلام آن‌چین و شارژ کیف پول'
-                    : 'ثبت حواله برای تایید ادمین'}
-                </span>
+                {formatCurrency(preset, 'STARS')}
               </button>
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {statusMessage && (
+          <div className="p-3 rounded-xl bg-[#070510] border border-[#00f59b]/40 text-xs font-semibold text-[#00f59b] text-center">
+            {statusMessage}
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={submitting}
+          data-testid="confirm-crypto-deposit"
+          onClick={handleConfirm}
+          className="w-full h-11 rounded-xl stake-emerald-cta text-xs font-semibold text-[#042416] cursor-pointer"
+        >
+          {submitting
+            ? 'در حال پردازش...'
+            : activeTmaCurrency === 'TON'
+            ? connectedTonWallet
+              ? `💎 واریز +${formatCurrency(tonAmount, 'TON')}`
+              : '💎 اتصال کیف پول TON (One-Tap Connect)'
+            : `⭐ پرداخت +${formatCurrency(starsAmount, 'STARS')}`}
+        </button>
       </div>
     </div>
   );

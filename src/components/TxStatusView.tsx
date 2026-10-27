@@ -167,7 +167,7 @@ export const TxStatusView: React.FC = () => {
               <div className="bg-[#0b0f18] border border-white/5 rounded-2xl p-4 space-y-1">
                 <span className="text-slate-400 block">شبکه و مبلغ پرداخت‌شده:</span>
                 <strong className="text-base font-black text-emerald-400 block">
-                  {formatAmount(Number(currentTicket.costUsdt))} (${currentTicket.costUsdt} USDT)
+                  {formatAmount(Number(currentTicket.costUsdt))}
                 </strong>
                 <span className="text-[11px] font-mono text-slate-400">{currentTicket.currencyNetwork}</span>
               </div>

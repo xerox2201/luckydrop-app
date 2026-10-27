@@ -103,13 +103,11 @@ export const UserPanelView: React.FC = () => {
     <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-7 space-y-8 pb-24 lg:pb-14">
       {/* 1. GRAPHICAL VIP USER PANEL HERO BANNER */}
       <PageHeroBanner
-        badge="پنل کاربری اختصاصی و مدیریت دارایی • VIP SOVEREIGN ACCOUNT"
-        badgeIcon="workspace_premium"
-        title={`خوش آمدید، ${firebaseUser?.displayName || displayName}`}
-        subtitle="مدیریت یکپارچه کیف پول چندارزی، پیگیری بلیت‌های فعال، دریافت آنی جوایز، تنظیمات امنیتی ۲ مرحله‌ای و درگاه امن اپراتور ارشد."
+        badgeFa="پنل کاربری اختصاصی و مدیریت دارایی • VIP SOVEREIGN ACCOUNT"
+        titleFa={`خوش آمدید، ${firebaseUser?.displayName || displayName}`}
+        subtitleFa="مدیریت یکپارچه کیف پول چندارزی، پیگیری بلیت‌های فعال، دریافت آنی جوایز، تنظیمات امنیتی ۲ مرحله‌ای و درگاه امن اپراتور ارشد."
         imageUrl={LUXURY_IMAGES.vaultHero}
-        accentColor="gold"
-        rightSlot={
+        rightContent={
           <div className="luxury-marble-card rounded-3xl p-5 flex items-center gap-4 border border-amber-400/50 min-w-[290px]">
             <img
               src={LUXURY_IMAGES.vipAvatar}
@@ -149,7 +147,7 @@ export const UserPanelView: React.FC = () => {
         {/* Main Balance & Live Conversions Card */}
         <div className="lg:col-span-7 luxury-marble-card rounded-3xl p-6 sm:p-7 relative overflow-hidden flex flex-col justify-between space-y-6">
           <img
-            src={LUXURY_IMAGES.goldBullion}
+            src={LUXURY_IMAGES.goldCoins}
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"

@@ -48,7 +48,7 @@ test('Multi-Lottery engine defines 4 concurrent active lotteries with distinct r
   const ton = MULTI_LOTTERY_SPECS.find((s) => s.id === 'TON_SPECIAL');
 
   assert.ok(mega && mega.mainCount === 5 && mega.mainMax === 50 && mega.ticketPriceUsdt === 5.0);
-  assert.ok(blitz && blitz.mainCount === 5 && blitz.mainMax === 35 && blitz.ticketPriceUsdt === 2.0);
+  assert.ok(blitz && blitz.mainCount === 5 && blitz.mainMax === 35 && blitz.ticketPriceUsdt === 2.5);
   assert.ok(flash && flash.mainCount === 4 && flash.mainMax === 25 && flash.goldenMax === 0 && flash.ticketPriceUsdt === 1.0);
   assert.ok(ton && ton.mainCount === 5 && ton.mainMax === 40 && ton.ticketPriceUsdt === 3.0);
 });
@@ -229,7 +229,7 @@ test('evaluateZeroLossLoyaltyChest strictly caps rewards within the 3% Rollover 
     details: 'واریز ۲۵۰ تتر',
   });
   assert.ok(alertMsg.includes('امیرحسین'));
-  assert.ok(alertMsg.includes('$250.00 USDT'));
+  assert.ok(alertMsg.includes('TON'));
   assert.ok(alertMsg.includes('Zero-Loss Active'));
 });
 

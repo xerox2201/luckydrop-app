@@ -1,53 +1,53 @@
 @import "tailwindcss";
 
 @theme {
-  --color-surface-tint: #fbbf24;
-  --color-surface-dim: #0b1620;
-  --color-secondary-container: #00b801;
-  --color-secondary: #00e701;
+  --color-surface-tint: #c084fc;
+  --color-surface-dim: #070510;
+  --color-secondary-container: #00b874;
+  --color-secondary: #00f59b;
   --color-on-secondary-fixed-variant: #005236;
   --color-on-tertiary: #3c0091;
   --color-on-tertiary-container: #520fbb;
   --color-error-container: #93000a;
   --color-tertiary-fixed-dim: #d0bcff;
-  --color-outline: #557086;
-  --color-surface-container-highest: #2f4553;
+  --color-outline: #6b5b95;
+  --color-surface-container-highest: #2a1f4a;
   --color-on-primary-container: #613b00;
   --color-on-secondary-container: #00311f;
-  --color-surface-bright: #213743;
+  --color-surface-bright: #1e1638;
   --color-secondary-fixed: #6ffbbe;
-  --color-primary-container: #f59e0b;
+  --color-primary-container: #9333ea;
   --color-on-secondary: #003824;
-  --color-primary: #fbbf24;
-  --color-on-surface: #f1f5f9;
-  --color-inverse-on-surface: #1a2c38;
+  --color-primary: #c084fc;
+  --color-on-surface: #f8fafc;
+  --color-inverse-on-surface: #150f28;
   --color-tertiary-container: #bda2ff;
-  --color-on-primary: #472a00;
+  --color-on-primary: #2e1065;
   --color-on-secondary-fixed: #002113;
   --color-primary-fixed-dim: #fbbf24;
-  --color-surface-container-lowest: #0b1620;
-  --color-primary-fixed: #ffddb8;
+  --color-surface-container-lowest: #070510;
+  --color-primary-fixed: #f3e8ff;
   --color-inverse-surface: #dfe2ee;
-  --color-surface-container-high: #213743;
+  --color-surface-container-high: #1e1638;
   --color-on-error: #690005;
-  --color-inverse-primary: #855300;
-  --color-surface-container-low: #0f212e;
-  --color-outline-variant: #2f4553;
-  --color-on-background: #f1f5f9;
+  --color-inverse-primary: #7e22ce;
+  --color-surface-container-low: #0d091a;
+  --color-outline-variant: #2e2252;
+  --color-on-background: #f8fafc;
   --color-on-primary-fixed: #2a1700;
-  --color-secondary-fixed-dim: #00e701;
-  --color-surface: #0f212e;
+  --color-secondary-fixed-dim: #00f59b;
+  --color-surface: #150f28;
   --color-tertiary: #d5c3ff;
   --color-on-tertiary-fixed-variant: #5516be;
   --color-on-primary-fixed-variant: #653e00;
-  --color-error: #e9113c;
-  --color-surface-container: #1a2c38;
-  --color-background: #0b1620;
+  --color-error: #f43f5e;
+  --color-surface-container: #150f28;
+  --color-background: #070510;
   --color-tertiary-fixed: #e9ddff;
   --color-on-tertiary-fixed: #23005c;
   --color-on-error-container: #ffdad6;
-  --color-surface-variant: #213743;
-  --color-on-surface-variant: #b1bad3;
+  --color-surface-variant: #1e1638;
+  --color-on-surface-variant: #cbd5e1;
 
   --font-sans: "Vazirmatn", "Plus Jakarta Sans", "Noto Sans SC", sans-serif;
   --font-mono: "JetBrains Mono", "Vazirmatn", "Noto Sans SC", monospace;
@@ -66,59 +66,144 @@
 @layer base {
   *, *::before, *::after {
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
   }
 
   html {
     margin: 0;
     padding: 0;
     width: 100%;
-    overflow-x: clip;
+    overflow-x: hidden;
     overflow-y: auto;
     scroll-behavior: smooth;
-    background-color: #0b1620;
-    color: #f1f5f9;
+    background-color: #05030b;
+    color: #f8fafc;
     font-family: "Vazirmatn", "Plus Jakarta Sans", "Noto Sans SC", sans-serif;
     font-variant-numeric: tabular-nums;
     -webkit-overflow-scrolling: touch;
+    user-select: none;
   }
 
   body {
     margin: 0;
     padding: 0;
     width: 100%;
-    min-height: 100vh;
-    overflow-x: clip;
+    min-height: 100dvh;
+    overflow-x: hidden;
     overflow-y: visible;
-    background-color: #0b1620;
-    color: #f1f5f9;
+    background: radial-gradient(circle at 50% 0%, #170d33 0%, #070510 55%, #04020a 100%);
+    color: #f8fafc;
     font-family: "Vazirmatn", "Plus Jakarta Sans", "Noto Sans SC", sans-serif;
     font-variant-numeric: tabular-nums;
     touch-action: pan-y pinch-zoom;
+    user-select: none;
   }
 
   #root {
-    min-height: 100vh;
-    overflow-x: clip;
+    min-height: 100dvh;
+    overflow-x: hidden;
     overflow-y: visible;
   }
 
-  code, pre, .font-mono, input[type="number"] {
+  code, pre, .font-mono, input[type="number"], input[type="text"] {
     font-family: "JetBrains Mono", "Vazirmatn", monospace;
     font-variant-numeric: tabular-nums;
+    user-select: text;
   }
 }
 
-/* Dark-Luxury Studio Palette (#0b1620 Primary Obsidian Slate with subtle radial studio lighting) */
+/* Native Mobile Portrait Telegram Mini App (TMA) Shell (max-width: 440px centered on desktop preview) */
+.tma-mobile-portrait-shell {
+  width: 100%;
+  max-width: 440px;
+  min-height: 100dvh;
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  overflow-x: hidden;
+  position: relative;
+  background-color: #070510;
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  border-left: 1px solid rgba(168, 85, 247, 0.2);
+  border-right: 1px solid rgba(168, 85, 247, 0.2);
+  box-shadow: 0 0 90px rgba(0, 0, 0, 0.95);
+}
+
+/* Strict 4-Tier Typography Scale Utilities */
+.tma-typo-tier1 {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tma-typo-tier2 {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  color: #ffffff;
+}
+
+.tma-typo-tier3 {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  color: rgba(233, 213, 255, 0.8);
+}
+
+.tma-typo-tier4 {
+  font-size: 11px;
+  line-height: 1rem;
+  font-weight: 500;
+  color: rgba(216, 180, 254, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Force multi-column desktop grids inside the 440px TMA shell to stack vertically for one-handed thumb ergonomics */
+.tma-mobile-portrait-shell .lg\:grid-cols-12,
+.tma-mobile-portrait-shell .xl\:grid-cols-12 {
+  grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+}
+
+.tma-mobile-portrait-shell .lg\:col-span-4,
+.tma-mobile-portrait-shell .lg\:col-span-5,
+.tma-mobile-portrait-shell .lg\:col-span-6,
+.tma-mobile-portrait-shell .lg\:col-span-7,
+.tma-mobile-portrait-shell .lg\:col-span-8,
+.tma-mobile-portrait-shell .lg\:col-span-9,
+.tma-mobile-portrait-shell .xl\:col-span-3,
+.tma-mobile-portrait-shell .xl\:col-span-4,
+.tma-mobile-portrait-shell .xl\:col-span-5,
+.tma-mobile-portrait-shell .xl\:col-span-6,
+.tma-mobile-portrait-shell .xl\:col-span-7,
+.tma-mobile-portrait-shell .xl\:col-span-8,
+.tma-mobile-portrait-shell .xl\:col-span-9 {
+  grid-column: span 1 / span 1 !important;
+}
+
+.tma-mobile-portrait-shell .xl\:grid-cols-4 {
+  grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+}
+
+.tma-mobile-portrait-shell .lg\:flex-row {
+  flex-direction: column-reverse !important;
+}
+
+.tma-mobile-portrait-shell .lg\:w-\[330px\],
+.tma-mobile-portrait-shell .lg\:w-\[340px\],
+.tma-mobile-portrait-shell .xl\:w-\[350px\],
+.tma-mobile-portrait-shell .xl\:w-\[360px\] {
+  width: 100% !important;
+}
+
+/* Cyber-Purple & Obsidian Black Theme Surfaces */
 .bg-imperial-marble {
-  background-color: #0b1620;
-  background-image:
-    radial-gradient(ellipse 75% 45% at 50% -10%, rgba(26, 44, 56, 0.85), transparent 70%),
-    radial-gradient(ellipse 50% 40% at 88% 15%, rgba(251, 191, 36, 0.07), transparent 65%),
-    radial-gradient(ellipse 50% 40% at 12% 80%, rgba(0, 231, 1, 0.05), transparent 65%),
-    linear-gradient(180deg, #0b1620 0%, #0f212e 50%, #0b1620 100%);
-  background-size: 100% 100%;
-  background-position: center;
-  background-attachment: fixed;
+  background-color: #070510;
 }
 
 @keyframes cardEnterFade {
@@ -133,55 +218,71 @@
 }
 
 .motion-card-enter {
-  animation: cardEnterFade 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: cardEnterFade 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Elevated Surface / Cards / Arena Frame: #0f212e with 1px solid rgba(255,255,255,0.07) & inner highlight */
+/* Strict Unified Card & Container Geometry:
+   rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md */
+.tma-card,
+.tma-cyber-card,
 .luxury-marble-card,
-.studio-arena-frame {
-  background: #0f212e;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(16px);
-}
-
+.studio-arena-frame,
+.nimbus-liquid-card,
+.nimbus-ticket-card,
+.nimbus-wallet-header,
 .studio-sidebar-panel {
-  background: #1a2c38;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  background-color: rgba(19, 13, 36, 0.9);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .studio-input-well {
-  background: #213743;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
-  transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  background: #0d091a;
+  border: 1px solid rgba(168, 85, 247, 0.32);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .studio-input-well:focus,
 .studio-input-well:focus-within {
   outline: none;
-  border-color: #00e701;
-  box-shadow: 0 0 0 2px rgba(0, 231, 1, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.35);
+  border-color: #00f59b;
+  box-shadow: 0 0 0 2px rgba(0, 245, 155, 0.22), inset 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .luxury-marble-card-hover {
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .luxury-marble-card-hover:hover {
   transform: translateY(-2px);
-  border-color: rgba(251, 191, 36, 0.45);
-  box-shadow: 0 24px 55px rgba(0, 0, 0, 0.7), 0 0 24px rgba(251, 191, 36, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  border-color: rgba(192, 132, 252, 0.6);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.75), 0 0 24px rgba(147, 51, 234, 0.25);
 }
 
-/* Primary Action / Win Accent (Stake Emerald #00e701 with #00b801 3D bottom lip) */
+/* Electric Purple Brand Accent (#9333ea -> #c084fc gradient with neon glow) */
+.tma-purple-cta {
+  background: linear-gradient(135deg, #9333ea 0%, #a855f7 55%, #c084fc 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 0 #581c87, 0 8px 22px rgba(147, 51, 234, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 110ms ease, filter 110ms ease, box-shadow 110ms ease;
+}
+
+.tma-purple-cta:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #581c87, 0 4px 12px rgba(147, 51, 234, 0.35);
+}
+
+/* Primary Win / Cashout Accent (Electric Neon Green #00f59b) */
 .stake-emerald-cta,
 .emerald-gradient-cta {
-  background: #00e701;
-  color: #051c08;
-  box-shadow: 0 4px 0 #00b801, 0 8px 20px rgba(0, 231, 1, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1), filter 120ms ease, box-shadow 120ms ease;
+  background: linear-gradient(135deg, #00f59b 0%, #10b981 100%);
+  color: #031c11;
+  box-shadow: 0 4px 0 #047857, 0 8px 20px rgba(0, 245, 155, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: transform 110ms ease, filter 110ms ease, box-shadow 110ms ease;
 }
 
 .stake-emerald-cta:hover,
@@ -192,19 +293,15 @@
 .stake-emerald-cta:active,
 .emerald-gradient-cta:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 #00b801, 0 4px 12px rgba(0, 231, 1, 0.25);
+  box-shadow: 0 2px 0 #047857, 0 4px 12px rgba(0, 245, 155, 0.25);
 }
 
-/* Lottery / Jackpot / VIP Accent (Liquid Gold #fbbf24 to #f59e0b gradient with 3D lip) */
+/* Jackpot / Telegram Stars / Gold Ball Accent (Liquid Gold #fbbf24 -> #f59e0b) */
 .gold-gradient-cta {
   background: linear-gradient(135deg, #fde68a 0%, #fbbf24 45%, #f59e0b 100%);
   color: #1c1002;
-  box-shadow: 0 4px 0 #b45309, 0 8px 24px -4px rgba(245, 158, 11, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.65);
-  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1), filter 120ms ease, box-shadow 120ms ease;
-}
-
-.gold-gradient-cta:hover {
-  filter: brightness(1.06);
+  box-shadow: 0 4px 0 #b45309, 0 8px 22px -4px rgba(245, 158, 11, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.65);
+  transition: transform 110ms ease, filter 110ms ease, box-shadow 110ms ease;
 }
 
 .gold-gradient-cta:active {
@@ -212,15 +309,15 @@
   box-shadow: 0 2px 0 #b45309, 0 4px 12px rgba(245, 158, 11, 0.35);
 }
 
-/* Danger / Crash / Loss Accent (#e9113c Vibrant Crimson) */
+/* Crash / Danger / Bomb Accent (Hot Magenta-Red #f43f5e) */
 .crimson-danger-cta {
-  background: #e9113c;
+  background: #f43f5e;
   color: #ffffff;
-  box-shadow: 0 4px 0 #9f0b29, 0 8px 20px rgba(233, 17, 60, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 0 #9f1239, 0 8px 20px rgba(244, 63, 94, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .gold-shimmer-text {
-  background: linear-gradient(135deg, #fef08a 0%, #fbbf24 50%, #f59e0b 100%);
+  background: linear-gradient(135deg, #fef08a 0%, #fbbf24 45%, #c084fc 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -232,9 +329,9 @@
 }
 
 .lottery-ball-purple {
-  background: radial-gradient(circle at 32% 28%, #e9d5ff 0%, #a855f7 45%, #7e22ce 82%, #4c1d95 100%);
+  background: radial-gradient(circle at 32% 28%, #f3e8ff 0%, #c084fc 35%, #9333ea 75%, #4c1d95 100%);
   color: #ffffff;
-  box-shadow: 0 6px 16px rgba(168, 85, 247, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.55);
+  box-shadow: 0 6px 16px rgba(168, 85, 247, 0.55), inset 0 2px 4px rgba(255, 255, 255, 0.6);
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -246,10 +343,10 @@
 }
 
 .custom-scroll::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
 }
 .custom-scroll::-webkit-scrollbar-thumb {
-  background: #2f4553;
+  background: #4c1d95;
   border-radius: 8px;
 }

@@ -7,7 +7,6 @@ import {
   toPersianDigits,
   computeDeterministicHash,
 } from '../utils/lotteryEngine.ts';
-import { PageHeroBanner, LUXURY_IMAGES } from './PageHeroBanner.tsx';
 
 export const PlayView: React.FC = () => {
   const {
@@ -32,9 +31,10 @@ export const PlayView: React.FC = () => {
     navigateTo,
     setDepositModalOpen,
     killSwitchActive,
+    provablyFairSeeds,
   } = useLottery();
 
-  const [selectedNetwork, setSelectedNetwork] = useState<string>('USDT (TRC-20)');
+  const [selectedNetwork, setSelectedNetwork] = useState<string>('TON Network');
   const [customCountInput, setCustomCountInput] = useState<number>(bulkSlips.length);
   const [minting, setMinting] = useState<boolean>(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -146,17 +146,28 @@ export const PlayView: React.FC = () => {
   const secs = countdownSec % 60;
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-8 space-y-8 overflow-x-clip">
-      <PageHeroBanner
-        badgeFa="BULK & SINGLE VIP TICKET TERMINAL • ترمینال خرید تکی و دسته‌ای"
-        titleFa="صدور آنی بلیت‌های طلایی VIP با تخفیف پلکانی"
-        subtitleFa="انتخاب دستی شماره‌ها یا تولید هوشمند ۵ کوپن متمایز با یک کلیک (Bulk AI Quick-Pick) و ثبت آنی در بلاکچین."
-        imageUrl={LUXURY_IMAGES.playTicketsBanner}
-        iconUrl={LUXURY_IMAGES.ticketIcon3d}
-      />
+    <div className="space-y-3 px-3 pt-2 pb-24">
+      {/* Top Bar */}
+      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <span className="text-[10px] font-mono font-bold text-[#a855f7] tracking-wider block truncate">
+            VIP TICKET TERMINAL • ترمینال صدور بلیت
+          </span>
+          <h1 className="text-sm font-black text-white mt-0.5 truncate">
+            خرید تکی و دسته‌ای بلیت با تخفیف پلکانی
+          </h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigateTo('lobby')}
+          className="px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-purple-500/25 text-[11px] font-bold text-purple-200 cursor-pointer shrink-0"
+        >
+          بازگشت ↗
+        </button>
+      </div>
 
-      {/* 1. CONCURRENT MULTI-LOTTERY SELECTOR TABS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" data-testid="play-multi-lottery-tabs">
+      {/* 1. CONCURRENT MULTI-LOTTERY SELECTOR TABS — Clean 2x2 Grid (No Vertical Wrapping) */}
+      <div className="grid grid-cols-2 gap-2" data-testid="play-multi-lottery-tabs">
         {MULTI_LOTTERY_SPECS.map((spec) => {
           const isSelected = activeLotteryId === spec.id;
           return (
@@ -165,105 +176,98 @@ export const PlayView: React.FC = () => {
               type="button"
               data-testid={`lottery-tab-${spec.id}`}
               onClick={() => setActiveLotteryId(spec.id as LotteryTypeId)}
-              className={`p-4 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+              className={`nimbus-ticket-card p-3 rounded-2xl text-right transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
                 isSelected
-                  ? 'bg-gradient-to-br from-amber-500/20 via-[#171d2c] to-amber-500/5 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
-                  : 'bg-[#131824] border-white/10 text-slate-400 hover:text-white hover:border-white/25'
+                  ? 'ring-2 ring-[#a855f7] shadow-[0_0_20px_rgba(168,85,247,0.35)] text-white'
+                  : 'text-slate-300 hover:text-white opacity-85'
               }`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 font-bold">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 font-bold shrink-0">
                   {spec.roundCode}
                 </span>
-                <span className="text-xs font-mono font-black text-emerald-400">
-                  ${spec.ticketPriceUsdt.toFixed(2)} / بلیت
+                <span className="text-[11px] font-mono font-black text-[#00f59b] tabular-nums whitespace-nowrap" dir="ltr">
+                  {formatAmount(spec.ticketPriceUsdt)}
                 </span>
               </div>
-              <div className="text-sm font-black text-white truncate">{spec.titleFa}</div>
-              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-white/5">
-                <span>جایزه: ${spec.jackpotUsdt.toLocaleString('en-US')}</span>
-                <span className="text-amber-300 font-bold">{spec.formatLabel}</span>
+
+              <div className="text-xs font-extrabold text-white truncate">
+                {spec.titleFa.split('(')[0].trim()}
+              </div>
+
+              <div className="pt-1.5 border-t border-purple-500/20 flex flex-col gap-0.5 text-[10px]">
+                <div className="flex items-center justify-between text-purple-200/80">
+                  <span>استخر جایزه:</span>
+                  <strong className="font-mono text-[#fbbf24] tabular-nums" dir="ltr">
+                    {formatAmount(spec.jackpotUsdt)}
+                  </strong>
+                </div>
+                <div className="text-[10px] font-semibold text-amber-300 truncate">
+                  {spec.formatLabel}
+                </div>
               </div>
             </button>
           );
         })}
       </div>
 
-      {/* 2. HEADER BANNER & BULK AI QUICK-PICK CONTROLS */}
-      <div className="rounded-3xl bg-gradient-to-r from-[#171d2c] via-[#131824] to-[#1a1329] border border-amber-500/30 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="space-y-2">
-          <div className="inline-flex flex-wrap items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 text-amber-300 text-xs font-bold">
-            <span className="material-symbols-outlined text-sm">confirmation_number</span>
-            <span>
-              {activeLotterySpec.titleFa} • دور {activeLotterySpec.roundCode} • زمان باقی‌مانده:{' '}
-              <strong className="font-mono" dir="ltr">
-                {String(hrs).padStart(2, '0')}:{String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
-              </strong>
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-4xl font-black text-white">
-            ترمینال خرید تکی و دسته‌ای بلیت ({activeLotterySpec.formatLabel})
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-300">
-            استخر تضمین‌شده این دور:{' '}
-            <strong className="text-amber-400">
-              ${activeLotterySpec.jackpotUsdt.toLocaleString('en-US')} USDT ({formatAmount(activeLotterySpec.jackpotUsdt)})
-            </strong>{' '}
-            • تخفیف ۵٪ برای ۵ بلیت و ۱۰٪ برای ۱۰ بلیت همزمان!
-          </p>
+      {/* 2. ACTIVE ROUND BANNER & QUICK PICK */}
+      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-[10px] font-bold text-purple-200">
+            {activeLotterySpec.titleFa.split('(')[0].trim()} • {activeLotterySpec.roundCode}
+          </span>
+          <span className="px-2.5 py-0.5 rounded-full bg-[#070510] border border-purple-500/25 text-[11px] font-mono font-bold text-[#fbbf24] tabular-nums" dir="ltr">
+            ⏱ {String(hrs).padStart(2, '0')}:{String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+          </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             data-testid="bulk-ai-quick-pick-btn"
             onClick={handleBulkQuickPick5}
-            className="px-5 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600/40 to-amber-500/30 hover:brightness-110 border border-amber-400/50 text-amber-200 font-black text-xs sm:text-sm transition-all flex items-center gap-2 shadow-[0_0_25px_rgba(147,51,234,0.35)] cursor-pointer"
+            className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-600/40 to-amber-500/30 hover:brightness-110 border border-amber-400/50 text-amber-200 font-black text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-amber-300">auto_awesome</span>
-            <span>تولید هوشمند ۵ کوپن متمایز (Bulk AI Quick-Pick ×5)</span>
+            <span>⚡ تولید هوشمند ۵ کوپن (×5)</span>
           </button>
 
           <button
             type="button"
             data-testid="ai-quick-pick-btn"
             onClick={handleSingleSlipQuickPick}
-            className="px-4 py-3.5 rounded-2xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-400/35 text-purple-200 font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            className="py-2.5 px-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-400/35 text-purple-200 font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-sm">casino</span>
-            <span>انتخاب تصادفی کوپن فعلی</span>
+            <span>🎲 تصادفی کوپن فعلی</span>
           </button>
         </div>
       </div>
 
       {/* 3. MULTI-TICKET BATCH SELECTOR & TABBED SLIP EDITOR */}
-      <div className="rounded-3xl bg-[#131824] border border-white/10 p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-slate-300 ml-2">
-              تعداد بلیت در سبد خرید یکجا (Multi-Chance Batch):
-            </span>
+      <div className="rounded-2xl nimbus-ticket-card p-3.5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
             {[1, 3, 5, 10].map((cnt) => (
               <button
                 key={cnt}
                 type="button"
                 data-testid={`batch-count-btn-${cnt}`}
                 onClick={() => handleSelectBatchCount(cnt)}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
                   bulkSlips.length === cnt
-                    ? 'bg-amber-500 text-slate-950 shadow-md'
-                    : 'bg-[#0b0f18] border border-white/10 text-slate-300 hover:text-white'
+                    ? 'bg-[#fbbf24] text-slate-950 shadow'
+                    : 'bg-[#070510] border border-purple-500/20 text-purple-200 hover:text-white'
                 }`}
               >
-                {toPersianDigits(cnt)} بلیت
-                {cnt === 5 ? ' (۵٪ تخفیف)' : cnt === 10 ? ' (۱۰٪ تخفیف)' : ''}
+                {toPersianDigits(cnt)}x
+                {cnt === 5 ? ' (-5%)' : cnt === 10 ? ' (-10%)' : ''}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <label htmlFor="custom-slip-count" className="text-xs text-slate-400">
-              تعداد دلخواه:
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="custom-slip-count" className="text-[10px] text-purple-300/70">
+              تعداد:
             </label>
             <input
               id="custom-slip-count"
@@ -276,14 +280,14 @@ export const PlayView: React.FC = () => {
                 setCustomCountInput(v);
                 setBulkTicketCount(v);
               }}
-              className="w-16 bg-[#0a0e16] border border-white/15 rounded-xl px-2.5 py-1.5 text-center text-xs font-mono font-bold text-amber-300"
+              className="w-12 bg-[#070510] border border-purple-500/30 rounded-lg px-2 py-1 text-center text-xs font-mono font-bold text-[#fbbf24]"
               dir="ltr"
             />
           </div>
         </div>
 
         {/* Tabbed Slip Editor (Ticket #1, #2, #3...) */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/10" data-testid="bulk-slip-tabs">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-2 border-t border-purple-500/20" data-testid="bulk-slip-tabs" dir="ltr">
           {bulkSlips.map((slip, idx) => {
             const isTabActive = activeSlipIndex === idx;
             return (
@@ -292,14 +296,14 @@ export const PlayView: React.FC = () => {
                 type="button"
                 data-testid={`slip-tab-${idx + 1}`}
                 onClick={() => selectSlipTab(idx)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold border transition-all flex items-center gap-2 cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-bold border transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
                   isTabActive
                     ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow'
-                    : 'bg-[#0b0f18] border-white/10 text-slate-400 hover:text-white'
+                    : 'bg-[#070510] border-purple-500/20 text-purple-300/70 hover:text-white'
                 }`}
               >
-                <span>Ticket #{idx + 1}</span>
-                <span className="text-[10px] text-emerald-400">
+                <span>#{idx + 1}</span>
+                <span className="text-[10px] text-[#00f59b]">
                   [{slip.mainNumbers.join(',')}]
                   {goldenMax > 0 ? `+★${slip.goldenBall}` : ''}
                 </span>
@@ -309,266 +313,268 @@ export const PlayView: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. MAIN BALL PICKER + MULTI-CHANCE CART SUMMARY */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left/Right 8 Cols: Number Grid + Golden Ball Selector */}
-        <div className="lg:col-span-8 space-y-6">
-          <div className="rounded-3xl bg-[#131824] border border-white/10 p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-black text-white">
-                  مرحله اول (کوپن #{toPersianDigits(activeSlipIndex + 1)}): انتخاب{' '}
-                  {toPersianDigits(mainCount)} عدد از جدول ۱ تا {toPersianDigits(mainMax)}
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  تعداد انتخاب‌شده:{' '}
-                  <strong className="text-amber-400">
-                    {toPersianDigits(selectedMainBalls.length)} از {toPersianDigits(mainCount)} گوی
-                  </strong>
-                </p>
-              </div>
-              <span className="px-3 py-1 rounded-xl bg-amber-500/15 text-amber-300 text-xs font-mono font-bold">
-                PICK {mainCount} / {mainMax}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2.5" dir="ltr">
-              {Array.from({ length: mainMax }, (_, i) => i + 1).map((num) => {
-                const isSelected = selectedMainBalls.includes(num);
-                return (
-                  <button
-                    key={num}
-                    type="button"
-                    data-testid={`main-ball-${num}`}
-                    onClick={() => toggleMainBall(num)}
-                    className={`h-12 rounded-2xl font-mono font-black text-sm transition-all flex items-center justify-center cursor-pointer ${
-                      isSelected
-                        ? 'lottery-ball-gold text-slate-950 scale-105 border-2 border-amber-200'
-                        : 'bg-[#1a2130] hover:bg-[#232c40] text-slate-300 border border-white/5'
-                    }`}
-                  >
-                    {String(num).padStart(2, '0')}
-                  </button>
-                );
-              })}
-            </div>
+      {/* 4. STAGE 1: PERFECT CIRCULAR MAIN BALLS GRID (1 to mainMax: 50 / 35 / 25 / 40) */}
+      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 space-y-3 shadow-[0_8px_30px_rgb(0,0,0,0.4)]">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-xs font-black text-white">
+              مرحله اول (کوپن #{toPersianDigits(activeSlipIndex + 1)}): انتخاب{' '}
+              {toPersianDigits(mainCount)} گوی از ۱ تا {toPersianDigits(mainMax)}
+            </h2>
+            <p className="text-[10px] text-purple-300/70 mt-0.5">
+              انتخاب‌شده:{' '}
+              <strong className="text-[#fbbf24]">
+                {toPersianDigits(selectedMainBalls.length)} از {toPersianDigits(mainCount)} گوی
+              </strong>
+            </p>
           </div>
-
-          {/* Golden Ball Selector (if goldenMax > 0) */}
-          {goldenMax > 0 && (
-            <div className="rounded-3xl bg-gradient-to-br from-[#191528] to-[#121723] border border-purple-500/35 p-6 space-y-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-black text-white">
-                    مرحله دوم (کوپن #{toPersianDigits(activeSlipIndex + 1)}): انتخاب ۱ گوی طلایی از ۱ تا{' '}
-                    {toPersianDigits(goldenMax)}
-                  </h2>
-                  <p className="text-xs text-purple-200/80 mt-0.5">
-                    گوی طلایی ضریب جک‌پات رده اول را فعال می‌کند.
-                  </p>
-                </div>
-                <span className="px-3 py-1 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-400/30 text-xs font-mono font-bold">
-                  PICK 1 / {goldenMax} ★
-                </span>
-              </div>
-
-              <div className="grid grid-cols-5 sm:grid-cols-15 gap-2.5" dir="ltr">
-                {Array.from({ length: goldenMax }, (_, i) => i + 1).map((gNum) => {
-                  const isSelected = selectedGoldenBall === gNum;
-                  return (
-                    <button
-                      key={gNum}
-                      type="button"
-                      data-testid={`golden-ball-${gNum}`}
-                      onClick={() => setSelectedGoldenBall(gNum)}
-                      className={`h-12 rounded-full font-mono font-black text-sm transition-all flex items-center justify-center cursor-pointer ${
-                        isSelected
-                          ? 'lottery-ball-purple text-white scale-110 border-2 border-amber-300 shadow-[0_0_20px_rgba(168,85,247,0.75)]'
-                          : 'bg-[#211b34] hover:bg-[#2c2445] text-purple-200 border border-purple-500/20'
-                      }`}
-                    >
-                      {String(gNum).padStart(2, '0')}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Client Seed & Provably Fair Cryptographic Commitment */}
-          <div className="rounded-3xl bg-[#131824] border border-white/10 p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-base">lock</span>
-                <span>بذر اختصاصی کوپن #{toPersianDigits(activeSlipIndex + 1)} (Client Seed)</span>
-              </span>
-              <span className="text-[11px] font-mono text-slate-400">SHA-256 Deterministic</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-              <input
-                type="text"
-                value={currentSlipSeed}
-                onChange={(e) => handleUpdateCurrentSlipSeed(e.target.value)}
-                className="sm:col-span-5 bg-[#0a0e16] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-amber-300 font-mono"
-              />
-              <div className="sm:col-span-7 bg-[#0a0e16] border border-white/5 rounded-xl px-3.5 py-2 flex items-center justify-between text-[11px] font-mono text-slate-400 overflow-hidden">
-                <span className="truncate">Commit: {liveCommitHash}</span>
-              </div>
-            </div>
-          </div>
+          <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-bold shrink-0" dir="ltr">
+            PICK {mainCount} / {mainMax}
+          </span>
         </div>
 
-        {/* Right/Left 4 Cols: Multi-Chance Cart Summary & Single-Tx Checkout */}
-        <div className="lg:col-span-4 rounded-3xl bg-[#151b28] border-2 border-amber-500/40 p-6 space-y-5 shadow-[0_20px_60px_rgba(0,0,0,0.75)] sticky top-24">
-          <div className="flex items-center justify-between border-b border-white/10 pb-4">
+        <div className="grid grid-cols-10 gap-1.5" dir="ltr">
+          {Array.from({ length: mainMax }, (_, i) => i + 1).map((num) => {
+            const isSelected = selectedMainBalls.includes(num);
+            return (
+              <button
+                key={num}
+                type="button"
+                data-testid={`main-ball-${num}`}
+                onClick={() => toggleMainBall(num)}
+                className={`aspect-square rounded-full font-mono font-bold text-[11px] transition-all flex items-center justify-center cursor-pointer tabular-nums ${
+                  isSelected
+                    ? 'lottery-ball-gold text-slate-950 scale-105 ring-2 ring-amber-200 shadow-[0_0_10px_rgba(251,191,36,0.5)]'
+                    : 'bg-[#070510] hover:bg-purple-950/60 text-purple-200/80 border border-purple-500/20'
+                }`}
+              >
+                {String(num).padStart(2, '0')}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 5. STAGE 2: PERFECT CIRCULAR GOLDEN BALLS GRID (1 to goldenMax: 15 / 10 / 12) */}
+      {goldenMax > 0 && (
+        <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/30 p-3.5 space-y-3 shadow-[0_8px_30px_rgb(0,0,0,0.4)]">
+          <div className="flex items-center justify-between gap-2">
             <div>
-              <span className="text-[11px] text-amber-400 font-bold block">MULTI-CHANCE SMART CART</span>
-              <h3 className="text-xl font-black text-white">
-                خلاصه سبد خرید ({toPersianDigits(bulkSlips.length)} کوپن)
-              </h3>
+              <h2 className="text-xs font-black text-white">
+                مرحله دوم (کوپن #{toPersianDigits(activeSlipIndex + 1)}): انتخاب ۱ گوی طلایی از ۱ تا{' '}
+                {toPersianDigits(goldenMax)}
+              </h2>
+              <p className="text-[10px] text-purple-300/70 mt-0.5">
+                گوی طلایی ضریب جک‌پات رده اول را فعال می‌کند.
+              </p>
             </div>
-            <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 text-xs font-mono font-bold">
-              {activeLotterySpec.roundCode}
+            <span className="px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-200 border border-purple-400/30 text-[10px] font-mono font-bold shrink-0" dir="ltr">
+              PICK 1 / {goldenMax} ★
             </span>
           </div>
 
-          {/* All Slips in Cart Preview */}
-          <div className="bg-[#0b0f18] border border-white/10 rounded-2xl p-3.5 space-y-2 max-h-56 overflow-y-auto" data-testid="cart-slips-list">
-            {bulkSlips.map((slip, idx) => (
-              <div
-                key={idx}
-                onClick={() => selectSlipTab(idx)}
-                className={`p-2.5 rounded-xl border flex items-center justify-between text-xs cursor-pointer transition-all ${
-                  activeSlipIndex === idx
-                    ? 'bg-amber-500/15 border-amber-400/50 text-white'
-                    : 'bg-[#121723] border-white/5 text-slate-300'
-                }`}
-              >
-                <span className="font-mono font-bold text-amber-300">Ticket #{idx + 1}</span>
-                <div className="flex items-center gap-1 font-mono" dir="ltr">
-                  {slip.mainNumbers.map((n) => (
-                    <span
-                      key={n}
-                      className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[11px]"
-                    >
-                      {String(n).padStart(2, '0')}
-                    </span>
-                  ))}
-                  {goldenMax > 0 && (
-                    <span className="px-1.5 py-0.5 rounded bg-purple-500/30 text-purple-200 text-[11px]">
-                      ★{String(slip.goldenBall).padStart(2, '0')}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-8 gap-1.5" dir="ltr">
+            {Array.from({ length: goldenMax }, (_, i) => i + 1).map((gNum) => {
+              const isSelected = selectedGoldenBall === gNum;
+              return (
+                <button
+                  key={gNum}
+                  type="button"
+                  data-testid={`golden-ball-${gNum}`}
+                  onClick={() => setSelectedGoldenBall(gNum)}
+                  className={`aspect-square rounded-full font-mono font-bold text-[10px] transition-all flex items-center justify-center cursor-pointer tabular-nums ${
+                    isSelected
+                      ? 'lottery-ball-purple text-white scale-105 ring-2 ring-[#fbbf24] shadow-[0_0_12px_rgba(168,85,247,0.65)]'
+                      : 'bg-[#070510] hover:bg-purple-950/60 text-purple-300/80 border border-purple-500/25'
+                  }`}
+                >
+                  ★{gNum}
+                </button>
+              );
+            })}
           </div>
+        </div>
+      )}
 
-          {/* Live Dynamic Price Oracle Breakdown */}
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between text-slate-400">
-              <span>قیمت واحد هر بلیت:</span>
-              <span className="font-mono font-bold text-white">${unitPriceUsdt.toFixed(2)} USDT</span>
-            </div>
-            <div className="flex items-center justify-between text-slate-400">
-              <span>تعداد بلیت در تراکنش:</span>
-              <span className="font-mono font-bold text-white" data-testid="cart-ticket-count">
-                {bulkSlips.length}x
-              </span>
-            </div>
-            {cartSummary.discountPercent > 0 && (
-              <div className="flex items-center justify-between text-emerald-400 font-bold">
-                <span>تخفیف خرید دسته‌ای ({toPersianDigits(cartSummary.discountPercent)}٪):</span>
-                <span className="font-mono">
-                  -${(cartSummary.subtotalUsdt - cartSummary.totalUsdt).toFixed(2)} USDT
-                </span>
-              </div>
-            )}
-            <div className="border-t border-white/10 pt-2.5 flex items-center justify-between">
-              <span className="font-black text-slate-200">مبلغ کل قابل پرداخت (USDT):</span>
-              <span
-                data-testid="cart-total-usdt"
-                className="font-mono font-black text-lg text-amber-400"
-              >
-                ${cartSummary.totalUsdt.toFixed(2)} USDT
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-slate-300">
-              <span>معادل زنده اوراکل (تومان / ارز):</span>
-              <span className="font-black text-emerald-400" data-testid="cart-total-fiat">
-                {formatAmount(cartSummary.totalUsdt)}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div className="bg-[#0c1018] border border-white/5 rounded-xl p-2.5 text-center">
-                <span className="text-[10px] text-slate-400 block">معادل زنده TON</span>
-                <strong className="font-mono text-sky-400 text-xs" data-testid="cart-total-ton">
-                  {cartSummary.totalTon} TON
-                </strong>
-              </div>
-              <div className="bg-[#0c1018] border border-white/5 rounded-xl p-2.5 text-center">
-                <span className="text-[10px] text-slate-400 block">معادل زنده TRX</span>
-                <strong className="font-mono text-rose-400 text-xs" data-testid="cart-total-trx">
-                  {cartSummary.totalTrx} TRX
-                </strong>
-              </div>
-            </div>
+      {/* 6. CLIENT SEED & FULL CRYPTOGRAPHIC COMMITMENT HASH */}
+      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 space-y-2.5">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="font-bold text-[#00f59b]">
+            🔒 بذر اختصاصی کوپن #{toPersianDigits(activeSlipIndex + 1)} (Client Seed)
+          </span>
+          <span className="font-mono text-[10px] text-purple-300/60">HMAC-SHA256</span>
+        </div>
+        <input
+          type="text"
+          value={currentSlipSeed}
+          onChange={(e) => handleUpdateCurrentSlipSeed(e.target.value)}
+          className="w-full bg-[#070510] border border-purple-500/25 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono"
+          dir="ltr"
+        />
+        <div className="rounded-xl bg-[#070510]/90 border border-purple-500/20 px-2.5 py-2 space-y-1.5" dir="ltr">
+          <div className="flex items-start gap-2">
+            <span className="text-[10px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-[#a855f7] shrink-0">
+              hash
+            </span>
+            <code className="text-[10px] font-mono text-purple-200/90 break-all leading-relaxed select-all">
+              {provablyFairSeeds.serverSeedHash}
+            </code>
           </div>
+          <div className="flex items-start gap-2 pt-1 border-t border-purple-500/15">
+            <span className="text-[10px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-emerald-500/15 text-[#00f59b] shrink-0">
+              hash
+            </span>
+            <code className="text-[10px] font-mono text-emerald-300/90 break-all leading-relaxed select-all">
+              {liveCommitHash}
+            </code>
+          </div>
+        </div>
+      </div>
 
-          {/* Settlement Network Selector */}
+      {/* 7. MULTI-CHANCE CART SUMMARY & CHECKOUT */}
+      <div className="rounded-2xl nimbus-ticket-card p-4 space-y-3.5">
+        <div className="flex items-center justify-between border-b border-purple-500/20 pb-2.5">
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-2">
-              شبکه تسویه یکجای سبد خرید:
-            </label>
-            <select
-              value={selectedNetwork}
-              onChange={(e) => setSelectedNetwork(e.target.value)}
-              className="w-full bg-[#0c1018] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white font-bold"
-            >
-              <option value="USDT (TRC-20)">Tether USDT (TRC-20 • بدون کارمزد)</option>
-              <option value="TON Network">The Open Network (TON • تلگرام)</option>
-              <option value="TRON (TRX)">TRON Native (TRX)</option>
-              <option value="BNB (BEP-20)">BNB Smart Chain (BEP-20)</option>
-              <option value="Bitcoin (BTC)">Bitcoin (SegWit)</option>
-            </select>
+            <span className="text-[10px] text-amber-400 font-mono font-bold block">
+              MULTI-CHANCE SMART CART
+            </span>
+            <h3 className="text-sm font-black text-white">
+              خلاصه سبد خرید ({toPersianDigits(bulkSlips.length)} کوپن)
+            </h3>
           </div>
+          <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-300 text-[10px] font-mono font-bold">
+            {activeLotterySpec.roundCode}
+          </span>
+        </div>
 
-          {feedbackError && (
-            <div className="p-3 rounded-xl bg-red-500/20 border border-red-500/40 text-red-200 text-xs font-bold">
-              ⚠️ {feedbackError}
+        {/* All Slips in Cart Preview */}
+        <div
+          className="bg-[#070510] border border-purple-500/20 rounded-xl p-2.5 space-y-1.5 max-h-44 overflow-y-auto"
+          data-testid="cart-slips-list"
+        >
+          {bulkSlips.map((slip, idx) => (
+            <div
+              key={idx}
+              onClick={() => selectSlipTab(idx)}
+              className={`p-2 rounded-lg border flex items-center justify-between text-[11px] cursor-pointer transition-all ${
+                activeSlipIndex === idx
+                  ? 'bg-amber-500/15 border-amber-400/50 text-white'
+                  : 'bg-[#130d24] border-white/5 text-slate-300'
+              }`}
+            >
+              <span className="font-mono font-bold text-amber-300">Ticket #{idx + 1}</span>
+              <div className="flex items-center gap-1 font-mono" dir="ltr">
+                {slip.mainNumbers.map((n) => (
+                  <span
+                    key={n}
+                    className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-200 text-[10px] flex items-center justify-center font-bold"
+                  >
+                    {String(n).padStart(2, '0')}
+                  </span>
+                ))}
+                {goldenMax > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 text-[10px] font-bold">
+                    ★{String(slip.goldenBall).padStart(2, '0')}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Live Dynamic Price Breakdown (TON & Stars) */}
+        <div className="flex flex-col gap-1.5 text-xs">
+          <div className="flex items-center justify-between text-purple-200/80">
+            <span>قیمت واحد هر بلیت:</span>
+            <span className="font-mono font-semibold text-white tabular-nums" dir="ltr">
+              {formatAmount(unitPriceUsdt)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-purple-200/80">
+            <span>تعداد بلیت در تراکنش:</span>
+            <span className="font-mono font-semibold text-white tabular-nums" data-testid="cart-ticket-count">
+              {bulkSlips.length}x
+            </span>
+          </div>
+          {cartSummary.discountPercent > 0 && (
+            <div className="flex items-center justify-between text-[#00f59b] font-semibold">
+              <span>تخفیف خرید دسته‌ای ({toPersianDigits(cartSummary.discountPercent)}٪):</span>
+              <span className="font-mono tabular-nums" dir="ltr">
+                -{formatAmount(cartSummary.subtotalUsdt - cartSummary.totalUsdt)}
+              </span>
             </div>
           )}
+          <div className="border-t border-purple-500/20 pt-2 flex items-center justify-between">
+            <span className="font-bold text-white">مبلغ کل قابل پرداخت:</span>
+            <span
+              data-testid="cart-total-usdt"
+              className="font-mono font-extrabold text-sm text-[#fbbf24] tabular-nums"
+              dir="ltr"
+            >
+              {formatAmount(cartSummary.totalUsdt)}
+            </span>
+          </div>
+          <span className="sr-only" data-testid="cart-total-fiat">
+            {formatAmount(cartSummary.totalUsdt)}
+          </span>
+          <span className="sr-only" data-testid="cart-total-ton">
+            {cartSummary.totalTon} TON
+          </span>
+          <span className="sr-only" data-testid="cart-total-trx">
+            {cartSummary.totalTon} TON
+          </span>
+        </div>
 
-          {/* Atomic Single-Tx Checkout Button */}
-          <div className="space-y-3">
+        {/* Settlement Network Selector (Strictly TON or Telegram Stars) */}
+        <div>
+          <label className="block text-[11px] font-semibold text-purple-200/80 mb-1.5">
+            ارز تسویه یکجای سبد خرید:
+          </label>
+          <select
+            value={selectedNetwork}
+            onChange={(e) => setSelectedNetwork(e.target.value)}
+            className="w-full bg-[#070510] border border-purple-500/25 rounded-xl px-3 py-2 text-xs text-white font-semibold"
+          >
+            <option value="TON Network">💎 TON (The Open Network)</option>
+            <option value="Telegram Stars">⭐ Stars (Telegram Stars)</option>
+          </select>
+        </div>
+
+        {feedbackError && (
+          <div className="p-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-200 text-xs font-semibold">
+            ⚠️ {feedbackError}
+          </div>
+        )}
+
+        {/* Atomic Single-Tx Checkout Button */}
+        <div className="space-y-2.5">
+          <button
+            type="button"
+            disabled={minting || killSwitchActive}
+            data-testid="mint-ticket-submit"
+            onClick={handlePurchaseBatch}
+            className="w-full h-12 rounded-xl gold-gradient-cta text-[#2a1700] font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <span>
+              {killSwitchActive
+                ? 'فروش بلیت موقتاً متوقف است (Kill-Switch)'
+                : minting
+                ? 'در حال ثبت دسته‌ای در بلاکچین...'
+                : `پرداخت یکجا و صدور ${toPersianDigits(bulkSlips.length)} بلیت (${formatAmount(
+                    cartSummary.totalUsdt
+                  )})`}
+            </span>
+          </button>
+
+          <div className="flex items-center justify-between text-[11px] font-medium text-purple-300/60 tabular-nums px-1">
+            <span>موجودی فعلی: {formatAmount(balanceUsdt)}</span>
             <button
               type="button"
-              disabled={minting || killSwitchActive}
-              data-testid="mint-ticket-submit"
-              onClick={handlePurchaseBatch}
-              className="w-full py-4 rounded-2xl gold-gradient-cta text-[#2a1700] font-black text-sm sm:text-base shadow-[0_10px_25px_rgba(245,158,11,0.35)] hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+              onClick={() => setDepositModalOpen(true)}
+              className="text-amber-400 hover:underline font-semibold cursor-pointer"
             >
-              <span className="material-symbols-outlined">verified</span>
-              <span>
-                {killSwitchActive
-                  ? 'فروش بلیت موقتاً متوقف است (Kill-Switch)'
-                  : minting
-                  ? 'در حال ثبت دسته‌ای در بلاکچین...'
-                  : `پرداخت یکجا و صدور ${toPersianDigits(bulkSlips.length)} بلیت ($${cartSummary.totalUsdt.toFixed(2)})`}
-              </span>
+              + شارژ آنی کیف پول
             </button>
-
-            <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
-              <span>موجودی فعلی: {formatAmount(balanceUsdt)}</span>
-              <button
-                type="button"
-                onClick={() => setDepositModalOpen(true)}
-                className="text-amber-400 hover:underline font-bold cursor-pointer"
-              >
-                + شارژ آنی کیف پول
-              </button>
-            </div>
           </div>
         </div>
       </div>

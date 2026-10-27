@@ -1,3 +1,15 @@
+import {
+  ActiveTmaCurrency,
+  DEFAULT_TON_USD_RATE,
+  DEFAULT_STARS_USD_RATE,
+  formatCurrency,
+  truncateTonAddress,
+  usdtToTmaCurrency,
+  tmaCurrencyToUsdt,
+} from './telegramTma.ts';
+
+export { formatCurrency, truncateTonAddress, usdtToTmaCurrency, tmaCurrencyToUsdt };
+export type { ActiveTmaCurrency };
 export type CurrencyLang = 'FA' | 'EN' | 'ZH';
 
 export interface ExchangeRates {
@@ -73,25 +85,17 @@ export function calculateWaterfallCashflow(
 
 export function formatMultiCurrency(
   usdtAmount: number,
-  lang: CurrencyLang,
+  lang: CurrencyLang | ActiveTmaCurrency = 'FA',
   rates: ExchangeRates = DEFAULT_FX_RATES
 ): string {
   const safeAmount = Number.isFinite(usdtAmount) ? usdtAmount : 0;
-  if (lang === 'FA') {
-    const toman = Math.round(safeAmount * rates.TOMAN);
-    const formatted = toman.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '،');
-    return `${toPersianDigits(formatted)} تومان`;
+  if (lang === 'STARS' || lang === 'ZH') {
+    const stars = Math.round(safeAmount / DEFAULT_STARS_USD_RATE);
+    return formatCurrency(stars, 'STARS');
   }
-  if (lang === 'ZH') {
-    const cny = (safeAmount * rates.CNY).toFixed(2);
-    const [intPart, decPart] = cny.split('.');
-    const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return `¥${withCommas}.${decPart} CNY`;
-  }
-  const fixed = safeAmount.toFixed(2);
-  const [intPart, decPart] = fixed.split('.');
-  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `$${withCommas}.${decPart} USDT`;
+  const tonRate = rates?.TON && rates.TON > 0 ? rates.TON : DEFAULT_TON_USD_RATE;
+  const tonAmount = safeAmount / tonRate;
+  return formatCurrency(tonAmount, 'TON');
 }
 
 export interface CryptoConvertedMap {
@@ -230,35 +234,35 @@ export const COMBINATORIAL_TIERS: CombinatorialTier[] = [
     matchPattern: '۵ گوی اصلی + ۱ گوی طلایی (5 + ★1)',
     oddsText: '1 in 23,200,000',
     poolShare: '۵۵٪ استخر جوایز',
-    estimatedPrizeUsdt: 184500,
+    estimatedPrizeUsdt: 250000,
   },
   {
     tier: 'Tier 2 (ستاره نقره‌ای VIP)',
     matchPattern: '۵ گوی اصلی بدون گوی طلایی (5 + 0)',
     oddsText: '1 in 1,657,142',
     poolShare: '۱۵٪ استخر جوایز',
-    estimatedPrizeUsdt: 18500,
+    estimatedPrizeUsdt: 25000,
   },
   {
     tier: 'Tier 3 (برنده طلایی ۴ ستاره)',
     matchPattern: '۴ گوی اصلی + ۱ گوی طلایی (4 + ★1)',
     oddsText: '1 in 103,571',
     poolShare: '۱۰٪ استخر جوایز',
-    estimatedPrizeUsdt: 1250,
+    estimatedPrizeUsdt: 1500,
   },
   {
     tier: 'Tier 4 (جایزه میان‌رده)',
     matchPattern: '۳ گوی اصلی + ۱ گوی طلایی (3 + ★1)',
     oddsText: '1 in 2,410',
     poolShare: '۱۲٪ استخر جوایز',
-    estimatedPrizeUsdt: 85,
+    estimatedPrizeUsdt: 100,
   },
   {
     tier: 'Tier 5 (برد پرتکرار آنی)',
     matchPattern: '۲ گوی اصلی + ۱ گوی طلایی یا ★1 تکی',
     oddsText: '1 in 21.8',
     poolShare: '۸٪ استخر جوایز',
-    estimatedPrizeUsdt: 6,
+    estimatedPrizeUsdt: 10,
   },
 ];
 
@@ -431,18 +435,16 @@ export function formatTelegramWinnerBroadcast(params: {
 }): TelegramWinnerBroadcastPayload {
   const channelId = params.channelId || '@LuckyDropWinners';
   const tomanRate = params.tomanRate || DEFAULT_FX_RATES.TOMAN;
-  const prizeToman = Math.round(params.prizeUsdt * tomanRate);
-  const prizeTomanFormatted = `${toPersianDigits(
-    prizeToman.toLocaleString('en-US')
-  )} تومان`;
+  const prizeTon = Number((params.prizeUsdt / DEFAULT_TON_USD_RATE).toFixed(2));
+  const prizeTomanFormatted = formatCurrency(prizeTon, 'TON');
   const txHashShort =
     params.txHash.length > 14
       ? `${params.txHash.slice(0, 6)}...${params.txHash.slice(-6)}`
       : params.txHash;
-  const tronScanUrl = `https://tronscan.org/#/transaction/${params.txHash}`;
+  const tronScanUrl = `https://tonviewer.com/transaction/${params.txHash}`;
   const miniAppUrl = 'https://t.me/LuckyDropVIPBot/app';
 
-  const markdownMessage = `🎉 تبریک بی‌کران! سوپر جک‌پات هفتگی منفجر شد! 🏆\nکاربر با هویت حفاظت‌شده ${params.winnerShortId} برنده جایزه بزرگ به ارزش $${params.prizeUsdt.toLocaleString('en-US')} USDT (${prizeTomanFormatted}) شد!\nهش تراکنش TronScan: ${txHashShort}`;
+  const markdownMessage = `🎉 تبریک بی‌کران! سوپر جک‌پات هفتگی منفجر شد! 🏆\nکاربر با هویت حفاظت‌شده ${params.winnerShortId} برنده جایزه بزرگ به ارزش ${prizeTomanFormatted} شد!\nهش تراکنش TON: ${txHashShort}`;
 
   return {
     channelId,
@@ -477,7 +479,7 @@ export const OFFICIAL_PRIZE_TIERS_V48: OfficialPrizeTierItem[] = [
     matchPattern: '۵ اصلی + ۱ طلایی',
     oddsLabel: '۱ : ۳۱,۶۲۵,۱۰۰',
     prizeLabel: '۱۰۰٪ کل استخر انباشته',
-    subNote: 'حداقل تضمین شده: ۱۵۰,۰۰۰ دلار',
+    subNote: 'حداقل تضمین شده: 28,846.15 TON',
     baseUsdtValue: 150000,
   },
   {
@@ -485,7 +487,7 @@ export const OFFICIAL_PRIZE_TIERS_V48: OfficialPrizeTierItem[] = [
     rankLabel: 'رده ۲',
     matchPattern: '۵ عدد اصلی',
     oddsLabel: '۱ : ۲,۲۵۸,۹۳۶',
-    prizeLabel: '۱۰,۰۰۰ USDT (مقطوع)',
+    prizeLabel: '1,923.08 TON',
     baseUsdtValue: 10000,
   },
   {
@@ -493,7 +495,7 @@ export const OFFICIAL_PRIZE_TIERS_V48: OfficialPrizeTierItem[] = [
     rankLabel: 'رده ۳',
     matchPattern: '۴ اصلی + ۱ طلایی',
     oddsLabel: '۱ : ۱۴۰,۵۵۶',
-    prizeLabel: '۱,۵۰۰ USDT',
+    prizeLabel: '288.46 TON',
     baseUsdtValue: 1500,
   },
   {
@@ -501,7 +503,7 @@ export const OFFICIAL_PRIZE_TIERS_V48: OfficialPrizeTierItem[] = [
     rankLabel: 'رده ۴',
     matchPattern: '۴ عدد اصلی',
     oddsLabel: '۱ : ۱۰,۰۴۰',
-    prizeLabel: '۱۵۰ USDT',
+    prizeLabel: '28.85 TON',
     baseUsdtValue: 150,
   },
   {
@@ -509,7 +511,7 @@ export const OFFICIAL_PRIZE_TIERS_V48: OfficialPrizeTierItem[] = [
     rankLabel: 'رده ۵',
     matchPattern: '۳ اصلی + ۱ طلایی',
     oddsLabel: '۱ : ۳,۱۲۰',
-    prizeLabel: '۲۵ USDT',
+    prizeLabel: '4.81 TON',
     baseUsdtValue: 25,
   },
   {
@@ -518,7 +520,7 @@ export const OFFICIAL_PRIZE_TIERS_V48: OfficialPrizeTierItem[] = [
     isFreeTicket: true,
     matchPattern: '۲ اصلی + ۱ طلایی',
     oddsLabel: '۱ : ۵۲۰',
-    prizeLabel: '۵ USDT (بلیت رایگان)',
+    prizeLabel: '0.96 TON (بلیت رایگان)',
     baseUsdtValue: 5,
   },
 ];
@@ -678,23 +680,23 @@ export const MULTI_LOTTERY_SPECS: MultiLotterySpec[] = [
   {
     id: 'MEGA_WEEKLY',
     roundCode: '#ZRN-8493',
-    titleFa: 'مگا جک‌پات VIP هفتگی (Mega Jackpot VIP)',
+    titleFa: 'مگا جک‌پات VIP هفتگی',
     titleEn: 'Mega Jackpot VIP Weekly',
     titleZh: 'VIP 超级周大奖',
-    subtitleFa: 'استخر تضمین‌شده بالای ۱۵۰,۰۰۰ دلار • قرعه‌کشی هفتگی ۵ از ۵۰ + ۱ گوی طلایی',
+    subtitleFa: 'استخر تضمین‌شده 50,000.00 TON • قرعه‌کشی هفتگی ۵ از ۵۰ + ۱ گوی طلایی',
     category: 'WEEKLY',
     formatLabel: '۵ از ۵۰ + ۱ از ۱۵ ★',
     mainCount: 5,
     mainMax: 50,
     goldenMax: 15,
-    jackpotUsdt: 184500,
+    jackpotUsdt: 250000,
     ticketPriceUsdt: 5.0,
     rtpPercent: 85,
     soldPercent: 82,
     remainingLabel: 'ظرفیت باقی‌مانده: ۱۸٪',
     drawTimeLabel: 'جمعه ۲۲:۰۰ به وقت تهران',
     initialCountdownSec: 2 * 86400 + 14 * 3600 + 38 * 60 + 49,
-    serverSeedHash: '0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    serverSeedHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     clientSeed: 'tron_block_62194801_mega_vip',
     winningNumbers: [7, 14, 23, 38, 49],
     winningGoldenBall: 8,
@@ -703,8 +705,8 @@ export const MULTI_LOTTERY_SPECS: MultiLotterySpec[] = [
   {
     id: 'DAILY_BLITZ',
     roundCode: '#BLZ-2409',
-    titleFa: 'بلیتز روزانه ۱۰ هزار دلاری (Daily Blitz)',
-    titleEn: 'Daily Blitz $10,000',
+    titleFa: 'بلیتز روزانه TON',
+    titleEn: 'Daily Blitz TON',
     titleZh: '每日闪电大奖',
     subtitleFa: 'قرعه‌کشی هر ۲۴ ساعت راس ساعت ۲۴:۰۰ • ضریب برد ۵ برابر سریع‌تر',
     category: 'DAILY',
@@ -712,14 +714,14 @@ export const MULTI_LOTTERY_SPECS: MultiLotterySpec[] = [
     mainCount: 5,
     mainMax: 35,
     goldenMax: 10,
-    jackpotUsdt: 12400,
-    ticketPriceUsdt: 2.0,
+    jackpotUsdt: 25000,
+    ticketPriceUsdt: 2.5,
     rtpPercent: 85,
     soldPercent: 74,
     remainingLabel: 'قرعه‌کشی امشب ساعت ۲۴:۰۰',
     drawTimeLabel: 'هر شب ساعت ۲۴:۰۰',
     initialCountdownSec: 6 * 3600 + 42 * 60 + 18,
-    serverSeedHash: '0x9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+    serverSeedHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
     clientSeed: 'btc_block_879410_daily_blitz',
     winningNumbers: [4, 11, 19, 27, 33],
     winningGoldenBall: 6,
@@ -728,23 +730,23 @@ export const MULTI_LOTTERY_SPECS: MultiLotterySpec[] = [
   {
     id: 'HOURLY_FLASH',
     roundCode: '#FLS-0060',
-    titleFa: 'فلش ساعتی سریع (Hourly Flash 60m)',
+    titleFa: 'فلش ساعتی سریع',
     titleEn: 'Hourly Flash 60-Min',
     titleZh: '每小时极速开奖',
-    subtitleFa: 'دورهای فوق سریع ۶۰ دقیقه‌ای • انتخاب فقط ۴ گوی از ۲۵ عدد با ورودی ۱ دلار',
+    subtitleFa: 'دورهای فوق سریع ۶۰ دقیقه‌ای • انتخاب فقط ۴ گوی از ۲۵ عدد با ورودی 0.20 TON',
     category: 'TURBO',
-    formatLabel: '۴ از ۲۵ (بدون گوی طلایی)',
+    formatLabel: '۴ از ۲۵ (بدون ستاره)',
     mainCount: 4,
     mainMax: 25,
     goldenMax: 0,
-    jackpotUsdt: 2850,
+    jackpotUsdt: 5000,
     ticketPriceUsdt: 1.0,
     rtpPercent: 88,
     soldPercent: 91,
     remainingLabel: 'کمتر از ۱ ساعت تا استخراج بلاک',
     drawTimeLabel: 'راس هر ساعت میلادی',
     initialCountdownSec: 34 * 60 + 12,
-    serverSeedHash: '0x4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a',
+    serverSeedHash: '4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a',
     clientSeed: 'ton_shard_39812099_hourly_flash',
     winningNumbers: [3, 9, 17, 24],
     winningGoldenBall: 0,
@@ -753,7 +755,7 @@ export const MULTI_LOTTERY_SPECS: MultiLotterySpec[] = [
   {
     id: 'TON_SPECIAL',
     roundCode: '#TON-9920',
-    titleFa: 'قرعه‌کشی ویژه جامعه تلگرام (TON Telegram Special)',
+    titleFa: 'قرعه‌کشی ویژه TON',
     titleEn: 'TON Telegram Special',
     titleZh: 'TON 电报专属大奖',
     subtitleFa: 'مخصوص کاربران مینی‌اپ تلگرام با تسویه آنی TON در کمتر از ۵ ثانیه',
@@ -762,14 +764,14 @@ export const MULTI_LOTTERY_SPECS: MultiLotterySpec[] = [
     mainCount: 5,
     mainMax: 40,
     goldenMax: 12,
-    jackpotUsdt: 45000,
+    jackpotUsdt: 50000,
     ticketPriceUsdt: 3.0,
     rtpPercent: 86,
     soldPercent: 68,
     remainingLabel: 'تسویه مستقیم شاردینگ TON',
     drawTimeLabel: 'پنج‌شنبه‌ها ساعت ۲۱:۰۰',
     initialCountdownSec: 1 * 86400 + 9 * 3600 + 15 * 60 + 40,
-    serverSeedHash: '0x7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451',
+    serverSeedHash: '7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451',
     clientSeed: 'ton_masterchain_seqno_41982301',
     winningNumbers: [6, 15, 22, 31, 39],
     winningGoldenBall: 9,
@@ -1352,9 +1354,8 @@ export function formatTelegramAdminAlertText(params: {
       ? '🎟️ [خرید بلیت جدید لاتاری]'
       : '🛡️ [تست اتصال ربات کاکپیت ادمین]';
 
-  return `${icon}\n👤 کاربر: ${params.userDisplayName}\n💵 مبلغ: $${params.amountUsdt.toFixed(
-    2
-  )} USDT${params.network ? ` (${params.network})` : ''}\n📌 جزئیات: ${
+  const tonAmt = formatCurrency(params.amountUsdt / DEFAULT_TON_USD_RATE, 'TON');
+  return `${icon}\n👤 کاربر: ${params.userDisplayName}\n💎 مبلغ: ${tonAmt}${params.network ? ` (${params.network})` : ''}\n📌 جزئیات: ${
     params.details
   }\n🔐 وضعیت خزانه: ۱۰۰٪ ضدضرر (Zero-Loss Active)`;
 }

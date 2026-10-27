@@ -560,7 +560,13 @@ export function evaluateTicketPrizeTier(params: {
 // 5. INSTANT MINI-GAMES DETERMINISTIC ENGINE (52-BIT FLOAT X in [0, 1))
 // ============================================================================
 
-export type InstantMiniGameId = 'PLINKO' | 'DICE_52' | 'GOLDEN_COIN' | 'CRASH_X';
+export type InstantMiniGameId =
+  | 'PLINKO'
+  | 'DICE_52'
+  | 'GOLDEN_COIN'
+  | 'CRASH_X'
+  | 'MINES'
+  | 'SCRATCH';
 
 export type PlinkoRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 export type PlinkoRowCount = 8 | 12 | 16;
@@ -824,6 +830,207 @@ export function flipDiceRollMode(
   return syncDiceFromTarget(invertedTarget, nextMode);
 }
 
+// ============================================================================
+// 6. PROVABLY FAIR MINES (5x5 GRID, 1-24 MINES, 99% RTP) & SCRATCH CARDS (3x3)
+// ============================================================================
+
+/**
+ * Calculates the exact 99% RTP Mines step multiplier after revealing `revealedSafeCount` safe gems
+ * on a 25-tile board with `minesCount` mines:
+ * Multiplier = 0.99 * Product_{i=0..revealedSafeCount-1} ((25 - i) / (25 - minesCount - i))
+ */
+export function calculateMinesMultiplier(minesCount: number, revealedSafeCount: number): number {
+  const safeMines = Math.max(1, Math.min(24, Math.floor(minesCount || 3)));
+  const maxSafe = 25 - safeMines;
+  const safeRevealed = Math.max(0, Math.min(maxSafe, Math.floor(revealedSafeCount || 0)));
+  if (safeRevealed === 0) return 1.0;
+
+  let prob = 1.0;
+  for (let i = 0; i < safeRevealed; i++) {
+    prob *= (25 - safeMines - i) / (25 - i);
+  }
+  const rawMult = 0.99 / prob;
+  return Number(rawMult.toFixed(2));
+}
+
+/**
+ * Deterministically derives the 5x5 Mines board (`mineIndices` in `0..24`) using
+ * Fisher-Yates pool removal driven by HMAC-SHA256 52-bit uniform floats.
+ */
+export function deriveProvablyFairMinesBoard(params: {
+  serverSeed: string;
+  clientSeed: string;
+  nonce: number;
+  minesCount: number;
+}): {
+  hmacHex: string;
+  first52BitHex: string;
+  uniformFloatX: number;
+  minesCount: number;
+  mineIndices: number[];
+} {
+  const cleanServerSeed = params.serverSeed.trim();
+  const cleanClientSeed = params.clientSeed.trim() || 'luckydrop_client_seed';
+  const safeNonce = Math.max(0, Math.floor(params.nonce || 0));
+  const safeMines = Math.max(1, Math.min(24, Math.floor(params.minesCount || 3)));
+
+  const pool: number[] = Array.from({ length: 25 }, (_, idx) => idx);
+  const mineIndices: number[] = [];
+  let primaryHmac = '';
+  let primary52Hex = '';
+  let primaryFloatX = 0;
+
+  for (let cursor = 0; cursor < safeMines; cursor++) {
+    const msg = `${cleanClientSeed}:${safeNonce}:MINES:${cursor}`;
+    const hmac = hmacSha256Hex(cleanServerSeed, msg);
+    const { first52BitHex, uniformFloatX } = hmacTo52BitUniformFloat(hmac);
+    if (cursor === 0) {
+      primaryHmac = hmac;
+      primary52Hex = first52BitHex;
+      primaryFloatX = uniformFloatX;
+    }
+    const pickIdx = Math.floor(uniformFloatX * pool.length);
+    const chosenTile = pool.splice(pickIdx, 1)[0];
+    mineIndices.push(chosenTile);
+  }
+
+  mineIndices.sort((a, b) => a - b);
+
+  return {
+    hmacHex: primaryHmac,
+    first52BitHex: primary52Hex,
+    uniformFloatX: primaryFloatX,
+    minesCount: safeMines,
+    mineIndices,
+  };
+}
+
+export interface ScratchCardCell {
+  index: number;
+  symbol: string;
+  label: string;
+  tierMultiplier: number;
+}
+
+/**
+ * Deterministically derives a 3x3 Holographic Scratch Card outcome using 52-bit HMAC-SHA256 float X.
+ */
+export function deriveProvablyFairScratchCard(params: {
+  serverSeed: string;
+  clientSeed: string;
+  nonce: number;
+}): {
+  hmacHex: string;
+  first52BitHex: string;
+  uniformFloatX: number;
+  multiplier: number;
+  won: boolean;
+  tierName: string;
+  bonusLotteryTicket: boolean;
+  cells: ScratchCardCell[];
+} {
+  const cleanServerSeed = params.serverSeed.trim();
+  const cleanClientSeed = params.clientSeed.trim() || 'luckydrop_client_seed';
+  const safeNonce = Math.max(0, Math.floor(params.nonce || 0));
+
+  const message = `${cleanClientSeed}:${safeNonce}:SCRATCH`;
+  const hmacHex = hmacSha256Hex(cleanServerSeed, message);
+  const { first52BitHex, uniformFloatX } = hmacTo52BitUniformFloat(hmacHex);
+
+  // Determine prize tier from uniformFloatX in [0, 1)
+  let multiplier = 0;
+  let tierName = 'No Match (Try Again)';
+  let winningSymbol = '💎';
+  let bonusLotteryTicket = false;
+
+  if (uniformFloatX >= 0.996) {
+    multiplier = 100;
+    tierName = '👑 GRAND TON JACKPOT (100x + Free Ticket)';
+    winningSymbol = '👑';
+    bonusLotteryTicket = true;
+  } else if (uniformFloatX >= 0.98) {
+    multiplier = 25;
+    tierName = '🌟 MEGA CYBER STAR (25x)';
+    winningSymbol = '🌟';
+    bonusLotteryTicket = true;
+  } else if (uniformFloatX >= 0.92) {
+    multiplier = 5;
+    tierName = '💎 TRIPLE TON GEM (5x)';
+    winningSymbol = '💎';
+  } else if (uniformFloatX >= 0.75) {
+    multiplier = 2;
+    tierName = '⚡ DOUBLE NEON BOLT (2x)';
+    winningSymbol = '⚡';
+  } else if (uniformFloatX >= 0.48) {
+    multiplier = 1.2;
+    tierName = '🍀 LUCKY CLOVER (1.2x)';
+    winningSymbol = '🍀';
+  }
+
+  const allDecoySymbols = ['💎', '🌟', '⚡', '🍀', '👑', '🎰'];
+  const cells: ScratchCardCell[] = [];
+
+  if (multiplier > 0) {
+    // Place 3 matching winning symbols + 6 non-matching symbols (at most 2 of any decoy)
+    const positions = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const winPositions = new Set<number>();
+    for (let i = 0; i < 3; i++) {
+      const byteVal = Number.parseInt(hmacHex.slice(14 + i * 2, 16 + i * 2), 16) || i;
+      const pick = positions.splice(byteVal % positions.length, 1)[0];
+      winPositions.add(pick);
+    }
+    const decoys = allDecoySymbols.filter((s) => s !== winningSymbol);
+    let decoyIdx = 0;
+    for (let idx = 0; idx < 9; idx++) {
+      if (winPositions.has(idx)) {
+        cells.push({
+          index: idx,
+          symbol: winningSymbol,
+          label: `${multiplier}x`,
+          tierMultiplier: multiplier,
+        });
+      } else {
+        const sym = decoys[Math.floor(decoyIdx / 2) % decoys.length];
+        decoyIdx++;
+        cells.push({
+          index: idx,
+          symbol: sym,
+          label: '1x',
+          tierMultiplier: 0,
+        });
+      }
+    }
+  } else {
+    // Losing board: ensure no symbol appears 3 times
+    const pattern = ['💎', '💎', '🌟', '🌟', '⚡', '⚡', '🍀', '🍀', '👑'];
+    for (let idx = 0; idx < 9; idx++) {
+      const swapOffset = Number.parseInt(hmacHex.slice(idx * 2, idx * 2 + 2), 16) % 9;
+      const temp = pattern[idx];
+      pattern[idx] = pattern[swapOffset];
+      pattern[swapOffset] = temp;
+    }
+    for (let idx = 0; idx < 9; idx++) {
+      cells.push({
+        index: idx,
+        symbol: pattern[idx],
+        label: '—',
+        tierMultiplier: 0,
+      });
+    }
+  }
+
+  return {
+    hmacHex,
+    first52BitHex,
+    uniformFloatX,
+    multiplier,
+    won: multiplier > 0,
+    tierName,
+    bonusLotteryTicket,
+    cells,
+  };
+}
+
 export interface MiniGameEvaluationResult {
   gameId: InstantMiniGameId;
   roundId: string;
@@ -839,6 +1046,7 @@ export interface MiniGameEvaluationResult {
   won: boolean;
   multiplier: number;
   payoutUsdt: number;
+  betAmountUsdt?: number;
   // Plinko-specific deterministic trajectory metadata
   plinkoRows?: PlinkoRowCount;
   plinkoRisk?: PlinkoRiskLevel;
@@ -854,6 +1062,13 @@ export interface MiniGameEvaluationResult {
   diceTarget?: number;
   diceWinChance?: number;
   diceLucky7777Ticket?: boolean;
+  // Mines-specific metadata
+  minesCount?: number;
+  mineIndices?: number[];
+  minesRevealedSafeCount?: number;
+  // Scratch-specific metadata
+  scratchCells?: ScratchCardCell[];
+  scratchTierName?: string;
 }
 
 /**
@@ -874,11 +1089,91 @@ export function evaluateProvablyFairMiniGame(params: {
   crashAutoCashoutX?: number; // e.g., 2.00
   plinkoRows?: PlinkoRowCount;
   plinkoRisk?: PlinkoRiskLevel;
+  minesCount?: number;
+  minesRevealedSafeCount?: number;
+  minesHitBomb?: boolean;
 }): MiniGameEvaluationResult {
   const cleanServerSeed = params.serverSeed.trim();
   const cleanClientSeed = params.clientSeed.trim() || 'luckydrop_client_seed';
   const safeNonce = Math.max(0, Math.floor(params.nonce || 0));
   const serverSeedHash = sha256Hex(cleanServerSeed);
+
+  if (params.gameId === 'MINES') {
+    const minesCount = Math.max(1, Math.min(24, Math.floor(params.minesCount || 3)));
+    const revealedSafeCount = Math.max(0, Math.floor(params.minesRevealedSafeCount ?? 1));
+    const board = deriveProvablyFairMinesBoard({
+      serverSeed: cleanServerSeed,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+      minesCount,
+    });
+    const hitBomb = Boolean(params.minesHitBomb);
+    const multiplier = hitBomb ? 0 : calculateMinesMultiplier(minesCount, Math.max(1, revealedSafeCount));
+    const won = !hitBomb && multiplier > 0;
+    const payoutUsdt = won
+      ? Math.min(DICE_TREASURY_MAX_PAYOUT_USDT, Number((params.betAmountUsdt * multiplier).toFixed(2)))
+      : 0;
+    const roundId = `MG-MINES-${safeNonce}-${board.first52BitHex.slice(0, 6).toUpperCase()}`;
+
+    return {
+      gameId: 'MINES',
+      roundId,
+      serverSeed: cleanServerSeed,
+      serverSeedHash,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+      hmacHex: board.hmacHex,
+      first52BitHex: board.first52BitHex,
+      uniformFloatX: board.uniformFloatX,
+      outcomeNumeric: multiplier,
+      outcomeLabel: hitBomb
+        ? `Mines (${minesCount}💣) • BOOM!`
+        : `Mines (${minesCount}💣 • ${revealedSafeCount}💎) • ${multiplier}x`,
+      won,
+      multiplier,
+      payoutUsdt,
+      betAmountUsdt: params.betAmountUsdt,
+      minesCount,
+      mineIndices: board.mineIndices,
+      minesRevealedSafeCount: revealedSafeCount,
+    };
+  }
+
+  if (params.gameId === 'SCRATCH') {
+    const scratch = deriveProvablyFairScratchCard({
+      serverSeed: cleanServerSeed,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+    });
+    const payoutUsdt = scratch.won
+      ? Math.min(
+          DICE_TREASURY_MAX_PAYOUT_USDT,
+          Number((params.betAmountUsdt * scratch.multiplier).toFixed(2))
+        )
+      : 0;
+    const roundId = `MG-SCRATCH-${safeNonce}-${scratch.first52BitHex.slice(0, 6).toUpperCase()}`;
+
+    return {
+      gameId: 'SCRATCH',
+      roundId,
+      serverSeed: cleanServerSeed,
+      serverSeedHash,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+      hmacHex: scratch.hmacHex,
+      first52BitHex: scratch.first52BitHex,
+      uniformFloatX: scratch.uniformFloatX,
+      outcomeNumeric: scratch.multiplier,
+      outcomeLabel: `Scratch 3x3 • ${scratch.tierName}`,
+      won: scratch.won,
+      multiplier: scratch.multiplier,
+      payoutUsdt,
+      betAmountUsdt: params.betAmountUsdt,
+      plinkoBonusTicket: scratch.bonusLotteryTicket,
+      scratchCells: scratch.cells,
+      scratchTierName: scratch.tierName,
+    };
+  }
 
   if (params.gameId === 'PLINKO') {
     const safeRows: PlinkoRowCount =
@@ -923,6 +1218,7 @@ export function evaluateProvablyFairMiniGame(params: {
       won,
       multiplier: plinkoResult.multiplier,
       payoutUsdt,
+      betAmountUsdt: params.betAmountUsdt,
       plinkoRows: safeRows,
       plinkoRisk: safeRisk,
       plinkoDirections: plinkoResult.directions,
@@ -979,6 +1275,7 @@ export function evaluateProvablyFairMiniGame(params: {
       won,
       multiplier: won ? synced.multiplier : 0,
       payoutUsdt,
+      betAmountUsdt: params.betAmountUsdt,
       plinkoBonusTicket: lucky7777Ticket,
       diceMode: synced.mode,
       diceTarget: synced.target,
@@ -1009,6 +1306,7 @@ export function evaluateProvablyFairMiniGame(params: {
       won,
       multiplier: won ? multiplier : 0,
       payoutUsdt,
+      betAmountUsdt: params.betAmountUsdt,
     };
   }
 
@@ -1043,11 +1341,13 @@ export function evaluateProvablyFairMiniGame(params: {
     won,
     multiplier: won ? targetCashout : 0,
     payoutUsdt,
+    betAmountUsdt: params.betAmountUsdt,
     plinkoBonusTicket: luckyAirdrop,
     crashPoint,
     crashCashedOutAt: won ? targetCashout : undefined,
     crashLuckyAirdropTicket: luckyAirdrop,
   };
 }
+
 
 

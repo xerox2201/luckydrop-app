@@ -48,7 +48,38 @@ export const CockpitView: React.FC = () => {
     sendTestTelegramAlert,
     pamReconciliation,
     setWalletDrawerOpen,
+    adminTonWalletAddress,
+    setAdminTonWalletAddress,
+    adminTelegramUserIds,
+    setAdminTelegramUserIds,
+    tonUsdRate,
+    setTonUsdRate,
+    starsUsdRate,
+    setStarsUsdRate,
+    telegramUser,
   } = useLottery();
+
+  const [tmaAdminIdsDraft, setTmaAdminIdsDraft] = useState<string>(
+    adminTelegramUserIds.join(', ')
+  );
+  const [tmaTonVaultDraft, setTmaTonVaultDraft] = useState<string>(adminTonWalletAddress);
+  const [tmaSavedBanner, setTmaSavedBanner] = useState<boolean>(false);
+
+  const handleSaveTmaAdminSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsedIds = tmaAdminIdsDraft
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (parsedIds.length > 0) {
+      setAdminTelegramUserIds(parsedIds);
+    }
+    if (tmaTonVaultDraft.trim()) {
+      setAdminTonWalletAddress(tmaTonVaultDraft.trim());
+    }
+    setTmaSavedBanner(true);
+    setTimeout(() => setTmaSavedBanner(false), 3500);
+  };
 
   const [walletDraft, setWalletDraft] = useState(officialWallets);
   const [walletSavedBanner, setWalletSavedBanner] = useState<boolean>(false);
@@ -286,6 +317,99 @@ export const CockpitView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* =====================================================================
+          TMA TON VAULT & TELEGRAM ADMIN ID LOCK CONFIGURATION
+          ===================================================================== */}
+      <section
+        data-testid="tma-admin-config-card"
+        className="studio-arena-frame rounded-3xl p-5 space-y-4 border border-purple-500/40"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-500/20 pb-3">
+          <div>
+            <span className="px-2.5 py-0.5 rounded-md bg-purple-500/20 border border-purple-400/40 text-purple-200 font-mono text-[10px] font-black">
+              TMA SECURITY &amp; TON TREASURY
+            </span>
+            <h2 className="text-base font-black text-white mt-1">
+              تنظیمات مینی‌اپ تلگرام (ADMIN_TON_WALLET_ADDRESS &amp; ADMIN_TELEGRAM_USER_IDS)
+            </h2>
+          </div>
+          <span className="text-[11px] font-mono text-[#00f59b]" dir="ltr">
+            Active TG ID: #{telegramUser.id} (@{telegramUser.username})
+          </span>
+        </div>
+
+        <form onSubmit={handleSaveTmaAdminSettings} className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-300 block">
+              آدرس کیف پول مقصد واریزهای TON (`ADMIN_TON_WALLET_ADDRESS`):
+            </label>
+            <input
+              type="text"
+              dir="ltr"
+              data-testid="input-admin-ton-wallet"
+              value={tmaTonVaultDraft}
+              onChange={(e) => setTmaTonVaultDraft(e.target.value)}
+              className="w-full studio-input-well rounded-xl px-3 py-2 text-xs font-mono text-[#06b6d4]"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-300 block">
+              لیست آیدی‌های عددی ادمین تلگرام (`ADMIN_TELEGRAM_USER_IDS` با کاما جدا شوند):
+            </label>
+            <input
+              type="text"
+              dir="ltr"
+              data-testid="input-admin-telegram-ids"
+              value={tmaAdminIdsDraft}
+              onChange={(e) => setTmaAdminIdsDraft(e.target.value)}
+              className="w-full studio-input-well rounded-xl px-3 py-2 text-xs font-mono text-[#fbbf24]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3" dir="ltr">
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-300 block">
+                💎 1 TON Rate (USD):
+              </label>
+              <input
+                type="number"
+                step="0.05"
+                value={tonUsdRate}
+                onChange={(e) => setTonUsdRate(Math.max(0.5, Number(e.target.value) || 5.2))}
+                className="w-full studio-input-well rounded-xl px-3 py-2 text-xs font-mono text-white"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-300 block">
+                ⭐ 1 Star Rate (USD):
+              </label>
+              <input
+                type="number"
+                step="0.005"
+                value={starsUsdRate}
+                onChange={(e) => setStarsUsdRate(Math.max(0.005, Number(e.target.value) || 0.02))}
+                className="w-full studio-input-well rounded-xl px-3 py-2 text-xs font-mono text-white"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            data-testid="save-tma-admin-config-btn"
+            className="w-full py-2.5 rounded-xl tma-purple-cta font-black text-xs cursor-pointer"
+          >
+            ذخیره آدرس خزانه TON و لیست آیدی‌های ادمین تلگرام
+          </button>
+
+          {tmaSavedBanner && (
+            <div className="p-2.5 rounded-xl bg-[#00f59b]/15 border border-[#00f59b]/40 text-[#00f59b] text-xs font-bold text-center">
+              ✅ تنظیمات خزانه TON و قفل آیدی ادمین تلگرام ذخیره شد!
+            </div>
+          )}
+        </form>
+      </section>
 
       {/* =====================================================================
           EXECUTIVE GGR / NGR KPI CARDS & REAL-TIME RTP COMPARISON BARS

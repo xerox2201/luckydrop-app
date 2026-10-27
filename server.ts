@@ -466,6 +466,21 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
       const raw = fs.readFileSync(PERSISTENT_DB_PATH, 'utf-8');
       const parsed = JSON.parse(raw) as PersistentDatabaseSchema;
       if (parsed && parsed.pamState && Array.isArray(parsed.rounds)) {
+        parsed.rounds = parsed.rounds.map((r) => {
+          const spec = MULTI_LOTTERY_SPECS.find((s) => s.roundCode === r.roundCode || s.id === r.lotteryType);
+          if (!spec) return r;
+          return {
+            ...r,
+            titleFa: spec.titleFa,
+            subtitleFa: spec.subtitleFa,
+            formatLabel: spec.formatLabel,
+            mainCount: spec.mainCount,
+            mainMax: spec.mainMax,
+            goldenMax: spec.goldenMax,
+            jackpotUsdt: spec.jackpotUsdt.toFixed(2),
+            ticketPriceUsdt: spec.ticketPriceUsdt.toFixed(2),
+          };
+        });
         return parsed;
       }
     }
@@ -807,6 +822,9 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
     crashAutoCashoutX = 2.0,
     plinkoRows = 16,
     plinkoRisk = 'MEDIUM',
+    minesCount = 3,
+    minesRevealedSafeCount = 1,
+    minesHitBomb = false,
     transaction_uuid,
   } = req.body || {};
 
@@ -822,6 +840,10 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
       ? 'INSTANT_DICE_52'
       : gameId === 'GOLDEN_COIN'
       ? 'INSTANT_GOLDEN_COIN'
+      : gameId === 'MINES'
+      ? 'INSTANT_MINES'
+      : gameId === 'SCRATCH'
+      ? 'INSTANT_SCRATCH'
       : 'INSTANT_CRASH_X';
 
   // Step 1: Atomic PAM Debit
@@ -859,6 +881,9 @@ app.post('/api/pam/mini-game/play', optionalAuth, (req: AuthRequest, res) => {
       plinkoRisk === 'LOW' || plinkoRisk === 'MEDIUM' || plinkoRisk === 'HIGH'
         ? plinkoRisk
         : 'MEDIUM',
+    minesCount: Number(minesCount) || 3,
+    minesRevealedSafeCount: Number(minesRevealedSafeCount) || 1,
+    minesHitBomb: Boolean(minesHitBomb),
   });
 
   // Step 3: If payoutUsdt > 0 (including Plinko <1x partial return or >=1x win), immediately credit via PAM Seamless Wallet

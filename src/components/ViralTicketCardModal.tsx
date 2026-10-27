@@ -64,7 +64,7 @@ export const ViralTicketCardModal: React.FC = () => {
     const prize = parseFloat(viralCardTicket.prizeWonUsdt) || 0;
     ctx.fillText(
       prize > 0
-        ? `🎉 گواهی رسمی برنده جایزه $${prize.toLocaleString('en-US')} USDT 🎉`
+        ? `🎉 گواهی رسمی برنده جایزه ${(prize / 5).toFixed(2)} TON 🎉`
         : '✨ کوپن رسمی شرکت در مگا جک‌پات زرین لاتاری ✨',
       width / 2,
       215
@@ -93,7 +93,7 @@ export const ViralTicketCardModal: React.FC = () => {
     ctx.fillText(`TIER: ${vipTier}`, width - 135, 385);
     ctx.fillStyle = '#cbd5e1';
     ctx.fillText(
-      prize > 0 ? `PRIZE WON: $${prize} USDT` : 'STATUS: PROVABLY FAIR VERIFIED',
+      prize > 0 ? `PRIZE WON: ${(prize / 5).toFixed(2)} TON` : 'STATUS: PROVABLY FAIR VERIFIED',
       width - 135,
       440
     );

@@ -20,7 +20,18 @@ import {
   syncDiceFromTarget,
   syncDiceFromMultiplier,
   flipDiceRollMode,
+  calculateMinesMultiplier,
+  deriveProvablyFairMinesBoard,
+  deriveProvablyFairScratchCard,
 } from '../provablyFair.ts';
+import {
+  tmaCurrencyToUsdt,
+  usdtToTmaCurrency,
+  formatCurrency,
+  truncateTonAddress,
+  isTelegramAdminAuthorized,
+  DEFAULT_ADMIN_TELEGRAM_USER_IDS,
+} from '../telegramTma.ts';
 import { PAMSeamlessWalletEngine } from '../../services/pamWalletEngine.ts';
 
 describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () => {
@@ -91,7 +102,7 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
     assert.equal(jackpotEval.prizeUsdt, 250000);
   });
 
-  it('deterministically evaluates Instant Mini-Games (Plinko 8/12/16 Rows, Crash 98% RTP & 52-Bit Dice 99% RTP) using 52-bit HMAC-SHA256', () => {
+  it('deterministically evaluates Instant Mini-Games (Plinko, Crash, 52-Bit Dice, Mines & Scratch) and TMA Dual-Currency', () => {
     // 1. Verify exact 10,001-outcome 52-Bit Dice formula: Math.floor(X * 10001) / 100
     assert.equal(calculate52BitDiceRollResult(0), 0.0);
     assert.equal(calculate52BitDiceRollResult(0.5), 50.0);
@@ -201,6 +212,51 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
         isPlinkoBonusTicketSlot(sumRights, r)
       );
     }
+
+    // Verify Provably Fair 5x5 Mines Board & 99% RTP Multiplier
+    const minesA = deriveProvablyFairMinesBoard({
+      serverSeed: 'mines_server_999',
+      clientSeed: 'mines_client_777',
+      nonce: 5,
+      minesCount: 5,
+    });
+    const minesB = deriveProvablyFairMinesBoard({
+      serverSeed: 'mines_server_999',
+      clientSeed: 'mines_client_777',
+      nonce: 5,
+      minesCount: 5,
+    });
+    assert.deepEqual(minesA.mineIndices, minesB.mineIndices);
+    assert.equal(minesA.mineIndices.length, 5);
+    assert.equal(new Set(minesA.mineIndices).size, 5);
+    assert.ok(calculateMinesMultiplier(3, 1) > 1.0);
+    assert.ok(calculateMinesMultiplier(5, 4) > calculateMinesMultiplier(3, 4));
+
+    // Verify Provably Fair 3x3 Scratch Card
+    const scratchA = deriveProvablyFairScratchCard({
+      serverSeed: 'scratch_server_999',
+      clientSeed: 'scratch_client_777',
+      nonce: 12,
+    });
+    const scratchB = deriveProvablyFairScratchCard({
+      serverSeed: 'scratch_server_999',
+      clientSeed: 'scratch_client_777',
+      nonce: 12,
+    });
+    assert.equal(scratchA.hmacHex, scratchB.hmacHex);
+    assert.equal(scratchA.cells.length, 9);
+
+    // Verify TMA Dual-Currency & Admin Telegram ID Lock + Exclusive TON/Stars Formatter
+    assert.equal(tmaCurrencyToUsdt(10, 'TON', 5.0, 0.02), 50);
+    assert.equal(usdtToTmaCurrency(50, 'TON', 5.0, 0.02), 10);
+    assert.equal(tmaCurrencyToUsdt(500, 'STARS', 5.0, 0.02), 10);
+    assert.equal(usdtToTmaCurrency(10, 'STARS', 5.0, 0.02), 500);
+    assert.equal(formatCurrency(12.5, 'TON'), '12.50 TON');
+    assert.equal(formatCurrency(2500, 'STARS'), '2,500 ⭐');
+    assert.equal(truncateTonAddress('UQBx7kM2nPqR8tW4yZ1cF5hJ6kL0mN3pQ89aF'), 'UQBx...89aF');
+    assert.equal(isTelegramAdminAuthorized(123456789, DEFAULT_ADMIN_TELEGRAM_USER_IDS, false), true);
+    assert.equal(isTelegramAdminAuthorized(999999999, DEFAULT_ADMIN_TELEGRAM_USER_IDS, false), false);
+    assert.equal(isTelegramAdminAuthorized(999999999, DEFAULT_ADMIN_TELEGRAM_USER_IDS, true), true);
   });
 });
 
