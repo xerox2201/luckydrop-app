@@ -4,5 +4,19 @@ dist/
 coverage/
 .DS_Store
 *.log
-.env*
+
+# Strictly block all environment & secret files from Git
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*
 !.env.example
+
+# Block runtime local database snapshots & private keys
+.pam_persistent_db.json
+data/*.json
+*.pem
+*.key
+.playwright-cli/

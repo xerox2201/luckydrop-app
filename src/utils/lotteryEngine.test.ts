@@ -18,8 +18,18 @@ import {
   formatTelegramAdminAlertText,
   generateUniqueUserReferralLink,
   calculateReferralDeductionFromNetProfit,
+  calculateDynamicPariMutuelPool,
+  distributePoolAmongWinners,
+  evaluateHighValueWithdrawalGate,
 } from './lotteryEngine.ts';
 import { computeOracleExchangeRates } from '../services/price-oracle.ts';
+import {
+  verifyTelegramWebAppInitData,
+  createSignedTelegramInitData,
+  buildTelegramStartCommandPayload,
+  verifyTelegramStarsSuccessfulPayment,
+  buildLiveChannelBroadcastPayload,
+} from '../services/telegramBotSecurity.ts';
 
 test('Price Oracle computeOracleExchangeRates applies exact 0% spot by default and calculates CNY to Toman', () => {
   const spotRates = computeOracleExchangeRates(
@@ -256,5 +266,194 @@ test('generateUniqueUserReferralLink and calculateReferralDeductionFromNetProfit
   assert.equal(ledger.platformLossUsdt, 0);
 });
 
+test('calculateDynamicPariMutuelPool and distributePoolAmongWinners strictly reserve 15% for the site and distribute 85% collected pool at draw time', () => {
+  const pool = calculateDynamicPariMutuelPool(1000, 15);
+  assert.equal(pool.grossCollectedUsdt, 1000);
+  assert.equal(pool.houseFee15Usdt, 150);
+  assert.equal(pool.siteShare15Usdt, 150);
+  assert.equal(pool.distributablePool85Usdt, 850);
+  assert.equal(pool.houseFeePercent, 15);
+  assert.equal(pool.distributablePercent, 85);
 
+  const dist = distributePoolAmongWinners(pool.distributablePool85Usdt, [3, 1, 0]);
+  assert.equal(dist[0], 637.5);
+  assert.equal(dist[1], 212.5);
+  assert.equal(dist[2], 0);
+  assert.equal(dist[0] + dist[1] + dist[2], 850);
+});
+
+test('evaluateHighValueWithdrawalGate auto-completes standard withdrawals and gates high-value withdrawals for admin approval', () => {
+  const autoRes = evaluateHighValueWithdrawalGate(12.5, 50);
+  assert.equal(autoRes.requiresAdminApproval, false);
+  assert.equal(autoRes.initialStatus, 'completed');
+
+  const highValueRes = evaluateHighValueWithdrawalGate(50, 50);
+  assert.equal(highValueRes.requiresAdminApproval, true);
+  assert.equal(highValueRes.initialStatus, 'pending_review');
+
+  const whaleRes = evaluateHighValueWithdrawalGate(250, 50);
+  assert.equal(whaleRes.requiresAdminApproval, true);
+  assert.equal(whaleRes.initialStatus, 'pending_review');
+});
+
+test('verifyTelegramWebAppInitData cryptographically verifies HMAC-SHA256("WebAppData", botToken) and rejects forged signatures or tampered user IDs', () => {
+  const testBotToken = '9988776655:AAH_UnitTestSecretBotToken_XYZ987';
+  const nowSec = 1761650000;
+  const signedInitData = createSignedTelegramInitData({
+    botToken: testBotToken,
+    user: { id: 778899101, first_name: 'Kamran', username: 'Kamran_TON_VIP' },
+    authDateSec: nowSec - 60,
+    startParam: 'ref_VIP-KAMRAN777',
+  });
+
+  // 1. Valid signature & matching user ID
+  const validRes = verifyTelegramWebAppInitData({
+    initDataRaw: signedInitData,
+    botToken: testBotToken,
+    expectedUserId: 778899101,
+    strictMode: true,
+    nowUnixSec: nowSec,
+  });
+  assert.equal(validRes.valid, true);
+  assert.equal(validRes.reason, 'VERIFIED_CRYPTOGRAPHICALLY');
+  assert.equal(validRes.user?.id, 778899101);
+  assert.equal(validRes.startParam, 'ref_VIP-KAMRAN777');
+
+  // 2. Forged / tampered user ID in query string must be rejected by HMAC
+  const tamperedInitData = signedInitData.replace('778899101', '111111111');
+  const tamperedRes = verifyTelegramWebAppInitData({
+    initDataRaw: tamperedInitData,
+    botToken: testBotToken,
+    strictMode: true,
+    nowUnixSec: nowSec,
+  });
+  assert.equal(tamperedRes.valid, false);
+  assert.equal(tamperedRes.reason, 'INVALID_HMAC_SIGNATURE');
+
+  // 3. Mismatched expectedUserId must be rejected
+  const mismatchRes = verifyTelegramWebAppInitData({
+    initDataRaw: signedInitData,
+    botToken: testBotToken,
+    expectedUserId: 999999999,
+    strictMode: true,
+    nowUnixSec: nowSec,
+  });
+  assert.equal(mismatchRes.valid, false);
+  assert.equal(mismatchRes.reason, 'USER_ID_MISMATCH');
+
+  // 4. Expired auth_date (> 24h old) must be rejected
+  const expiredRes = verifyTelegramWebAppInitData({
+    initDataRaw: signedInitData,
+    botToken: testBotToken,
+    maxAgeSeconds: 3600,
+    strictMode: true,
+    nowUnixSec: nowSec + 7200,
+  });
+  assert.equal(expiredRes.valid, false);
+  assert.equal(expiredRes.reason, 'EXPIRED_AUTH_DATE');
+});
+
+test('Telegram Bot /start payload, Stars XTR payment webhook verifier, and Live Channel Broadcaster with inline Admin Approve/Reject buttons', () => {
+  // 1. /start command with referral tracking
+  const startMsg = buildTelegramStartCommandPayload({
+    chatId: 778899101,
+    firstName: 'کامران',
+    startPayload: 'ref_VIP-KAMRAN777',
+    appDomain: 'https://luckydrop.com',
+    channelUsername: '@LuckyDropWinners',
+  });
+  assert.equal(startMsg.chat_id, 778899101);
+  assert.ok(startMsg.text.includes('VIP-KAMRAN777'));
+  assert.equal(
+    startMsg.reply_markup?.inline_keyboard[0][0].web_app?.url,
+    'https://luckydrop.com/?ref=VIP-KAMRAN777&startapp=ref_VIP-KAMRAN777'
+  );
+
+  // 2. Telegram Stars (XTR) payment webhook verification
+  const starsRes = verifyTelegramStarsSuccessfulPayment({
+    message: {
+      from: { id: 778899101, first_name: 'Kamran' },
+      successful_payment: {
+        currency: 'XTR',
+        total_amount: 500,
+        telegram_payment_charge_id: 'xtr_charge_998877',
+        invoice_payload: 'stars_topup_500',
+      },
+    },
+    starsUsdRate: 0.02,
+  });
+  assert.ok(starsRes && starsRes.valid);
+  assert.equal(starsRes.starsAmount, 500);
+  assert.equal(starsRes.creditedUsdt, 10.0);
+
+  // 3. High-Value Withdrawal Live Broadcast with inline Approve/Reject buttons
+  const wdBroadcast = buildLiveChannelBroadcastPayload({
+    eventType: 'HIGH_VALUE_WITHDRAWAL',
+    chatId: '@LuckyDropAdmin',
+    appDomain: 'https://luckydrop.com',
+    userDisplayName: 'Kamran VIP',
+    amountTon: 120,
+    withdrawalCode: 'WD-740192',
+    destinationAddress: 'UQCV8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_TONVIP',
+  });
+  const firstRowButtons = wdBroadcast.reply_markup?.inline_keyboard[0] || [];
+  assert.equal(firstRowButtons.length, 2);
+  assert.equal(firstRowButtons[0].callback_data, 'approve_wd:WD-740192');
+  assert.equal(firstRowButtons[1].callback_data, 'reject_wd:WD-740192');
+});
+
+test('PAMSeamlessWalletEngine strictly tracks and reconciles tonBalance (💎 TON) and starsBalance (⭐ Stars) with zero balanceUsdt primary state', async () => {
+  const { PAMSeamlessWalletEngine } = await import('../services/pamWalletEngine.ts');
+  const pam = new PAMSeamlessWalletEngine({
+    playerId: 'tg-778899101',
+    genesisTonBalance: 100,
+    tonBalance: 100,
+    genesisStarsBalance: 1000,
+    starsBalance: 1000,
+  });
+
+  // Verify no balanceUsdt property exists on PAMPlayerState
+  assert.equal('balanceUsdt' in pam.getState(), false);
+
+  const debitTon = pam.debit({
+    transactionUuid: 'tx_ton_1',
+    roundId: '#ZRN-8493',
+    vertical: 'LUCKYDROP_LOTTERY',
+    currency: 'TON',
+    amountTon: 5.5,
+  });
+  assert.equal(debitTon.ok, true);
+  assert.equal(debitTon.tonBalance, 94.5);
+  assert.equal(debitTon.starsBalance, 1000);
+
+  const debitStars = pam.debit({
+    transactionUuid: 'tx_stars_1',
+    roundId: '#MG-PLINKO',
+    vertical: 'INSTANT_DICE_52',
+    currency: 'STARS',
+    amountStars: 250,
+  });
+  assert.equal(debitStars.ok, true);
+  assert.equal(debitStars.tonBalance, 94.5);
+  assert.equal(debitStars.starsBalance, 750);
+
+  const creditStars = pam.credit({
+    transactionUuid: 'tx_stars_win_1',
+    referenceTransactionUuid: 'tx_stars_1',
+    roundId: '#MG-PLINKO',
+    vertical: 'INSTANT_DICE_52',
+    currency: 'STARS',
+    amountStars: 500,
+  });
+  assert.equal(creditStars.ok, true);
+  assert.equal(creditStars.starsBalance, 1250);
+
+  const recon = pam.reconcile();
+  assert.equal(recon.ok, true);
+  assert.equal(recon.reconciliation?.reconciled, true);
+  assert.equal(recon.reconciliation?.computedLedgerTonBalance, 94.5);
+  assert.equal(recon.reconciliation?.computedLedgerStarsBalance, 1250);
+  assert.equal(recon.reconciliation?.discrepancyTon, 0);
+  assert.equal(recon.reconciliation?.discrepancyStars, 0);
+});
 

@@ -1,21 +1,16 @@
 /**
- * CORE PAM (PLAYER ACCOUNT MANAGEMENT) & SEAMLESS SINGLE WALLET ENGINE
- * ---------------------------------------------------------------------
- * Production-grade iGaming & iLottery Seamless Single Wallet + Ledger Engine.
- * Implements the 7 standard iGaming PAM wallet operations:
+ * CORE PAM (PLAYER ACCOUNT MANAGEMENT) & SEAMLESS DUAL-CURRENCY WALLET ENGINE
+ * ----------------------------------------------------------------------------
+ * Production-grade iGaming & Telegram Mini App (TMA) Seamless Wallet + Ledger Engine.
+ * Strictly tracks and enforces `tonBalance` (💎 TON) and `starsBalance` (⭐ Stars)
+ * as the sole two wallet currencies across the backend and ledger:
  *   1. authenticate
  *   2. balance
- *   3. debit      (Bet / Lottery Ticket Purchase)
- *   4. credit     (Win Payout / Deposit)
+ *   3. debit      (Bet / Lottery Ticket Purchase in TON or Stars)
+ *   4. credit     (Win Payout / Deposit in TON or Stars)
  *   5. rollback   (Refund voided / failed rounds with Tombstone protection)
- *   6. bonus      (Free bet / Loyalty / Referral credit tokens)
- *   7. reconcile  (Full mathematical audit of ledger from genesis balance)
- *
- * Features:
- * - Strict Idempotency via `transaction_uuid` and `reference_transaction_uuid`
- * - Out-of-order Rollback Tombstone protection (`tombstonedUuids`) so delayed
- *   debits arriving after a rollback are rejected without corrupting balances
- * - Browser IndexedDB + LocalStorage persistence + Backend API synchronization
+ *   6. bonus      (Free bet / Loyalty / Referral credit in TON or Stars)
+ *   7. reconcile  (Full mathematical audit of TON & Stars ledger from genesis balances)
  */
 
 import {
@@ -25,6 +20,7 @@ import {
 } from '../utils/provablyFair.ts';
 
 export type PAMTransactionType = 'DEBIT' | 'CREDIT' | 'ROLLBACK' | 'BONUS';
+export type PAMCurrency = 'TON' | 'STARS';
 
 export type PAMGameVertical =
   | 'LUCKYDROP_LOTTERY'
@@ -32,6 +28,7 @@ export type PAMGameVertical =
   | 'INSTANT_GOLDEN_COIN'
   | 'INSTANT_CRASH_X'
   | 'CRYPTO_TREASURY'
+  | 'TELEGRAM_STARS_INVOICE'
   | 'VIP_LOYALTY_BONUS'
   | 'AFFILIATE_REFERRAL';
 
@@ -44,9 +41,13 @@ export interface PAMLedgerEntry {
   transactionUuid: string;
   referenceTransactionUuid: string | null;
   type: PAMTransactionType;
-  amountUsdt: number;
-  balanceBeforeUsdt: number;
-  balanceAfterUsdt: number;
+  currency: PAMCurrency;
+  amountTon: number;
+  amountStars: number;
+  tonBalanceBefore: number;
+  tonBalanceAfter: number;
+  starsBalanceBefore: number;
+  starsBalanceAfter: number;
   status: 'COMPLETED' | 'TOMBSTONED_NOOP' | 'IDEMPOTENT_REPLAY';
   note: string;
 }
@@ -63,14 +64,22 @@ export interface PAMTombstoneRecord {
 export interface PAMReconciliationReport {
   reconciled: boolean;
   playerId: string;
-  genesisBalanceUsdt: number;
-  totalDebitsUsdt: number;
-  totalCreditsUsdt: number;
-  totalRollbacksUsdt: number;
-  totalBonusesUsdt: number;
-  computedLedgerBalanceUsdt: number;
-  actualWalletBalanceUsdt: number;
-  discrepancyUsdt: number;
+  genesisTonBalance: number;
+  genesisStarsBalance: number;
+  totalDebitsTon: number;
+  totalCreditsTon: number;
+  totalRollbacksTon: number;
+  totalBonusesTon: number;
+  computedLedgerTonBalance: number;
+  actualTonBalance: number;
+  discrepancyTon: number;
+  totalDebitsStars: number;
+  totalCreditsStars: number;
+  totalRollbacksStars: number;
+  totalBonusesStars: number;
+  computedLedgerStarsBalance: number;
+  actualStarsBalance: number;
+  discrepancyStars: number;
   ledgerEntriesCount: number;
   tombstonesCount: number;
   auditedAt: string;
@@ -80,10 +89,16 @@ export interface PAMPlayerState {
   playerId: string;
   displayName: string;
   vipTier: string;
-  currency: 'USDT';
-  genesisBalanceUsdt: number;
-  balanceUsdt: number;
-  bonusTokensUsdt: number;
+  currency: PAMCurrency;
+  tonUsdRate: number;
+  starsUsdRate: number;
+  genesisTonBalance: number;
+  genesisStarsBalance: number;
+  tonBalance: number;
+  starsBalance: number;
+  referralEarningsTon: number;
+  referralEarningsStars: number;
+  bonusTokensTon: number;
   sessionToken: string;
   authenticatedAt: string;
   seeds: ProvablyFairSeedState;
@@ -104,8 +119,12 @@ export interface PAMOperationResponse {
   idempotentReplay?: boolean;
   tombstoneBlocked?: boolean;
   error?: string;
-  balanceUsdt: number;
-  bonusTokensUsdt: number;
+  currency: PAMCurrency;
+  tonBalance: number;
+  starsBalance: number;
+  referralEarningsTon: number;
+  referralEarningsStars: number;
+  bonusTokensTon: number;
   ledgerEntry?: PAMLedgerEntry;
   reconciliation?: PAMReconciliationReport;
   seeds?: ProvablyFairSeedState;
@@ -122,13 +141,16 @@ export function generateDeterministicUuid(prefix: string = 'tx'): string {
   return `${prefix}_${rand}`;
 }
 
-function roundUsdt(val: number): number {
-  return Math.round((Number(val) + Number.EPSILON) * 100) / 100;
+function roundTon(val: number): number {
+  return Math.round((Number(val) + Number.EPSILON) * 10000) / 10000;
+}
+
+function roundStars(val: number): number {
+  return Math.max(0, Math.round(Number(val) || 0));
 }
 
 /**
- * Pure, deterministic PAM Seamless Wallet & Ledger Engine.
- * Can be instantiated on the server (backed by disk/SQLite) or on the client (backed by IndexedDB).
+ * Pure, deterministic PAM Dual-Currency (💎 TON & ⭐ Stars) Seamless Wallet & Ledger Engine.
  */
 export class PAMSeamlessWalletEngine {
   private state: PAMPlayerState;
@@ -138,24 +160,76 @@ export class PAMSeamlessWalletEngine {
       initialState?.seeds?.serverSeed ||
       '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
     const initialClientSeed = initialState?.seeds?.clientSeed || 'luckydrop_vip_client_seed_777';
-    const genesis =
-      typeof initialState?.genesisBalanceUsdt === 'number'
-        ? roundUsdt(initialState.genesisBalanceUsdt)
-        : 3030.3;
-    const startingBalance =
-      typeof initialState?.balanceUsdt === 'number'
-        ? roundUsdt(initialState.balanceUsdt)
-        : genesis;
+
+    const tonRate =
+      typeof initialState?.tonUsdRate === 'number' && initialState.tonUsdRate > 0
+        ? initialState.tonUsdRate
+        : 5.0;
+    const starsRate =
+      typeof initialState?.starsUsdRate === 'number' && initialState.starsUsdRate > 0
+        ? initialState.starsUsdRate
+        : 0.02;
+
+    const genesisTon =
+      typeof initialState?.genesisTonBalance === 'number'
+        ? roundTon(initialState.genesisTonBalance)
+        : 606.06;
+
+    const startingTon =
+      typeof initialState?.tonBalance === 'number'
+        ? roundTon(initialState.tonBalance)
+        : genesisTon;
+
+    const genesisStars =
+      typeof initialState?.genesisStarsBalance === 'number'
+        ? roundStars(initialState.genesisStarsBalance)
+        : 2500;
+
+    const startingStars =
+      typeof initialState?.starsBalance === 'number'
+        ? roundStars(initialState.starsBalance)
+        : genesisStars;
+
+    const normalizedLedger: PAMLedgerEntry[] = Array.isArray(initialState?.ledger)
+      ? initialState!.ledger.map((e) => {
+          const cur: PAMCurrency = e.currency === 'STARS' ? 'STARS' : 'TON';
+          const amtTon = typeof e.amountTon === 'number' ? roundTon(e.amountTon) : 0;
+          const amtStars = typeof e.amountStars === 'number' ? roundStars(e.amountStars) : 0;
+          const tonBefore = typeof e.tonBalanceBefore === 'number' ? roundTon(e.tonBalanceBefore) : startingTon;
+          const tonAfter = typeof e.tonBalanceAfter === 'number' ? roundTon(e.tonBalanceAfter) : startingTon;
+          const starsBefore =
+            typeof e.starsBalanceBefore === 'number' ? roundStars(e.starsBalanceBefore) : startingStars;
+          const starsAfter =
+            typeof e.starsBalanceAfter === 'number' ? roundStars(e.starsBalanceAfter) : startingStars;
+          return {
+            ...e,
+            currency: cur,
+            amountTon: amtTon,
+            amountStars: amtStars,
+            tonBalanceBefore: tonBefore,
+            tonBalanceAfter: tonAfter,
+            starsBalanceBefore: starsBefore,
+            starsBalanceAfter: starsAfter,
+          };
+        })
+      : [];
 
     this.state = {
       playerId: initialState?.playerId || 'vip-demo-user',
       displayName: initialState?.displayName || 'کامران سهرابی (VIP)',
       vipTier: initialState?.vipTier || 'DIAMOND VIP',
-      currency: 'USDT',
-      genesisBalanceUsdt: genesis,
-      balanceUsdt: startingBalance,
-      bonusTokensUsdt: roundUsdt(initialState?.bonusTokensUsdt ?? 25.0),
-      sessionToken: initialState?.sessionToken || `pam_sess_${sha256Hex(initialServerSeed).slice(0, 24)}`,
+      currency: initialState?.currency === 'STARS' ? 'STARS' : 'TON',
+      tonUsdRate: tonRate,
+      starsUsdRate: starsRate,
+      genesisTonBalance: genesisTon,
+      genesisStarsBalance: genesisStars,
+      tonBalance: startingTon,
+      starsBalance: startingStars,
+      referralEarningsTon: roundTon(initialState?.referralEarningsTon ?? 3.68),
+      referralEarningsStars: roundStars(initialState?.referralEarningsStars ?? 0),
+      bonusTokensTon: roundTon(initialState?.bonusTokensTon ?? 5.0),
+      sessionToken:
+        initialState?.sessionToken || `pam_sess_${sha256Hex(initialServerSeed).slice(0, 24)}`,
       authenticatedAt: initialState?.authenticatedAt || new Date().toISOString(),
       seeds: initialState?.seeds || {
         serverSeed: initialServerSeed,
@@ -163,8 +237,26 @@ export class PAMSeamlessWalletEngine {
         clientSeed: initialClientSeed,
         nonce: 1,
       },
-      ledger: Array.isArray(initialState?.ledger) ? [...initialState!.ledger] : [],
+      ledger: normalizedLedger,
       tombstones: initialState?.tombstones ? { ...initialState.tombstones } : {},
+    };
+  }
+
+  private buildResponse(
+    ok: boolean,
+    operation: PAMOperationResponse['operation'],
+    extra?: Partial<PAMOperationResponse>
+  ): PAMOperationResponse {
+    return {
+      ok,
+      operation,
+      currency: this.state.currency,
+      tonBalance: this.state.tonBalance,
+      starsBalance: this.state.starsBalance,
+      referralEarningsTon: this.state.referralEarningsTon,
+      referralEarningsStars: this.state.referralEarningsStars,
+      bonusTokensTon: this.state.bonusTokensTon,
+      ...extra,
     };
   }
 
@@ -173,7 +265,8 @@ export class PAMSeamlessWalletEngine {
   }
 
   public hydrateState(nextState: PAMPlayerState): void {
-    this.state = nextState;
+    const hydrated = new PAMSeamlessWalletEngine(nextState);
+    this.state = hydrated.getState();
   }
 
   // --------------------------------------------------------------------------
@@ -183,116 +276,110 @@ export class PAMSeamlessWalletEngine {
     playerId?: string;
     displayName?: string;
     vipTier?: string;
+    currency?: PAMCurrency;
   }): PAMOperationResponse {
     if (params?.playerId) this.state.playerId = params.playerId;
     if (params?.displayName) this.state.displayName = params.displayName;
     if (params?.vipTier) this.state.vipTier = params.vipTier;
+    if (params?.currency === 'TON' || params?.currency === 'STARS') {
+      this.state.currency = params.currency;
+    }
     this.state.authenticatedAt = new Date().toISOString();
 
-    return {
-      ok: true,
-      operation: 'AUTHENTICATE',
-      balanceUsdt: this.state.balanceUsdt,
-      bonusTokensUsdt: this.state.bonusTokensUsdt,
+    return this.buildResponse(true, 'AUTHENTICATE', {
       seeds: this.state.seeds,
       playerState: this.state,
-    };
+    });
   }
 
   // --------------------------------------------------------------------------
   // OPERATION 2: BALANCE
   // --------------------------------------------------------------------------
   public balance(): PAMOperationResponse {
-    return {
-      ok: true,
-      operation: 'BALANCE',
-      balanceUsdt: this.state.balanceUsdt,
-      bonusTokensUsdt: this.state.bonusTokensUsdt,
+    return this.buildResponse(true, 'BALANCE', {
       seeds: this.state.seeds,
-    };
+    });
   }
 
   // --------------------------------------------------------------------------
-  // OPERATION 3: DEBIT (Bet / Lottery Ticket Purchase)
+  // OPERATION 3: DEBIT (Bet / Lottery Ticket Purchase in TON or STARS)
   // --------------------------------------------------------------------------
   public debit(params: {
     transactionUuid: string;
     roundId: string;
     vertical: PAMGameVertical | string;
-    amountUsdt: number;
+    currency?: PAMCurrency;
+    amountTon?: number;
+    amountStars?: number;
+    amountUsdt?: number;
     note?: string;
     incrementNonce?: boolean;
   }): PAMOperationResponse {
     const txUuid = (params.transactionUuid || '').trim();
     if (!txUuid) {
-      return {
-        ok: false,
-        operation: 'DEBIT',
-        error: 'MISSING_TRANSACTION_UUID',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+      return this.buildResponse(false, 'DEBIT', { error: 'MISSING_TRANSACTION_UUID' });
     }
 
-    const amount = roundUsdt(params.amountUsdt);
-    if (amount <= 0) {
-      return {
-        ok: false,
-        operation: 'DEBIT',
-        error: 'INVALID_DEBIT_AMOUNT',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+    const activeCurrency: PAMCurrency = params.currency === 'STARS' ? 'STARS' : 'TON';
+    const rawUsdt = Number(params.amountUsdt || 0);
+
+    const debitTon =
+      activeCurrency === 'TON'
+        ? roundTon(
+            typeof params.amountTon === 'number' && params.amountTon > 0
+              ? params.amountTon
+              : rawUsdt / this.state.tonUsdRate
+          )
+        : 0;
+
+    const debitStars =
+      activeCurrency === 'STARS'
+        ? roundStars(
+            typeof params.amountStars === 'number' && params.amountStars > 0
+              ? params.amountStars
+              : rawUsdt / this.state.starsUsdRate
+          )
+        : 0;
+
+    if ((activeCurrency === 'TON' && debitTon <= 0) || (activeCurrency === 'STARS' && debitStars <= 0)) {
+      return this.buildResponse(false, 'DEBIT', { error: 'INVALID_DEBIT_AMOUNT' });
     }
 
-    // 1. Tombstone Check: Has an out-of-order ROLLBACK already tombstoned this transactionUuid?
+    // 1. Tombstone Check
     if (this.state.tombstones[txUuid]) {
-      return {
-        ok: false,
-        operation: 'DEBIT',
+      return this.buildResponse(false, 'DEBIT', {
         tombstoneBlocked: true,
         error: 'TRANSACTION_TOMBSTONED_BY_PRIOR_ROLLBACK',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+      });
     }
 
-    // 2. Strict Idempotency Check: Has this exact transactionUuid already been processed?
+    // 2. Strict Idempotency Check
     const existing = this.state.ledger.find((e) => e.transactionUuid === txUuid);
     if (existing) {
       if (existing.type !== 'DEBIT') {
-        return {
-          ok: false,
-          operation: 'DEBIT',
-          error: 'TRANSACTION_UUID_TYPE_CONFLICT',
-          balanceUsdt: this.state.balanceUsdt,
-          bonusTokensUsdt: this.state.bonusTokensUsdt,
-        };
+        return this.buildResponse(false, 'DEBIT', { error: 'TRANSACTION_UUID_TYPE_CONFLICT' });
       }
-      return {
-        ok: true,
-        operation: 'DEBIT',
+      return this.buildResponse(true, 'DEBIT', {
         idempotentReplay: true,
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
         ledgerEntry: existing,
-      };
+      });
     }
 
-    // 3. Sufficient Funds Check
-    if (this.state.balanceUsdt < amount) {
-      return {
-        ok: false,
-        operation: 'DEBIT',
-        error: 'INSUFFICIENT_BALANCE',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+    // 3. Sufficient Funds Check in Active Currency (TON or STARS)
+    if (activeCurrency === 'TON' && this.state.tonBalance < debitTon) {
+      return this.buildResponse(false, 'DEBIT', { error: 'INSUFFICIENT_BALANCE' });
+    }
+    if (activeCurrency === 'STARS' && this.state.starsBalance < debitStars) {
+      return this.buildResponse(false, 'DEBIT', { error: 'INSUFFICIENT_STARS_BALANCE' });
     }
 
-    const balanceBefore = this.state.balanceUsdt;
-    const balanceAfter = roundUsdt(balanceBefore - amount);
-    this.state.balanceUsdt = balanceAfter;
+    const tonBefore = this.state.tonBalance;
+    const starsBefore = this.state.starsBalance;
+    const tonAfter = activeCurrency === 'TON' ? roundTon(tonBefore - debitTon) : tonBefore;
+    const starsAfter = activeCurrency === 'STARS' ? roundStars(starsBefore - debitStars) : starsBefore;
+
+    this.state.tonBalance = tonAfter;
+    this.state.starsBalance = starsAfter;
 
     if (params.incrementNonce !== false) {
       this.state.seeds.nonce += 1;
@@ -307,99 +394,101 @@ export class PAMSeamlessWalletEngine {
       transactionUuid: txUuid,
       referenceTransactionUuid: null,
       type: 'DEBIT',
-      amountUsdt: amount,
-      balanceBeforeUsdt: balanceBefore,
-      balanceAfterUsdt: balanceAfter,
+      currency: activeCurrency,
+      amountTon: debitTon,
+      amountStars: debitStars,
+      tonBalanceBefore: tonBefore,
+      tonBalanceAfter: tonAfter,
+      starsBalanceBefore: starsBefore,
+      starsBalanceAfter: starsAfter,
       status: 'COMPLETED',
-      note: params.note || `Debit for ${params.vertical} (${params.roundId})`,
+      note: params.note || `Debit (${activeCurrency}) for ${params.vertical} (${params.roundId})`,
     };
 
     this.state.ledger.unshift(entry);
-    return {
-      ok: true,
-      operation: 'DEBIT',
+    return this.buildResponse(true, 'DEBIT', {
       idempotentReplay: false,
-      balanceUsdt: this.state.balanceUsdt,
-      bonusTokensUsdt: this.state.bonusTokensUsdt,
       ledgerEntry: entry,
       seeds: this.state.seeds,
-    };
+    });
   }
 
   // --------------------------------------------------------------------------
-  // OPERATION 4: CREDIT (Win Payout / Deposit Settlement)
+  // OPERATION 4: CREDIT (Win Payout / Deposit Settlement in TON or STARS)
   // --------------------------------------------------------------------------
   public credit(params: {
     transactionUuid: string;
     referenceTransactionUuid?: string | null;
     roundId: string;
     vertical: PAMGameVertical | string;
-    amountUsdt: number;
+    currency?: PAMCurrency;
+    amountTon?: number;
+    amountStars?: number;
+    amountUsdt?: number;
     note?: string;
     allowZeroWinRecord?: boolean;
   }): PAMOperationResponse {
     const txUuid = (params.transactionUuid || '').trim();
     if (!txUuid) {
-      return {
-        ok: false,
-        operation: 'CREDIT',
-        error: 'MISSING_TRANSACTION_UUID',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+      return this.buildResponse(false, 'CREDIT', { error: 'MISSING_TRANSACTION_UUID' });
     }
 
-    const amount = roundUsdt(params.amountUsdt);
-    if (amount < 0 || (amount === 0 && !params.allowZeroWinRecord)) {
-      return {
-        ok: false,
-        operation: 'CREDIT',
-        error: 'INVALID_CREDIT_AMOUNT',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+    const activeCurrency: PAMCurrency = params.currency === 'STARS' ? 'STARS' : 'TON';
+    const rawUsdt = Number(params.amountUsdt || 0);
+
+    const creditTon =
+      activeCurrency === 'TON'
+        ? roundTon(
+            typeof params.amountTon === 'number' && params.amountTon >= 0
+              ? params.amountTon
+              : rawUsdt / this.state.tonUsdRate
+          )
+        : 0;
+
+    const creditStars =
+      activeCurrency === 'STARS'
+        ? roundStars(
+            typeof params.amountStars === 'number' && params.amountStars >= 0
+              ? params.amountStars
+              : rawUsdt / this.state.starsUsdRate
+          )
+        : 0;
+
+    if (
+      (activeCurrency === 'TON' && (creditTon < 0 || (creditTon === 0 && !params.allowZeroWinRecord))) ||
+      (activeCurrency === 'STARS' && (creditStars < 0 || (creditStars === 0 && !params.allowZeroWinRecord)))
+    ) {
+      return this.buildResponse(false, 'CREDIT', { error: 'INVALID_CREDIT_AMOUNT' });
     }
 
     // 1. Strict Idempotency Check
     const existing = this.state.ledger.find((e) => e.transactionUuid === txUuid);
     if (existing) {
       if (existing.type !== 'CREDIT') {
-        return {
-          ok: false,
-          operation: 'CREDIT',
-          error: 'TRANSACTION_UUID_TYPE_CONFLICT',
-          balanceUsdt: this.state.balanceUsdt,
-          bonusTokensUsdt: this.state.bonusTokensUsdt,
-        };
+        return this.buildResponse(false, 'CREDIT', { error: 'TRANSACTION_UUID_TYPE_CONFLICT' });
       }
-      return {
-        ok: true,
-        operation: 'CREDIT',
+      return this.buildResponse(true, 'CREDIT', {
         idempotentReplay: true,
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
         ledgerEntry: existing,
-      };
+      });
     }
 
-    // 2. Reference Transaction Validation (if linked to a prior DEBIT bet/ticket)
+    // 2. Reference Transaction Validation
     const refUuid = params.referenceTransactionUuid ? params.referenceTransactionUuid.trim() : null;
-    if (refUuid) {
-      if (this.state.tombstones[refUuid]) {
-        return {
-          ok: false,
-          operation: 'CREDIT',
-          tombstoneBlocked: true,
-          error: 'REFERENCED_DEBIT_WAS_ROLLED_BACK',
-          balanceUsdt: this.state.balanceUsdt,
-          bonusTokensUsdt: this.state.bonusTokensUsdt,
-        };
-      }
+    if (refUuid && this.state.tombstones[refUuid]) {
+      return this.buildResponse(false, 'CREDIT', {
+        tombstoneBlocked: true,
+        error: 'REFERENCED_DEBIT_WAS_ROLLED_BACK',
+      });
     }
 
-    const balanceBefore = this.state.balanceUsdt;
-    const balanceAfter = roundUsdt(balanceBefore + amount);
-    this.state.balanceUsdt = balanceAfter;
+    const tonBefore = this.state.tonBalance;
+    const starsBefore = this.state.starsBalance;
+    const tonAfter = activeCurrency === 'TON' ? roundTon(tonBefore + creditTon) : tonBefore;
+    const starsAfter = activeCurrency === 'STARS' ? roundStars(starsBefore + creditStars) : starsBefore;
+
+    this.state.tonBalance = tonAfter;
+    this.state.starsBalance = starsAfter;
 
     const entry: PAMLedgerEntry = {
       id: Date.now() + this.state.ledger.length,
@@ -410,22 +499,22 @@ export class PAMSeamlessWalletEngine {
       transactionUuid: txUuid,
       referenceTransactionUuid: refUuid,
       type: 'CREDIT',
-      amountUsdt: amount,
-      balanceBeforeUsdt: balanceBefore,
-      balanceAfterUsdt: balanceAfter,
+      currency: activeCurrency,
+      amountTon: creditTon,
+      amountStars: creditStars,
+      tonBalanceBefore: tonBefore,
+      tonBalanceAfter: tonAfter,
+      starsBalanceBefore: starsBefore,
+      starsBalanceAfter: starsAfter,
       status: 'COMPLETED',
-      note: params.note || `Credit win/settlement for ${params.vertical} (${params.roundId})`,
+      note: params.note || `Credit (${activeCurrency}) for ${params.vertical} (${params.roundId})`,
     };
 
     this.state.ledger.unshift(entry);
-    return {
-      ok: true,
-      operation: 'CREDIT',
+    return this.buildResponse(true, 'CREDIT', {
       idempotentReplay: false,
-      balanceUsdt: this.state.balanceUsdt,
-      bonusTokensUsdt: this.state.bonusTokensUsdt,
       ledgerEntry: entry,
-    };
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -442,40 +531,28 @@ export class PAMSeamlessWalletEngine {
     const refUuid = (params.referenceTransactionUuid || '').trim();
 
     if (!txUuid || !refUuid) {
-      return {
-        ok: false,
-        operation: 'ROLLBACK',
+      return this.buildResponse(false, 'ROLLBACK', {
         error: 'MISSING_ROLLBACK_OR_REFERENCE_UUID',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+      });
     }
 
-    // 1. Idempotency: Has this rollback transactionUuid or referenceTransactionUuid already been rolled back?
     const existingRollback = this.state.ledger.find(
       (e) =>
         e.type === 'ROLLBACK' &&
         (e.transactionUuid === txUuid || e.referenceTransactionUuid === refUuid)
     );
     if (existingRollback) {
-      return {
-        ok: true,
-        operation: 'ROLLBACK',
+      return this.buildResponse(true, 'ROLLBACK', {
         idempotentReplay: true,
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
         ledgerEntry: existingRollback,
-      };
+      });
     }
 
-    // 2. Look up the original DEBIT entry
     const originalDebit = this.state.ledger.find(
       (e) => e.transactionUuid === refUuid && e.type === 'DEBIT'
     );
 
     if (!originalDebit) {
-      // Out-of-order arrival! The DEBIT hasn't arrived yet.
-      // Register a preemptive Tombstone so that if the delayed DEBIT arrives later, it is blocked!
       this.state.tombstones[refUuid] = {
         referenceTransactionUuid: refUuid,
         rollbackTransactionUuid: txUuid,
@@ -494,9 +571,13 @@ export class PAMSeamlessWalletEngine {
         transactionUuid: txUuid,
         referenceTransactionUuid: refUuid,
         type: 'ROLLBACK',
-        amountUsdt: 0,
-        balanceBeforeUsdt: this.state.balanceUsdt,
-        balanceAfterUsdt: this.state.balanceUsdt,
+        currency: 'TON',
+        amountTon: 0,
+        amountStars: 0,
+        tonBalanceBefore: this.state.tonBalance,
+        tonBalanceAfter: this.state.tonBalance,
+        starsBalanceBefore: this.state.starsBalance,
+        starsBalanceAfter: this.state.starsBalance,
         status: 'TOMBSTONED_NOOP',
         note:
           params.note ||
@@ -504,22 +585,24 @@ export class PAMSeamlessWalletEngine {
       };
 
       this.state.ledger.unshift(tombstoneEntry);
-      return {
-        ok: true,
-        operation: 'ROLLBACK',
+      return this.buildResponse(true, 'ROLLBACK', {
         idempotentReplay: false,
         tombstoneBlocked: true,
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
         ledgerEntry: tombstoneEntry,
-      };
+      });
     }
 
-    // 3. Original DEBIT exists -> refund exact debited amount and tombstone refUuid
-    const refundAmount = roundUsdt(originalDebit.amountUsdt);
-    const balanceBefore = this.state.balanceUsdt;
-    const balanceAfter = roundUsdt(balanceBefore + refundAmount);
-    this.state.balanceUsdt = balanceAfter;
+    const refundCurrency: PAMCurrency = originalDebit.currency === 'STARS' ? 'STARS' : 'TON';
+    const refundTon = refundCurrency === 'TON' ? roundTon(originalDebit.amountTon) : 0;
+    const refundStars = refundCurrency === 'STARS' ? roundStars(originalDebit.amountStars) : 0;
+
+    const tonBefore = this.state.tonBalance;
+    const starsBefore = this.state.starsBalance;
+    const tonAfter = refundCurrency === 'TON' ? roundTon(tonBefore + refundTon) : tonBefore;
+    const starsAfter = refundCurrency === 'STARS' ? roundStars(starsBefore + refundStars) : starsBefore;
+
+    this.state.tonBalance = tonAfter;
+    this.state.starsBalance = starsAfter;
 
     this.state.tombstones[refUuid] = {
       referenceTransactionUuid: refUuid,
@@ -539,77 +622,92 @@ export class PAMSeamlessWalletEngine {
       transactionUuid: txUuid,
       referenceTransactionUuid: refUuid,
       type: 'ROLLBACK',
-      amountUsdt: refundAmount,
-      balanceBeforeUsdt: balanceBefore,
-      balanceAfterUsdt: balanceAfter,
+      currency: refundCurrency,
+      amountTon: refundTon,
+      amountStars: refundStars,
+      tonBalanceBefore: tonBefore,
+      tonBalanceAfter: tonAfter,
+      starsBalanceBefore: starsBefore,
+      starsBalanceAfter: starsAfter,
       status: 'COMPLETED',
       note: params.note || `Rollback refund of Debit ${refUuid}`,
     };
 
     this.state.ledger.unshift(rollbackEntry);
-    return {
-      ok: true,
-      operation: 'ROLLBACK',
+    return this.buildResponse(true, 'ROLLBACK', {
       idempotentReplay: false,
-      balanceUsdt: this.state.balanceUsdt,
-      bonusTokensUsdt: this.state.bonusTokensUsdt,
       ledgerEntry: rollbackEntry,
-    };
+    });
   }
 
   // --------------------------------------------------------------------------
-  // OPERATION 6: BONUS (Free Bet / Loyalty Chest / Referral Credit)
+  // OPERATION 6: BONUS (Free Bet / Loyalty Chest / Referral Credit in TON or STARS)
   // --------------------------------------------------------------------------
   public bonus(params: {
     transactionUuid: string;
     roundId: string;
     vertical: PAMGameVertical | string;
-    amountUsdt: number;
+    currency?: PAMCurrency;
+    amountTon?: number;
+    amountStars?: number;
+    amountUsdt?: number;
     creditToRealBalance?: boolean;
     note?: string;
   }): PAMOperationResponse {
     const txUuid = (params.transactionUuid || '').trim();
     if (!txUuid) {
-      return {
-        ok: false,
-        operation: 'BONUS',
-        error: 'MISSING_TRANSACTION_UUID',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+      return this.buildResponse(false, 'BONUS', { error: 'MISSING_TRANSACTION_UUID' });
     }
 
-    const amount = roundUsdt(params.amountUsdt);
-    if (amount <= 0) {
-      return {
-        ok: false,
-        operation: 'BONUS',
-        error: 'INVALID_BONUS_AMOUNT',
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
-      };
+    const activeCurrency: PAMCurrency =
+      params.currency === 'STARS' || params.vertical === 'TELEGRAM_STARS_INVOICE' ? 'STARS' : 'TON';
+    const rawUsdt = Number(params.amountUsdt || 0);
+
+    const bonusTon =
+      activeCurrency === 'TON'
+        ? roundTon(
+            typeof params.amountTon === 'number' && params.amountTon > 0
+              ? params.amountTon
+              : rawUsdt / this.state.tonUsdRate
+          )
+        : 0;
+
+    const bonusStars =
+      activeCurrency === 'STARS'
+        ? roundStars(
+            typeof params.amountStars === 'number' && params.amountStars > 0
+              ? params.amountStars
+              : rawUsdt / this.state.starsUsdRate
+          )
+        : 0;
+
+    if ((activeCurrency === 'TON' && bonusTon <= 0) || (activeCurrency === 'STARS' && bonusStars <= 0)) {
+      return this.buildResponse(false, 'BONUS', { error: 'INVALID_BONUS_AMOUNT' });
     }
 
     const existing = this.state.ledger.find((e) => e.transactionUuid === txUuid);
     if (existing) {
-      return {
-        ok: true,
-        operation: 'BONUS',
+      return this.buildResponse(true, 'BONUS', {
         idempotentReplay: true,
-        balanceUsdt: this.state.balanceUsdt,
-        bonusTokensUsdt: this.state.bonusTokensUsdt,
         ledgerEntry: existing,
-      };
+      });
     }
 
-    const balanceBefore = this.state.balanceUsdt;
     const creditReal = params.creditToRealBalance !== false;
-    const balanceAfter = creditReal ? roundUsdt(balanceBefore + amount) : balanceBefore;
+    const tonBefore = this.state.tonBalance;
+    const starsBefore = this.state.starsBalance;
 
-    if (creditReal) {
-      this.state.balanceUsdt = balanceAfter;
+    let tonAfter = tonBefore;
+    let starsAfter = starsBefore;
+
+    if (activeCurrency === 'STARS') {
+      starsAfter = roundStars(starsBefore + bonusStars);
+      this.state.starsBalance = starsAfter;
+    } else if (creditReal) {
+      tonAfter = roundTon(tonBefore + bonusTon);
+      this.state.tonBalance = tonAfter;
     } else {
-      this.state.bonusTokensUsdt = roundUsdt(this.state.bonusTokensUsdt + amount);
+      this.state.bonusTokensTon = roundTon(this.state.bonusTokensTon + bonusTon);
     }
 
     const entry: PAMLedgerEntry = {
@@ -621,82 +719,109 @@ export class PAMSeamlessWalletEngine {
       transactionUuid: txUuid,
       referenceTransactionUuid: null,
       type: 'BONUS',
-      amountUsdt: amount,
-      balanceBeforeUsdt: balanceBefore,
-      balanceAfterUsdt: balanceAfter,
+      currency: activeCurrency,
+      amountTon: bonusTon,
+      amountStars: bonusStars,
+      tonBalanceBefore: tonBefore,
+      tonBalanceAfter: tonAfter,
+      starsBalanceBefore: starsBefore,
+      starsBalanceAfter: starsAfter,
       status: 'COMPLETED',
       note: params.note || `VIP Bonus / Loyalty Credit (${params.roundId})`,
     };
 
     this.state.ledger.unshift(entry);
-    return {
-      ok: true,
-      operation: 'BONUS',
+    return this.buildResponse(true, 'BONUS', {
       idempotentReplay: false,
-      balanceUsdt: this.state.balanceUsdt,
-      bonusTokensUsdt: this.state.bonusTokensUsdt,
       ledgerEntry: entry,
-    };
+    });
   }
 
   // --------------------------------------------------------------------------
-  // OPERATION 7: RECONCILE (Mathematical Audit of Ledger from Genesis)
+  // OPERATION 7: RECONCILE (Mathematical Audit of TON & Stars Ledger from Genesis)
   // --------------------------------------------------------------------------
   public reconcile(): PAMOperationResponse {
-    let totalDebitsUsdt = 0;
-    let totalCreditsUsdt = 0;
-    let totalRollbacksUsdt = 0;
-    let totalBonusesUsdt = 0;
+    let totalDebitsTon = 0;
+    let totalCreditsTon = 0;
+    let totalRollbacksTon = 0;
+    let totalBonusesTon = 0;
+
+    let totalDebitsStars = 0;
+    let totalCreditsStars = 0;
+    let totalRollbacksStars = 0;
+    let totalBonusesStars = 0;
 
     for (const entry of this.state.ledger) {
-      if (entry.type === 'DEBIT') {
-        totalDebitsUsdt = roundUsdt(totalDebitsUsdt + entry.amountUsdt);
-      } else if (entry.type === 'CREDIT') {
-        totalCreditsUsdt = roundUsdt(totalCreditsUsdt + entry.amountUsdt);
-      } else if (entry.type === 'ROLLBACK') {
-        totalRollbacksUsdt = roundUsdt(totalRollbacksUsdt + entry.amountUsdt);
-      } else if (entry.type === 'BONUS') {
-        // Only count bonuses that changed balanceAfterUsdt
-        if (entry.balanceAfterUsdt > entry.balanceBeforeUsdt) {
-          totalBonusesUsdt = roundUsdt(totalBonusesUsdt + entry.amountUsdt);
+      if (entry.currency === 'STARS') {
+        if (entry.type === 'DEBIT') {
+          totalDebitsStars = roundStars(totalDebitsStars + entry.amountStars);
+        } else if (entry.type === 'CREDIT') {
+          totalCreditsStars = roundStars(totalCreditsStars + entry.amountStars);
+        } else if (entry.type === 'ROLLBACK') {
+          totalRollbacksStars = roundStars(totalRollbacksStars + entry.amountStars);
+        } else if (entry.type === 'BONUS' && entry.starsBalanceAfter > entry.starsBalanceBefore) {
+          totalBonusesStars = roundStars(totalBonusesStars + entry.amountStars);
+        }
+      } else {
+        if (entry.type === 'DEBIT') {
+          totalDebitsTon = roundTon(totalDebitsTon + entry.amountTon);
+        } else if (entry.type === 'CREDIT') {
+          totalCreditsTon = roundTon(totalCreditsTon + entry.amountTon);
+        } else if (entry.type === 'ROLLBACK') {
+          totalRollbacksTon = roundTon(totalRollbacksTon + entry.amountTon);
+        } else if (entry.type === 'BONUS' && entry.tonBalanceAfter > entry.tonBalanceBefore) {
+          totalBonusesTon = roundTon(totalBonusesTon + entry.amountTon);
         }
       }
     }
 
-    const computedLedgerBalanceUsdt = roundUsdt(
-      this.state.genesisBalanceUsdt -
-        totalDebitsUsdt +
-        totalCreditsUsdt +
-        totalRollbacksUsdt +
-        totalBonusesUsdt
+    const computedLedgerTonBalance = roundTon(
+      this.state.genesisTonBalance -
+        totalDebitsTon +
+        totalCreditsTon +
+        totalRollbacksTon +
+        totalBonusesTon
     );
 
-    const discrepancyUsdt = roundUsdt(this.state.balanceUsdt - computedLedgerBalanceUsdt);
-    const reconciled = Math.abs(discrepancyUsdt) < 0.001;
+    const computedLedgerStarsBalance = roundStars(
+      this.state.genesisStarsBalance -
+        totalDebitsStars +
+        totalCreditsStars +
+        totalRollbacksStars +
+        totalBonusesStars
+    );
+
+    const discrepancyTon = roundTon(this.state.tonBalance - computedLedgerTonBalance);
+    const discrepancyStars = roundStars(this.state.starsBalance - computedLedgerStarsBalance);
+    const reconciled = Math.abs(discrepancyTon) < 0.01 && Math.abs(discrepancyStars) === 0;
 
     const report: PAMReconciliationReport = {
       reconciled,
       playerId: this.state.playerId,
-      genesisBalanceUsdt: this.state.genesisBalanceUsdt,
-      totalDebitsUsdt,
-      totalCreditsUsdt,
-      totalRollbacksUsdt,
-      totalBonusesUsdt,
-      computedLedgerBalanceUsdt,
-      actualWalletBalanceUsdt: this.state.balanceUsdt,
-      discrepancyUsdt,
+      genesisTonBalance: this.state.genesisTonBalance,
+      genesisStarsBalance: this.state.genesisStarsBalance,
+      totalDebitsTon,
+      totalCreditsTon,
+      totalRollbacksTon,
+      totalBonusesTon,
+      computedLedgerTonBalance,
+      actualTonBalance: this.state.tonBalance,
+      discrepancyTon,
+      totalDebitsStars,
+      totalCreditsStars,
+      totalRollbacksStars,
+      totalBonusesStars,
+      computedLedgerStarsBalance,
+      actualStarsBalance: this.state.starsBalance,
+      discrepancyStars,
       ledgerEntriesCount: this.state.ledger.length,
       tombstonesCount: Object.keys(this.state.tombstones).length,
       auditedAt: new Date().toISOString(),
     };
 
-    return {
-      ok: reconciled,
-      operation: 'RECONCILE',
-      balanceUsdt: this.state.balanceUsdt,
-      bonusTokensUsdt: this.state.bonusTokensUsdt,
+    return this.buildResponse(reconciled, 'RECONCILE', {
       reconciliation: report,
-    };
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -735,10 +860,10 @@ export class PAMSeamlessWalletEngine {
 // BROWSER INDEXEDDB + LOCALSTORAGE PERSISTENCE LAYER
 // ============================================================================
 
-const IDB_DB_NAME = 'LuckyDrop_PAM_Database_v1';
+const IDB_DB_NAME = 'LuckyDrop_PAM_Database_v2';
 const IDB_STORE_NAME = 'pam_wallet_state';
-const IDB_KEY = 'primary_player_pam_state';
-const LS_FALLBACK_KEY = 'luckydrop_pam_wallet_state_v1';
+const IDB_KEY = 'primary_player_pam_state_ton_stars';
+const LS_FALLBACK_KEY = 'luckydrop_pam_wallet_state_ton_stars_v2';
 
 export async function savePAMStateToIndexedDB(state: PAMPlayerState): Promise<void> {
   if (typeof window === 'undefined') return;
@@ -818,7 +943,7 @@ export async function loadPAMStateFromIndexedDB(): Promise<PAMPlayerState | null
         resolve(null);
       }
     });
-    if (fromIdb && typeof fromIdb.balanceUsdt === 'number') {
+    if (fromIdb && typeof fromIdb.tonBalance === 'number') {
       return fromIdb;
     }
   }

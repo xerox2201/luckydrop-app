@@ -7,6 +7,8 @@ import {
   formatCurrency,
   truncateTonAddress,
   usdtToTmaCurrency,
+  TON_CONNECT_STANDARD_WALLETS,
+  buildTonConnectAutoTransferPayload,
 } from '../utils/telegramTma.ts';
 import { generateDeterministicUuid } from '../services/pamWalletEngine.ts';
 
@@ -18,6 +20,7 @@ export const TmaWalletView: React.FC = () => {
     starsBalance,
     tonUsdRate,
     starsUsdRate,
+    refreshPriceOracleNow,
     telegramUser,
     connectedTonWallet,
     connectTonWalletOneTap,
@@ -37,6 +40,7 @@ export const TmaWalletView: React.FC = () => {
     isTelegramAdmin,
     isAdminPreviewEnabled,
     setIsAdminPreviewEnabled,
+    adminTonWalletAddress,
   } = useLottery();
 
   const [subTab, setSubTab] = useState<'DEPOSIT' | 'WITHDRAW' | 'LEDGER'>('DEPOSIT');
@@ -142,14 +146,22 @@ export const TmaWalletView: React.FC = () => {
         data-testid="my-wallet-liquid-header"
         className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex flex-col gap-4"
       >
-        {/* Row 1: Title & Reconcile Badge (Max 2 data points) */}
+        {/* Row 1: Title & Live TON Oracle Rate Badge */}
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-base font-bold tracking-wide text-white">
-            کیف پول Web3 (TON &amp; Stars)
+            کیف پول اتوماتیک Web3 (TON &amp; Stars)
           </h1>
-          <span className="text-[11px] font-medium text-purple-300/50 tabular-nums">
-            {pamReconciliation?.reconciled !== false ? '✓ PAM Verified' : 'Audit'}
-          </span>
+          <button
+            type="button"
+            data-testid="wallet-live-ton-rate-btn"
+            onClick={() => refreshPriceOracleNow()}
+            className="px-2.5 py-1 rounded-full bg-[#070510]/90 border border-[#00f59b]/35 text-[11px] font-mono font-bold text-[#00f59b] flex items-center gap-1.5 cursor-pointer tabular-nums"
+            dir="ltr"
+            title="Live TON/USD Spot Rate (Click to Sync)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00f59b] animate-pulse" />
+            <span>1 TON = ${tonUsdRate.toFixed(2)}</span>
+          </button>
         </div>
 
         {/* Active Currency Hero Display (Tier 1 Typography) */}
@@ -245,18 +257,24 @@ export const TmaWalletView: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2" dir="ltr">
-              {(['Tonkeeper', '@wallet', 'MyTonWallet'] as const).map((w) => (
-                <button
-                  key={w}
-                  type="button"
-                  data-testid={`ton-connect-${w}`}
-                  onClick={() => handleOneTapTonConnect(w)}
-                  className="h-10 rounded-xl bg-[#070510]/90 hover:bg-purple-600/25 border border-purple-500/25 text-xs font-semibold text-purple-200/80 hover:text-white transition-colors cursor-pointer"
-                >
-                  💎 {w}
-                </button>
-              ))}
+            <div className="space-y-2">
+              <div className="text-[11px] text-purple-300/75 font-medium">
+                اتصال اتوماتیک کیف پول‌های استاندارد شبکه TON (بدون ولت داخلی تلگرام):
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" dir="ltr">
+                {TON_CONNECT_STANDARD_WALLETS.map((w) => (
+                  <button
+                    key={w.id}
+                    type="button"
+                    data-testid={`ton-connect-${w.name.split(' ')[0]}`}
+                    onClick={() => handleOneTapTonConnect(w.name)}
+                    className="h-10 px-2.5 rounded-xl bg-[#070510]/90 hover:bg-purple-600/25 border border-purple-500/25 text-[11px] font-semibold text-purple-200/90 hover:text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5 truncate"
+                  >
+                    <span>{w.icon}</span>
+                    <span className="truncate">{w.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -349,6 +367,38 @@ export const TmaWalletView: React.FC = () => {
               ))}
             </div>
 
+            {/* Custom TON Deposit Amount + Live USD Valuation */}
+            <div className="flex items-center justify-between gap-2 rounded-xl bg-[#070510]/90 border border-purple-500/20 px-3 py-2" dir="ltr">
+              <div className="flex items-center gap-2 flex-1">
+                <span className="text-xs font-bold text-purple-300">💎 TON:</span>
+                <input
+                  type="number"
+                  min={0.1}
+                  step="any"
+                  value={tonDepositAmount}
+                  onChange={(e) => setTonDepositAmount(Math.max(0.1, Number(e.target.value) || 0.1))}
+                  className="w-full bg-transparent text-sm font-mono font-bold text-white focus:outline-none tabular-nums"
+                />
+              </div>
+              <span className="text-[11px] font-mono text-[#00f59b] tabular-nums">
+                ≈ ${(tonDepositAmount * tonUsdRate).toFixed(2)} USD
+              </span>
+            </div>
+
+            {connectedTonWallet && (
+              <div className="rounded-xl bg-[#070510]/70 border border-purple-500/15 px-3 py-2 text-[10px] font-mono text-purple-300/70 flex items-center justify-between gap-2" dir="ltr">
+                <span className="truncate">
+                  Auto BOC: {buildTonConnectAutoTransferPayload({
+                    recipientVaultAddress: adminTonWalletAddress || 'UQLuckyDropVaultHotWallet2026TON',
+                    amountTon: tonDepositAmount,
+                    commentMemo: userMemo,
+                    walletProvider: connectedTonWallet.provider,
+                  }).nanoTon} nanoTON
+                </span>
+                <span className="text-[#00f59b] shrink-0">Memo: {userMemo}</span>
+              </div>
+            )}
+
             <button
               type="button"
               data-testid="confirm-ton-deposit-btn"
@@ -357,8 +407,8 @@ export const TmaWalletView: React.FC = () => {
             >
               <span>
                 {connectedTonWallet
-                  ? `💎 واریز آنی +${formatCurrency(tonDepositAmount, 'TON')} از کیف پول متصل`
-                  : '💎 اتصال کیف پول TON برای واریز'}
+                  ? `💎 واریز اتوماتیک +${formatCurrency(tonDepositAmount, 'TON')} با ${connectedTonWallet.provider}`
+                  : '💎 اتصال کیف پول استاندارد TON برای واریز اتوماتیک'}
               </span>
             </button>
           </div>
@@ -569,12 +619,8 @@ export const TmaWalletView: React.FC = () => {
             <div className="flex flex-col gap-2 max-h-72 overflow-y-auto custom-scroll" dir="ltr">
               {pamLedger.slice(0, 12).map((row) => {
                 const isPos = row.type !== 'DEBIT';
-                const convertedAmt = usdtToTmaCurrency(
-                  row.amountUsdt,
-                  activeTmaCurrency,
-                  tonUsdRate,
-                  starsUsdRate
-                );
+                const rowCurrency = row.currency === 'STARS' ? 'STARS' : 'TON';
+                const rowAmt = rowCurrency === 'STARS' ? row.amountStars : row.amountTon;
                 return (
                   <div
                     key={row.transactionUuid}
@@ -594,7 +640,7 @@ export const TmaWalletView: React.FC = () => {
                       }`}
                     >
                       {isPos ? '+' : '-'}
-                      {formatCurrency(convertedAmt, activeTmaCurrency)}
+                      {formatCurrency(rowAmt, rowCurrency)}
                     </div>
                   </div>
                 );

@@ -566,7 +566,142 @@ export type InstantMiniGameId =
   | 'GOLDEN_COIN'
   | 'CRASH_X'
   | 'MINES'
-  | 'SCRATCH';
+  | 'SCRATCH'
+  | 'TOWER_3D'
+  | 'WHEEL_3D'
+  | 'HILO_3D';
+
+export type TowerDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
+
+/**
+ * Minimum bet in USDT (25 USDT = 5.00 TON) required to mint an instant $5.00 (1 TON) Free Lottery Ticket
+ * directly on a single round without violating the 100% Zero-Loss House Edge equation.
+ * Below this threshold, landing on a golden trigger awards proportional Turnover XP toward a Free Ticket!
+ */
+export const ZERO_LOSS_MIN_BET_USDT_FOR_INSTANT_TICKET = 25.0;
+
+/**
+ * Calculates the Zero-Loss Turnover XP earned on any mini-game wager.
+ * - Base XP: 1 XP per 1 TON ($5 USDT) wagered (minimum 1 XP per real round)
+ * - Golden Slot Trigger Boost: +15 XP to +50 XP depending on wager size
+ * - Every 100 XP (representing 100 TON cumulative turnover = ~1.5 TON house edge profit) unlocks 1 Free 1.00 TON Ticket!
+ */
+export function calculateZeroLossTurnoverXp(betAmountUsdt: number, hitGoldenSlot: boolean): {
+  xpEarned: number;
+  qualifiesForInstantTicket: boolean;
+} {
+  const safeBet = Math.max(0, Number(betAmountUsdt) || 0);
+  const baseXp = Math.max(1, Math.min(50, Math.round(safeBet / 2.5)));
+  const bonusXp = hitGoldenSlot ? Math.max(15, Math.min(60, Math.round(safeBet * 2))) : 0;
+  return {
+    xpEarned: baseXp + bonusXp,
+    qualifiesForInstantTicket: hitGoldenSlot && safeBet >= ZERO_LOSS_MIN_BET_USDT_FOR_INSTANT_TICKET,
+  };
+}
+
+/**
+ * Calculates the 98% RTP Dragon/Crystal Tower multiplier at a given floor (1..8).
+ * - EASY: 3 safe out of 4 columns per floor -> (4/3)^floor * 0.98
+ * - MEDIUM: 2 safe out of 3 columns per floor -> (3/2)^floor * 0.98
+ * - HARD: 1 safe out of 3 columns per floor -> (3/1)^floor * 0.98
+ */
+export function calculateTowerStepMultiplier(difficulty: TowerDifficulty, floorsCleared: number): number {
+  const safeFloors = Math.max(0, Math.min(8, Math.floor(floorsCleared || 0)));
+  if (safeFloors === 0) return 1.0;
+  const stepRatio = difficulty === 'EASY' ? 4 / 3 : difficulty === 'MEDIUM' ? 3 / 2 : 3 / 1;
+  const raw = 0.98 * Math.pow(stepRatio, safeFloors);
+  return Number(raw.toFixed(2));
+}
+
+/**
+ * Deterministically derives the trap column index for each of the 8 floors in Tower Rush 3D.
+ */
+export function deriveProvablyFairTowerBoard(params: {
+  serverSeed: string;
+  clientSeed: string;
+  nonce: number;
+  difficulty: TowerDifficulty;
+}): {
+  hmacHex: string;
+  first52BitHex: string;
+  uniformFloatX: number;
+  trapColumnsPerFloor: number[];
+  colsCount: number;
+} {
+  const cleanServerSeed = params.serverSeed.trim();
+  const cleanClientSeed = params.clientSeed.trim() || 'luckydrop_client_seed';
+  const safeNonce = Math.max(0, Math.floor(params.nonce || 0));
+  const colsCount = params.difficulty === 'EASY' ? 4 : 3;
+
+  const message = `${cleanClientSeed}:${safeNonce}:TOWER_3D:${params.difficulty}`;
+  const hmacHex = hmacSha256Hex(cleanServerSeed, message);
+  const { first52BitHex, uniformFloatX } = hmacTo52BitUniformFloat(hmacHex);
+
+  const trapColumnsPerFloor: number[] = [];
+  for (let floor = 0; floor < 8; floor++) {
+    const byteVal = Number.parseInt(hmacHex.slice(floor * 2, floor * 2 + 2), 16) || floor;
+    trapColumnsPerFloor.push(byteVal % colsCount);
+  }
+
+  return {
+    hmacHex,
+    first52BitHex,
+    uniformFloatX,
+    trapColumnsPerFloor,
+    colsCount,
+  };
+}
+
+export type WheelRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export interface WheelSegmentSpec {
+  index: number;
+  multiplier: number;
+  color: string;
+  label: string;
+}
+
+export const WHEEL_SEGMENTS_16: Record<WheelRiskLevel, number[]> = {
+  LOW: [1.5, 1.2, 1.2, 0, 1.5, 1.2, 2.0, 0, 1.5, 1.2, 1.2, 0, 1.5, 1.2, 3.0, 0.5],
+  MEDIUM: [2.0, 0, 1.5, 0, 3.0, 0, 1.5, 0, 5.0, 0, 1.5, 0, 2.0, 0, 10.0, 0],
+  HIGH: [0, 0, 0, 5.0, 0, 0, 0, 10.0, 0, 0, 0, 0, 0, 0, 0, 50.0],
+};
+
+export function deriveProvablyFairWheelSpin(params: {
+  serverSeed: string;
+  clientSeed: string;
+  nonce: number;
+  risk: 'LOW' | 'MEDIUM' | 'HIGH';
+}): {
+  hmacHex: string;
+  first52BitHex: string;
+  uniformFloatX: number;
+  segmentIndex: number;
+  multiplier: number;
+  bonusTicketSlot: boolean;
+} {
+  const cleanServerSeed = params.serverSeed.trim();
+  const cleanClientSeed = params.clientSeed.trim() || 'luckydrop_client_seed';
+  const safeNonce = Math.max(0, Math.floor(params.nonce || 0));
+  const safeRisk = params.risk === 'LOW' || params.risk === 'HIGH' ? params.risk : 'MEDIUM';
+
+  const message = `${cleanServerSeed ? cleanClientSeed : 'seed'}:${safeNonce}:WHEEL_3D:${safeRisk}`;
+  const hmacHex = hmacSha256Hex(cleanServerSeed, message);
+  const { first52BitHex, uniformFloatX } = hmacTo52BitUniformFloat(hmacHex);
+
+  const segments = WHEEL_SEGMENTS_16[safeRisk];
+  const segmentIndex = Math.min(segments.length - 1, Math.floor(uniformFloatX * segments.length));
+  const multiplier = segments[segmentIndex] ?? 0;
+
+  return {
+    hmacHex,
+    first52BitHex,
+    uniformFloatX,
+    segmentIndex,
+    multiplier,
+    bonusTicketSlot: multiplier >= 10,
+  };
+}
 
 export type PlinkoRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 export type PlinkoRowCount = 8 | 12 | 16;
@@ -1069,6 +1204,9 @@ export interface MiniGameEvaluationResult {
   // Scratch-specific metadata
   scratchCells?: ScratchCardCell[];
   scratchTierName?: string;
+  // Wheel & Hi-Lo 3D specific metadata
+  wheelSegmentIndex?: number;
+  hiloNextCard?: number;
 }
 
 /**
@@ -1092,11 +1230,137 @@ export function evaluateProvablyFairMiniGame(params: {
   minesCount?: number;
   minesRevealedSafeCount?: number;
   minesHitBomb?: boolean;
+  towerDifficulty?: TowerDifficulty;
+  towerFloorsCleared?: number;
+  towerHitTrap?: boolean;
+  wheelRisk?: 'LOW' | 'MEDIUM' | 'HIGH';
+  hiloMultiplier?: number;
+  hiloWon?: boolean;
+  hiloSummaryLabel?: string;
 }): MiniGameEvaluationResult {
   const cleanServerSeed = params.serverSeed.trim();
   const cleanClientSeed = params.clientSeed.trim() || 'luckydrop_client_seed';
   const safeNonce = Math.max(0, Math.floor(params.nonce || 0));
   const serverSeedHash = sha256Hex(cleanServerSeed);
+
+  if (params.gameId === 'TOWER_3D') {
+    const diff: TowerDifficulty =
+      params.towerDifficulty === 'EASY' || params.towerDifficulty === 'HARD'
+        ? params.towerDifficulty
+        : 'MEDIUM';
+    const cleared = Math.max(0, Math.min(8, Math.floor(params.towerFloorsCleared ?? 1)));
+    const tower = deriveProvablyFairTowerBoard({
+      serverSeed: cleanServerSeed,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+      difficulty: diff,
+    });
+    const hitTrap = Boolean(params.towerHitTrap);
+    const multiplier = hitTrap ? 0 : calculateTowerStepMultiplier(diff, Math.max(1, cleared));
+    const won = !hitTrap && multiplier > 0;
+    const payoutUsdt = won
+      ? Math.min(
+          DICE_TREASURY_MAX_PAYOUT_USDT,
+          Number((params.betAmountUsdt * multiplier).toFixed(2))
+        )
+      : 0;
+    const roundId = `MG-TOWER-${safeNonce}-${tower.first52BitHex.slice(0, 6).toUpperCase()}`;
+
+    return {
+      gameId: 'TOWER_3D',
+      roundId,
+      serverSeed: cleanServerSeed,
+      serverSeedHash,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+      hmacHex: tower.hmacHex,
+      first52BitHex: tower.first52BitHex,
+      uniformFloatX: tower.uniformFloatX,
+      outcomeNumeric: multiplier,
+      outcomeLabel: hitTrap
+        ? `Tower 3D (${diff}) • Trap on Floor #${cleared + 1}`
+        : `Tower 3D (${diff} • Floor ${cleared}/8) • ${multiplier}x`,
+      won,
+      multiplier,
+      payoutUsdt,
+      betAmountUsdt: params.betAmountUsdt,
+      plinkoBonusTicket: won && cleared >= 6,
+    };
+  }
+
+  if (params.gameId === 'WHEEL_3D') {
+    const risk = params.wheelRisk === 'LOW' || params.wheelRisk === 'HIGH' ? params.wheelRisk : 'MEDIUM';
+    const wheel = deriveProvablyFairWheelSpin({
+      serverSeed: cleanServerSeed,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+      risk,
+    });
+    const won = wheel.multiplier > 0;
+    const payoutUsdt = won
+      ? Math.min(
+          DICE_TREASURY_MAX_PAYOUT_USDT,
+          Number((params.betAmountUsdt * wheel.multiplier).toFixed(2))
+        )
+      : 0;
+    const roundId = `MG-WHEEL-${safeNonce}-${wheel.first52BitHex.slice(0, 6).toUpperCase()}`;
+
+    return {
+      gameId: 'WHEEL_3D',
+      roundId,
+      serverSeed: cleanServerSeed,
+      serverSeedHash,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+      hmacHex: wheel.hmacHex,
+      first52BitHex: wheel.first52BitHex,
+      uniformFloatX: wheel.uniformFloatX,
+      outcomeNumeric: wheel.segmentIndex,
+      outcomeLabel: `Wheel Royale 3D (${risk}) • Segment #${wheel.segmentIndex + 1} (${wheel.multiplier}x)`,
+      won,
+      multiplier: wheel.multiplier,
+      payoutUsdt,
+      betAmountUsdt: params.betAmountUsdt,
+      plinkoBonusTicket: wheel.bonusTicketSlot,
+      wheelSegmentIndex: wheel.segmentIndex,
+    };
+  }
+
+  if (params.gameId === 'HILO_3D') {
+    const msg = `${cleanClientSeed}:${safeNonce}:HILO_3D`;
+    const hmacHex = hmacSha256Hex(cleanServerSeed, msg);
+    const { first52BitHex, uniformFloatX } = hmacTo52BitUniformFloat(hmacHex);
+    const cardNumber = Math.floor(uniformFloatX * 13) + 1;
+    const won = typeof params.hiloWon === 'boolean' ? params.hiloWon : uniformFloatX >= 0.49;
+    const multiplier = won ? Math.max(1.1, Number((params.hiloMultiplier || 1.96).toFixed(2))) : 0;
+    const payoutUsdt = won
+      ? Math.min(
+          DICE_TREASURY_MAX_PAYOUT_USDT,
+          Number((params.betAmountUsdt * multiplier).toFixed(2))
+        )
+      : 0;
+    const roundId = `MG-HILO-${safeNonce}-${first52BitHex.slice(0, 6).toUpperCase()}`;
+
+    return {
+      gameId: 'HILO_3D',
+      roundId,
+      serverSeed: cleanServerSeed,
+      serverSeedHash,
+      clientSeed: cleanClientSeed,
+      nonce: safeNonce,
+      hmacHex,
+      first52BitHex,
+      uniformFloatX,
+      outcomeNumeric: cardNumber,
+      outcomeLabel: params.hiloSummaryLabel || `Cyber Hi-Lo 3D • Card #${cardNumber} (${multiplier}x)`,
+      won,
+      multiplier,
+      payoutUsdt,
+      betAmountUsdt: params.betAmountUsdt,
+      plinkoBonusTicket: won && multiplier >= 8,
+      hiloNextCard: cardNumber,
+    };
+  }
 
   if (params.gameId === 'MINES') {
     const minesCount = Math.max(1, Math.min(24, Math.floor(params.minesCount || 3)));
@@ -1288,8 +1552,13 @@ export function evaluateProvablyFairMiniGame(params: {
     const chosenSide = params.coinSide === 'TAILS' ? 'TAILS' : 'HEADS';
     const landedSide: 'HEADS' | 'TAILS' = uniformFloatX < 0.5 ? 'HEADS' : 'TAILS';
     const won = landedSide === chosenSide;
-    const multiplier = 1.94; // 97% RTP
-    const payoutUsdt = won ? Number((params.betAmountUsdt * multiplier).toFixed(2)) : 0;
+    const multiplier = 1.96; // 98% RTP (2% House Edge)
+    const payoutUsdt = won
+      ? Math.min(
+          DICE_TREASURY_MAX_PAYOUT_USDT,
+          Number((params.betAmountUsdt * multiplier).toFixed(2))
+        )
+      : 0;
 
     return {
       gameId: 'GOLDEN_COIN',
@@ -1302,7 +1571,7 @@ export function evaluateProvablyFairMiniGame(params: {
       first52BitHex,
       uniformFloatX,
       outcomeNumeric: uniformFloatX < 0.5 ? 0 : 1,
-      outcomeLabel: landedSide === 'HEADS' ? 'شیر طلایی (HEADS)' : 'خط سلطنتی (TAILS)',
+      outcomeLabel: landedSide === 'HEADS' ? 'شیر طلایی (HEADS • 1.96x)' : 'خط سلطنتی (TAILS • 1.96x)',
       won,
       multiplier: won ? multiplier : 0,
       payoutUsdt,
@@ -1320,7 +1589,12 @@ export function evaluateProvablyFairMiniGame(params: {
   const targetCashout = Math.min(10000, Math.max(1.01, Number(params.crashAutoCashoutX) || 2.0));
   const crashPoint = crashDerived.crashPoint;
   const won = crashPoint >= targetCashout;
-  const payoutUsdt = won ? Number((params.betAmountUsdt * targetCashout).toFixed(2)) : 0;
+  const payoutUsdt = won
+    ? Math.min(
+        DICE_TREASURY_MAX_PAYOUT_USDT,
+        Number((params.betAmountUsdt * targetCashout).toFixed(2))
+      )
+    : 0;
   const luckyAirdrop = won && targetCashout >= CRASH_LUCKY_AIRDROP_THRESHOLD;
   const crashRoundId = `MG-CRASH_X-${safeNonce}-${crashDerived.first52BitHex.slice(0, 6).toUpperCase()}`;
 

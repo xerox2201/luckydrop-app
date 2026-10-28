@@ -31,6 +31,8 @@ const DEFAULT_PREVIEW_CELLS: ScratchCardCell[] = [
 export const ScratchCardArena: React.FC<ScratchCardArenaProps> = ({ onRoundSettled }) => {
   const {
     activeTmaCurrency,
+    tonBalance,
+    starsBalance,
     tonUsdRate,
     starsUsdRate,
     freeScratchCards,
@@ -63,9 +65,11 @@ export const ScratchCardArena: React.FC<ScratchCardArenaProps> = ({ onRoundSettl
       }
     }
 
+    const minBet = activeTmaCurrency === 'TON' ? 0.01 : 1;
+    const cleanBet = Math.max(minBet, betAmountCurrency);
     const betUsdt = useFreeBonus
       ? 1.0
-      : tmaCurrencyToUsdt(betAmountCurrency, activeTmaCurrency, tonUsdRate, starsUsdRate);
+      : tmaCurrencyToUsdt(cleanBet, activeTmaCurrency, tonUsdRate, starsUsdRate);
 
     const res = await playInstantMiniGame({
       gameId: 'SCRATCH',
@@ -207,7 +211,7 @@ export const ScratchCardArena: React.FC<ScratchCardArenaProps> = ({ onRoundSettl
           rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3
           ===================================================================== */}
       <div className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3">
-        {/* ROW 1: Bet Amount Input (h-11 rounded-xl bg-[#090612] px-3) with 1/2, 2x, MAX */}
+        {/* ROW 1: Bet Amount Input (0.01 TON to ∞ Balance) with 1/2, 2x, MAX */}
         <div className="h-11 rounded-xl bg-[#090612] px-3 border border-purple-500/20 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span className="text-sm shrink-0">
@@ -215,10 +219,15 @@ export const ScratchCardArena: React.FC<ScratchCardArenaProps> = ({ onRoundSettl
             </span>
             <input
               type="number"
+              min={activeTmaCurrency === 'TON' ? 0.01 : 1}
+              step="any"
               value={betAmountCurrency}
-              onChange={(e) =>
-                setBetAmountCurrency(Math.max(0.1, Number(e.target.value) || 0.5))
-              }
+              onChange={(e) => {
+                const raw = parseFloat(e.target.value);
+                setBetAmountCurrency(
+                  Number.isFinite(raw) ? Math.max(activeTmaCurrency === 'TON' ? 0.01 : 1, raw) : 0.01
+                );
+              }}
               className="w-full bg-transparent text-center text-sm font-mono font-bold text-white focus:outline-none tabular-nums"
             />
           </div>
@@ -229,8 +238,8 @@ export const ScratchCardArena: React.FC<ScratchCardArenaProps> = ({ onRoundSettl
               onClick={() =>
                 setBetAmountCurrency((v) =>
                   activeTmaCurrency === 'TON'
-                    ? Math.max(0.2, Number((v / 2).toFixed(2)))
-                    : Math.max(10, Math.floor(v / 2))
+                    ? Math.max(0.01, Number((v / 2).toFixed(2)))
+                    : Math.max(1, Math.floor(v / 2))
                 )
               }
               className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
@@ -239,20 +248,28 @@ export const ScratchCardArena: React.FC<ScratchCardArenaProps> = ({ onRoundSettl
             </button>
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
                 setBetAmountCurrency((v) =>
-                  activeTmaCurrency === 'TON' ? Number((v * 2).toFixed(2)) : v * 2
-                )
-              }
+                  activeTmaCurrency === 'TON'
+                    ? Math.min(Math.max(0.01, avail), Number((v * 2).toFixed(2)))
+                    : Math.min(Math.max(1, avail), v * 2)
+                );
+              }}
               className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
             >
               2x
             </button>
             <button
               type="button"
-              onClick={() =>
-                setBetAmountCurrency(activeTmaCurrency === 'TON' ? 10 : 1000)
-              }
+              onClick={() => {
+                const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
+                setBetAmountCurrency(
+                  activeTmaCurrency === 'TON'
+                    ? Math.max(0.01, Number(avail.toFixed(2)))
+                    : Math.max(1, Math.floor(avail))
+                );
+              }}
               className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-[#fbbf24] transition-colors cursor-pointer"
             >
               MAX

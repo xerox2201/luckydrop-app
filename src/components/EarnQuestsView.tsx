@@ -21,7 +21,8 @@ export const EarnQuestsView: React.FC = () => {
     freeLotteryTickets,
     tmaXpPoints,
     referralCode,
-    referralEarningsUsdt,
+    referralEarningsTon,
+    referralEarningsStars,
     referredTicketsCount,
     claimReferralEarningsToWallet,
     simulateReferredTicketPurchase,
@@ -77,12 +78,12 @@ export const EarnQuestsView: React.FC = () => {
     setTimeout(() => setBannerMsg(null), 5000);
   };
 
-  const referralCommissionInActiveCurr = usdtToTmaCurrency(
-    referralEarningsUsdt,
-    activeTmaCurrency,
-    tonUsdRate,
-    starsUsdRate
-  );
+  const referralCommissionInActiveCurr =
+    activeTmaCurrency === 'STARS'
+      ? referralEarningsStars > 0
+        ? referralEarningsStars
+        : usdtToTmaCurrency(referralEarningsTon * tonUsdRate, 'STARS', tonUsdRate, starsUsdRate)
+      : referralEarningsTon;
 
   return (
     <div
@@ -177,51 +178,85 @@ export const EarnQuestsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Interactive Quests List */}
+      {/* Interactive Quests List with Zero-Loss Mathematical Rationale */}
       <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-2.5">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold tracking-wide text-white">📋 ماموریت‌های فعال</h2>
+          <h2 className="text-base font-bold tracking-wide text-white">📋 ماموریت‌های روزانه و منطق پاداش</h2>
           <span className="text-[11px] font-medium text-purple-300/50 tabular-nums" dir="ltr">
             {tmaQuests.filter((q) => q.claimed).length}/{tmaQuests.length} Done
           </span>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           {tmaQuests.map((quest) => (
             <div
               key={quest.id}
               data-testid={`quest-card-${quest.id}`}
-              className="rounded-xl bg-[#090612] border border-purple-500/20 p-3 flex items-center justify-between gap-3"
+              className="rounded-xl bg-[#090612] border border-purple-500/20 p-3 space-y-2"
             >
-              <div className="space-y-1 min-w-0 flex-1">
-                <div className="text-xs font-semibold text-white truncate">{quest.titleFa}</div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-medium text-[#00f59b]">
-                    {quest.rewardLabelFa}
-                  </span>
-                  <span className="text-[10px] font-mono text-purple-300/50 tabular-nums" dir="ltr">
-                    ({quest.progress}/{quest.target})
-                  </span>
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-1 min-w-0 flex-1">
+                  <div className="text-xs font-semibold text-white">{quest.titleFa}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-medium text-[#00f59b]">
+                      {quest.rewardLabelFa}
+                    </span>
+                    <span className="text-[10px] font-mono text-purple-300/50 tabular-nums" dir="ltr">
+                      ({quest.progress}/{quest.target})
+                    </span>
+                  </div>
                 </div>
+
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  type="button"
+                  data-testid={`claim-quest-${quest.id}`}
+                  disabled={quest.claimed}
+                  onClick={() => handleQuestAction(quest.id)}
+                  className={`h-9 px-3 rounded-xl font-bold text-xs shrink-0 cursor-pointer transition-all ${
+                    quest.claimed
+                      ? 'bg-purple-950/50 border border-purple-500/20 text-purple-300/50'
+                      : 'bg-gradient-to-r from-[#9333ea] to-[#7e22ce] text-white shadow-[0_3px_0_#581c87]'
+                  }`}
+                >
+                  {quest.claimed ? '✓ دریافت شد' : 'دریافت'}
+                </motion.button>
               </div>
 
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                type="button"
-                data-testid={`claim-quest-${quest.id}`}
-                disabled={quest.claimed}
-                onClick={() => handleQuestAction(quest.id)}
-                className={`h-9 px-3 rounded-xl font-bold text-xs shrink-0 cursor-pointer transition-all ${
-                  quest.claimed
-                    ? 'bg-purple-950/50 border border-purple-500/20 text-purple-300/50'
-                    : 'bg-gradient-to-r from-[#9333ea] to-[#7e22ce] text-white shadow-[0_3px_0_#581c87]'
-                }`}
-              >
-                {quest.claimed ? '✓ دریافت شد' : 'دریافت'}
-              </motion.button>
+              {quest.mathRationaleFa && (
+                <div className="pt-1.5 border-t border-purple-500/15 text-[10px] text-purple-200/75 leading-relaxed">
+                  📐 <strong className="text-[#fbbf24]">منطق اقتصادی تسک:</strong> {quest.mathRationaleFa}
+                </div>
+              )}
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Zero-Loss Mathematical Proof Card (تضمین ریاضی عدم ضرر سایت در تسک‌ها، بلیت رایگان و بازی‌ها) */}
+      <div
+        data-testid="earn-zero-loss-math-audit"
+        className="rounded-2xl bg-[#130d24]/90 border border-[#00f59b]/30 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-2.5"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-extrabold text-[#00f59b]">
+            🛡️ اثبات ریاضی عدم ضرر پلتفرم (Zero-Loss Mathematical Proof)
+          </h3>
+          <span className="text-[10px] font-mono text-[#fbbf24]" dir="ltr">
+            House Edge 1%–3%
+          </span>
+        </div>
+        <ul className="space-y-1.5 text-[11px] text-purple-100/85 leading-relaxed list-disc pr-4">
+          <li>
+            <strong className="text-white">فرمول صدور بلیت رایگان لاتاری در بازی‌ها:</strong> بلیت رایگان (به ارزش ۱ TON / $5) در اسلات‌های طلایی Plinko، پرواز بالای 5x در Crash یا عدد 77.77 در Dice تنها زمانی به صورت آنی صادر می‌شود که <strong className="text-[#00f59b]">مبلغ شرط دور حداقل 1.00 TON</strong> باشد و موجودی <strong className="text-[#00f59b]">استخر ذخیره ۳٪ (Rollover Reserve Pool)</strong> آن را پوشش دهد. برای شرط‌های خرد (<strong className="text-white">0.01 تا 0.99 TON</strong>)، به نسبت حاشیه سود کازینو (House Edge) امتیاز <strong className="text-[#fbbf24]">Turnover XP</strong> ذخیره شده و هر ۱۰۰ XP یک بلیت کاملاً پوشش‌داده‌شده صادر می‌گردد.
+          </li>
+          <li>
+            <strong className="text-white">سقف پرداخت پویا بر اساس موجودی خزانه (Dynamic Solvency Cap):</strong> بازیکن می‌تواند از <strong className="text-[#00f59b]">0.01 TON تا بی‌نهایت (کل موجودی)</strong> شرط ببندد، اما حداکثر جایزه هر دور به سقف نقدینگی آزاد خزانه محدود می‌شود تا واریانس شرط‌های سنگین هرگز خزانه را وارد تراز منفی نکند.
+          </li>
+          <li>
+            <strong className="text-white">کمیسیون دعوت دوستان (Referral):</strong> پورسانت دعوت دوستان ضریب ثابتی از اصل پول نیست، بلکه دقیقاً <strong className="text-[#00f59b]">۱۰٪ از سهم سود خالص پلتفرم (22% House Share)</strong> یعنی معادل ۲.۲٪ از فروش بلیت است؛ بنابراین ۱۸.۸٪ سود خالص همواره برای خزانه باقی می‌ماند.
+          </li>
+        </ul>
       </div>
 
       {/* Viral Telegram Referral Card */}

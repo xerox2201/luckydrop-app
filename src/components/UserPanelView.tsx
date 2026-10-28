@@ -38,7 +38,7 @@ export const UserPanelView: React.FC = () => {
     generateAndSaveReferralLink,
     claimReferralEarningsToWallet,
     simulateReferredTicketPurchase,
-    referralEarningsUsdt,
+    referralEarningsTon,
     referredTicketsCount,
     referralEvents,
     rolloverReservePoolUsdt,
@@ -504,11 +504,11 @@ export const UserPanelView: React.FC = () => {
             <div className="bg-[#090d16] border border-emerald-500/40 rounded-2xl px-4 py-3 text-center">
               <span className="text-[11px] text-slate-400 block">پورسانت قابل برداشت شما</span>
               <strong
-                data-testid="referral-earnings-usdt"
+                data-testid="referral-earnings-ton"
                 className="text-xl font-black text-emerald-400 font-mono"
                 dir="ltr"
               >
-                ${referralEarningsUsdt.toFixed(2)} USDT
+                💎 {referralEarningsTon.toFixed(2)} TON
               </strong>
             </div>
             <div className="bg-[#090d16] border border-amber-500/40 rounded-2xl px-4 py-3 text-center">

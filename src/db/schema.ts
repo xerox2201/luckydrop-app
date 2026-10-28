@@ -6,7 +6,10 @@ export const users = pgTable('users', {
   uid: text('uid').notNull().unique(),
   email: text('email').notNull(),
   displayName: text('display_name').notNull().default('کاربر ویژه VIP'),
-  balanceUsdt: numeric('balance_usdt', { precision: 18, scale: 2 }).notNull().default('3030.30'),
+  tonBalance: numeric('ton_balance', { precision: 18, scale: 4 }).notNull().default('606.0600'),
+  starsBalance: integer('stars_balance').notNull().default(2500),
+  referralEarningsTon: numeric('referral_earnings_ton', { precision: 18, scale: 4 }).notNull().default('3.6800'),
+  referralEarningsStars: integer('referral_earnings_stars').notNull().default(0),
   vipTier: text('vip_tier').notNull().default('DIAMOND VIP'),
   createdAt: timestamp('created_at').defaultNow(),
 });

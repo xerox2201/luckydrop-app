@@ -257,56 +257,106 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
     assert.equal(isTelegramAdminAuthorized(123456789, DEFAULT_ADMIN_TELEGRAM_USER_IDS, false), true);
     assert.equal(isTelegramAdminAuthorized(999999999, DEFAULT_ADMIN_TELEGRAM_USER_IDS, false), false);
     assert.equal(isTelegramAdminAuthorized(999999999, DEFAULT_ADMIN_TELEGRAM_USER_IDS, true), true);
+
+    // Verify new 3D games (TOWER_3D, WHEEL_3D, HILO_3D) & Zero-Loss Free Ticket math
+    const towerEval = evaluateProvablyFairMiniGame({
+      gameId: 'TOWER_3D',
+      serverSeed: 'tower_seed_999',
+      clientSeed: 'tower_client_777',
+      nonce: 3,
+      betAmountUsdt: 0.05, // 0.01 TON micro bet
+      towerDifficulty: 'MEDIUM',
+      towerFloorsCleared: 2,
+      towerHitTrap: false,
+    });
+    assert.equal(towerEval.gameId, 'TOWER_3D');
+    assert.equal(towerEval.won, true);
+    assert.ok(towerEval.multiplier > 1.0);
+
+    const wheelEval = evaluateProvablyFairMiniGame({
+      gameId: 'WHEEL_3D',
+      serverSeed: 'wheel_seed_999',
+      clientSeed: 'wheel_client_777',
+      nonce: 7,
+      betAmountUsdt: 5.0,
+      wheelRisk: 'MEDIUM',
+    });
+    assert.equal(wheelEval.gameId, 'WHEEL_3D');
+    assert.ok(typeof wheelEval.wheelSegmentIndex === 'number');
+    assert.ok(wheelEval.wheelSegmentIndex! >= 0 && wheelEval.wheelSegmentIndex! < 16);
+
+    const hiloEval = evaluateProvablyFairMiniGame({
+      gameId: 'HILO_3D',
+      serverSeed: 'hilo_seed_999',
+      clientSeed: 'hilo_client_777',
+      nonce: 9,
+      betAmountUsdt: 2.5,
+      hiloMultiplier: 1.96,
+      hiloWon: true,
+    });
+    assert.equal(hiloEval.gameId, 'HILO_3D');
+    assert.equal(hiloEval.won, true);
+    assert.equal(hiloEval.payoutUsdt, 4.9);
+    assert.ok(hiloEval.hiloNextCard! >= 1 && hiloEval.hiloNextCard! <= 13);
   });
 });
 
-describe('Core PAM & Seamless Single Wallet Engine (7 Operations + Idempotency + Tombstones)', () => {
-  it('executes all 7 standard PAM operations and maintains 100% mathematical reconciliation', () => {
+describe('Core PAM & Seamless Dual-Currency Wallet Engine (7 Operations + Idempotency + Tombstones)', () => {
+  it('executes all 7 standard PAM operations in TON & STARS and maintains 100% mathematical reconciliation', () => {
     const pam = new PAMSeamlessWalletEngine({
       playerId: 'player-001',
-      genesisBalanceUsdt: 1000,
-      balanceUsdt: 1000,
+      tonUsdRate: 5.0,
+      starsUsdRate: 0.02,
+      genesisTonBalance: 200,
+      tonBalance: 200,
+      genesisStarsBalance: 2500,
+      starsBalance: 2500,
     });
 
     // 1. Authenticate
     const authRes = pam.authenticate({ displayName: 'VIP Tester' });
     assert.equal(authRes.ok, true);
-    assert.equal(authRes.balanceUsdt, 1000);
+    assert.equal(authRes.tonBalance, 200);
+    assert.equal(authRes.starsBalance, 2500);
 
     // 2. Balance
-    assert.equal(pam.balance().balanceUsdt, 1000);
+    assert.equal(pam.balance().tonBalance, 200);
+    assert.equal(pam.balance().starsBalance, 2500);
 
-    // 3. Debit ($50 ticket purchase)
+    // 3. Debit (10 TON ticket purchase)
     const debitRes = pam.debit({
       transactionUuid: 'tx_debit_101',
       roundId: '#ZRN-8493',
       vertical: 'LUCKYDROP_LOTTERY',
-      amountUsdt: 50,
+      currency: 'TON',
+      amountTon: 10,
     });
     assert.equal(debitRes.ok, true);
-    assert.equal(debitRes.balanceUsdt, 950);
+    assert.equal(debitRes.tonBalance, 190);
 
     // Strict Idempotency on duplicate Debit
     const duplicateDebit = pam.debit({
       transactionUuid: 'tx_debit_101',
       roundId: '#ZRN-8493',
       vertical: 'LUCKYDROP_LOTTERY',
-      amountUsdt: 50,
+      currency: 'TON',
+      amountTon: 10,
     });
     assert.equal(duplicateDebit.ok, true);
     assert.equal(duplicateDebit.idempotentReplay, true);
-    assert.equal(duplicateDebit.balanceUsdt, 950, 'Duplicate debit must not charge twice');
+    assert.equal(duplicateDebit.tonBalance, 190, 'Duplicate debit must not charge twice');
 
-    // 4. Credit ($250 win linked to tx_debit_101)
+    // 4. Credit (50 TON win linked to tx_debit_101)
     const creditRes = pam.credit({
       transactionUuid: 'tx_credit_201',
       referenceTransactionUuid: 'tx_debit_101',
       roundId: '#ZRN-8493',
       vertical: 'LUCKYDROP_LOTTERY',
-      amountUsdt: 250,
+      currency: 'TON',
+      amountTon: 50,
     });
     assert.equal(creditRes.ok, true);
-    assert.equal(creditRes.balanceUsdt, 1200);
+    assert.equal(creditRes.tonBalance, 240);
 
     // Strict Idempotency on duplicate Credit
     const duplicateCredit = pam.credit({
@@ -314,19 +364,21 @@ describe('Core PAM & Seamless Single Wallet Engine (7 Operations + Idempotency +
       referenceTransactionUuid: 'tx_debit_101',
       roundId: '#ZRN-8493',
       vertical: 'LUCKYDROP_LOTTERY',
-      amountUsdt: 250,
+      currency: 'TON',
+      amountTon: 50,
     });
     assert.equal(duplicateCredit.idempotentReplay, true);
-    assert.equal(duplicateCredit.balanceUsdt, 1200, 'Duplicate credit must not pay twice');
+    assert.equal(duplicateCredit.tonBalance, 240, 'Duplicate credit must not pay twice');
 
-    // 5. Rollback on another bet ('tx_debit_102' for $100)
+    // 5. Rollback on another bet ('tx_debit_102' for 20 TON)
     pam.debit({
       transactionUuid: 'tx_debit_102',
       roundId: '#ZRN-8493',
       vertical: 'INSTANT_DICE_52',
-      amountUsdt: 100,
+      currency: 'TON',
+      amountTon: 20,
     });
-    assert.equal(pam.balance().balanceUsdt, 1100);
+    assert.equal(pam.balance().tonBalance, 220);
 
     const rollbackRes = pam.rollback({
       transactionUuid: 'tx_rb_301',
@@ -335,32 +387,45 @@ describe('Core PAM & Seamless Single Wallet Engine (7 Operations + Idempotency +
       vertical: 'INSTANT_DICE_52',
     });
     assert.equal(rollbackRes.ok, true);
-    assert.equal(rollbackRes.balanceUsdt, 1200, 'Rollback must refund the $100 debit');
+    assert.equal(rollbackRes.tonBalance, 240, 'Rollback must refund the 20 TON debit');
 
-    // 6. Bonus ($25 promotional reward)
+    // 6. Bonus (5 TON promotional reward + 500 STARS bonus)
     const bonusRes = pam.bonus({
       transactionUuid: 'tx_bonus_401',
       roundId: '#VIP-PROMO',
       vertical: 'VIP_LOYALTY_BONUS',
-      amountUsdt: 25,
+      currency: 'TON',
+      amountTon: 5,
       creditToRealBalance: true,
     });
     assert.equal(bonusRes.ok, true);
-    assert.equal(bonusRes.balanceUsdt, 1225);
+    assert.equal(bonusRes.tonBalance, 245);
+
+    const starsBonusRes = pam.bonus({
+      transactionUuid: 'tx_bonus_stars_402',
+      roundId: '#STARS-TOPUP',
+      vertical: 'TELEGRAM_STARS_INVOICE',
+      currency: 'STARS',
+      amountStars: 500,
+    });
+    assert.equal(starsBonusRes.ok, true);
+    assert.equal(starsBonusRes.starsBalance, 3000);
 
     // 7. Reconcile
     const reconRes = pam.reconcile();
     assert.equal(reconRes.ok, true);
     assert.equal(reconRes.reconciliation?.reconciled, true);
-    assert.equal(reconRes.reconciliation?.discrepancyUsdt, 0);
-    assert.equal(reconRes.reconciliation?.computedLedgerBalanceUsdt, 1225);
+    assert.equal(reconRes.reconciliation?.discrepancyTon, 0);
+    assert.equal(reconRes.reconciliation?.discrepancyStars, 0);
+    assert.equal(reconRes.reconciliation?.computedLedgerTonBalance, 245);
+    assert.equal(reconRes.reconciliation?.computedLedgerStarsBalance, 3000);
   });
 
   it('enforces Tombstone protection when an out-of-order Rollback arrives BEFORE its delayed Debit', () => {
     const pam = new PAMSeamlessWalletEngine({
       playerId: 'player-tombstone',
-      genesisBalanceUsdt: 500,
-      balanceUsdt: 500,
+      genesisTonBalance: 100,
+      tonBalance: 100,
     });
 
     // Step 1: Out-of-order Rollback arrives first for 'tx_delayed_debit_999'
@@ -372,18 +437,19 @@ describe('Core PAM & Seamless Single Wallet Engine (7 Operations + Idempotency +
     });
     assert.equal(preemptiveRollback.ok, true);
     assert.equal(preemptiveRollback.tombstoneBlocked, true);
-    assert.equal(pam.balance().balanceUsdt, 500, 'Preemptive tombstone must not alter balance');
+    assert.equal(pam.balance().tonBalance, 100, 'Preemptive tombstone must not alter balance');
 
-    // Step 2: Delayed network Debit ('tx_delayed_debit_999', $75) arrives later
+    // Step 2: Delayed network Debit ('tx_delayed_debit_999', 15 TON) arrives later
     const lateDebit = pam.debit({
       transactionUuid: 'tx_delayed_debit_999',
       roundId: '#ROUND-999',
       vertical: 'INSTANT_CRASH_X',
-      amountUsdt: 75,
+      currency: 'TON',
+      amountTon: 15,
     });
     assert.equal(lateDebit.ok, false, 'Late debit must be rejected by Tombstone');
     assert.equal(lateDebit.tombstoneBlocked, true);
-    assert.equal(pam.balance().balanceUsdt, 500, 'Player balance must remain 100% uncorrupted');
+    assert.equal(pam.balance().tonBalance, 100, 'Player balance must remain 100% uncorrupted');
 
     const recon = pam.reconcile();
     assert.equal(recon.reconciliation?.reconciled, true);

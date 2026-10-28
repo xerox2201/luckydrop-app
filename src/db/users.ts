@@ -82,15 +82,16 @@ export async function purchaseLotteryTicket(params: {
 }) {
   try {
     const user = await getOrCreateUser(params.uid, params.email);
-    const currentBalance = parseFloat(user.balanceUsdt);
-    if (currentBalance < params.costUsdt) {
+    const costTon = Number((params.costUsdt / 5.0).toFixed(4));
+    const currentTonBalance = parseFloat(user.tonBalance);
+    if (currentTonBalance < costTon) {
       throw new Error('INSUFFICIENT_BALANCE');
     }
 
-    const newBalance = (currentBalance - params.costUsdt).toFixed(2);
+    const newTonBalance = (currentTonBalance - costTon).toFixed(4);
     await db
       .update(users)
-      .set({ balanceUsdt: newBalance })
+      .set({ tonBalance: newTonBalance })
       .where(eq(users.uid, params.uid));
 
     const roundRows = await db
@@ -176,7 +177,8 @@ export async function purchaseLotteryTicket(params: {
 
     return {
       ticket: insertedTicket[0],
-      newBalanceUsdt: parseFloat(newBalance),
+      tonBalance: parseFloat(newTonBalance),
+      starsBalance: user.starsBalance,
     };
   } catch (error: any) {
     if (error?.message === 'INSUFFICIENT_BALANCE') {
@@ -195,10 +197,11 @@ export async function creditCryptoDeposit(params: {
 }) {
   try {
     const user = await getOrCreateUser(params.uid, params.email);
-    const updatedBalance = (parseFloat(user.balanceUsdt) + params.amountUsdt).toFixed(2);
+    const addedTon = Number((params.amountUsdt / 5.0).toFixed(4));
+    const updatedTonBalance = (parseFloat(user.tonBalance) + addedTon).toFixed(4);
     await db
       .update(users)
-      .set({ balanceUsdt: updatedBalance })
+      .set({ tonBalance: updatedTonBalance })
       .where(eq(users.uid, params.uid));
 
     const txHash = computeDeterministicHash(
@@ -228,7 +231,8 @@ export async function creditCryptoDeposit(params: {
       .returning();
 
     return {
-      newBalanceUsdt: parseFloat(updatedBalance),
+      tonBalance: parseFloat(updatedTonBalance),
+      starsBalance: user.starsBalance,
       transaction: tx[0],
     };
   } catch (error) {

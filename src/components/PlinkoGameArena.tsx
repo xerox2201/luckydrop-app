@@ -287,11 +287,11 @@ export const PlinkoGameArena: React.FC<{
   // Drop a single Provably Fair ball connected to the PAM Seamless Wallet
   const handleDropSingleBall = useCallback(async () => {
     setErrorBanner(null);
-    const minBet = activeTmaCurrency === 'TON' ? 0.1 : 10;
+    const minBet = activeTmaCurrency === 'TON' ? 0.01 : 1;
     const cleanBetCurrency =
       activeTmaCurrency === 'TON'
-        ? Math.max(minBet, Number(betAmount.toFixed(2)) || 1)
-        : Math.max(minBet, Math.round(betAmount) || 50);
+        ? Math.max(minBet, Number(betAmount.toFixed(2)) || 0.01)
+        : Math.max(minBet, Math.round(betAmount) || 1);
     const wagerUsdt = tmaCurrencyToUsdt(
       cleanBetCurrency,
       activeTmaCurrency,
@@ -486,7 +486,7 @@ export const PlinkoGameArena: React.FC<{
         ctx.fill();
       }
 
-      // 3. PYRAMID GEOMETRY CALCULATION (8, 12, or 16 rows) — 100% HORIZONTALLY CENTERED
+      // 3. PYRAMID GEOMETRY CALCULATION (8, 12, or 16 rows) — 100% HORIZONTALLY CENTERED & NON-OVERLAPPING
       const activeRows = rowsRef.current;
       const activeRisk = riskRef.current;
       const multipliers = PLINKO_MULTIPLIER_TABLES[activeRows][activeRisk];
@@ -495,24 +495,24 @@ export const PlinkoGameArena: React.FC<{
         morphAlphaRef.current = Math.min(1, morphAlphaRef.current + dt * 4.5);
       }
 
-      const usableW = W - 24;
+      const sidePadding = activeRows === 16 ? 8 : 16;
+      const usableW = Math.max(280, W - sidePadding);
       const centerX = W / 2;
 
-      const pyramidTopY = 58;
-      const bucketRowHeight = W > 620 ? 38 : 32;
-      const bucketBottomMargin = 22;
+      const pyramidTopY = 54;
+      const bucketRowHeight = W > 620 ? 36 : activeRows === 16 ? 28 : 31;
+      const bucketBottomMargin = 16;
       const bucketTopY = H - bucketRowHeight - bucketBottomMargin;
-      const pyramidBottomY = bucketTopY - 26;
-      const pyramidHeight = Math.max(180, pyramidBottomY - pyramidTopY);
+      const pyramidBottomY = bucketTopY - 24;
+      const pyramidHeight = Math.max(170, pyramidBottomY - pyramidTopY);
 
       const rowSpacingY = pyramidHeight / Math.max(1, activeRows - 1);
-      // Max pegs in bottom row is activeRows + 2 (so gaps = activeRows + 1 = buckets count)
-      const maxColsBottom = activeRows + 2;
+      // Total buckets is activeRows + 1; bottom row has activeRows + 2 pegs (activeRows + 1 intervals)
       const pegSpacingX = Math.min(
-        rowSpacingY * 1.16,
-        usableW / (maxColsBottom + 0.6)
+        rowSpacingY * 1.24,
+        usableW / (activeRows + 1.15)
       );
-      const pegRadius = activeRows === 8 ? 6.2 : activeRows === 12 ? 5.0 : 4.1;
+      const pegRadius = activeRows === 8 ? 5.8 : activeRows === 12 ? 4.6 : 3.6;
 
       const getPegCoords = (r: number, c: number, totalR: number = activeRows) => {
         const pegsInRow = r + 3;
@@ -647,10 +647,12 @@ export const PlinkoGameArena: React.FC<{
       }
       ctx.restore();
 
-      // 6. RENDER 3D BEVELED MULTIPLIER BUCKETS AT BOTTOM ROW
+      // 6. RENDER 3D BEVELED MULTIPLIER BUCKETS AT BOTTOM ROW (STRICTLY NON-OVERLAPPING)
       const totalBuckets = activeRows + 1;
-      const bucketGap = activeRows === 16 ? 3 : 4;
-      const bucketW = Math.max(18, pegSpacingX - bucketGap);
+      const bucketGap = activeRows === 16 ? 1.6 : activeRows === 12 ? 2.4 : 3.5;
+      // Never allow bucketW to exceed pegSpacingX - bucketGap so adjacent buckets NEVER collide
+      const bucketW = Math.max(10, pegSpacingX - bucketGap);
+      const bucketCornerRadius = activeRows === 16 ? 4 : 6;
       const pulseGlow = 0.55 + 0.45 * Math.sin(now * 0.005);
 
       for (let bIdx = 0; bIdx < totalBuckets; bIdx++) {
@@ -681,20 +683,27 @@ export const PlinkoGameArena: React.FC<{
 
         const bx = bxCenter - bucketW / 2;
         const by = bucketTopY + depressY;
-        const lipDepth = Math.max(2, 5 - depressY * 0.5);
+        const lipDepth = Math.max(2, 4.5 - depressY * 0.5);
 
         ctx.save();
 
         // Outer pulsing neon glow for high-multiplier slots (>= 10x) or Bonus Ticket slots
         if (mult >= 10 || isBonusSlot) {
           ctx.shadowColor = isBonusSlot
-            ? `rgba(251, 191, 36, ${0.5 + 0.4 * pulseGlow})`
+            ? `rgba(251, 191, 36, ${0.45 + 0.35 * pulseGlow})`
             : colors.glowColor;
-          ctx.shadowBlur = 12 + 6 * pulseGlow;
+          ctx.shadowBlur = activeRows === 16 ? 6 + 3 * pulseGlow : 10 + 5 * pulseGlow;
         }
 
         // a) 3D Physical Bottom Shadow Lip
-        drawRoundedBeveledRect(ctx, bx, by + 3, bucketW, bucketRowHeight + lipDepth - 2, 6);
+        drawRoundedBeveledRect(
+          ctx,
+          bx,
+          by + 2.5,
+          bucketW,
+          bucketRowHeight + lipDepth - 2,
+          bucketCornerRadius
+        );
         ctx.fillStyle = isBonusSlot ? '#92400e' : colors.lipColor;
         ctx.fill();
 
@@ -703,7 +712,7 @@ export const PlinkoGameArena: React.FC<{
         faceGrad.addColorStop(0, colors.topStop);
         faceGrad.addColorStop(1, colors.bottomStop);
 
-        drawRoundedBeveledRect(ctx, bx, by, bucketW, bucketRowHeight, 6);
+        drawRoundedBeveledRect(ctx, bx, by, bucketW, bucketRowHeight, bucketCornerRadius);
         ctx.fillStyle = faceGrad;
         ctx.fill();
 
@@ -711,49 +720,79 @@ export const PlinkoGameArena: React.FC<{
         ctx.strokeStyle = isBonusSlot
           ? 'rgba(253, 224, 71, 0.85)'
           : 'rgba(255, 255, 255, 0.28)';
-        ctx.lineWidth = isBonusSlot ? 1.6 : 1;
+        ctx.lineWidth = isBonusSlot ? 1.3 : 0.9;
         ctx.stroke();
 
         // Landing brightness flash overlay
         if (flashAlpha > 0.01) {
-          drawRoundedBeveledRect(ctx, bx, by, bucketW, bucketRowHeight, 6);
+          drawRoundedBeveledRect(ctx, bx, by, bucketW, bucketRowHeight, bucketCornerRadius);
           ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.78})`;
           ctx.fill();
         }
 
         ctx.restore();
 
-        // c) Special "LOTTERY TICKET" Bonus Badge above/on designated bonus slots
+        // c) Compact "VIP TICKET" Crown Badge strictly bounded to bucketW so it never overlaps neighbors
         if (isBonusSlot) {
           ctx.save();
-          const badgeW = Math.min(bucketW + 6, 42);
-          const badgeH = 12;
+          const compactCrownOnly = bucketW < 28;
+          const badgeW = compactCrownOnly ? Math.max(12, bucketW - 1) : Math.min(bucketW + 2, 36);
+          const badgeH = compactCrownOnly ? 10 : 11;
           const badgeX = bxCenter - badgeW / 2;
-          const badgeY = by - 13;
-          drawRoundedBeveledRect(ctx, badgeX, badgeY, badgeW, badgeH, 4);
+          const badgeY = by - badgeH - 1.5;
+          drawRoundedBeveledRect(ctx, badgeX, badgeY, badgeW, badgeH, 3);
           ctx.fillStyle = '#fbbf24';
-          ctx.shadowColor = 'rgba(251, 191, 36, 0.9)';
-          ctx.shadowBlur = 8;
+          ctx.shadowColor = 'rgba(251, 191, 36, 0.8)';
+          ctx.shadowBlur = 4;
           ctx.fill();
 
           ctx.fillStyle = '#0f172a';
-          ctx.font = '900 7.5px "Plus Jakarta Sans", sans-serif';
+          ctx.font = compactCrownOnly
+            ? '900 7px "Plus Jakarta Sans", sans-serif'
+            : '900 6.5px "Plus Jakarta Sans", sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('👑 TICKET', bxCenter, badgeY + badgeH / 2 + 0.5);
+          ctx.fillText(
+            compactCrownOnly ? '👑' : '👑 VIP',
+            bxCenter,
+            badgeY + badgeH / 2 + 0.5,
+            badgeW - 1
+          );
           ctx.restore();
         }
 
-        // d) Crisp Multiplier Label inside Bucket
+        // d) Crisp, Auto-Fitted Multiplier Label inside Bucket (zero overlap guaranteed)
         ctx.save();
         ctx.fillStyle = colors.textColor;
+        const isNarrowBucket = bucketW < 23;
+        let labelText: string;
+        if (mult >= 1000) {
+          labelText = isNarrowBucket ? '1K' : '1Kx';
+        } else if (mult >= 100) {
+          labelText = isNarrowBucket ? `${mult}` : `${mult}x`;
+        } else if (mult < 1 && isNarrowBucket) {
+          // Format 0.5 -> .5, 0.3 -> .3, 0.2 -> .2 for crystal clarity inside narrow 16R buckets
+          labelText = `${mult}`.replace(/^0/, '');
+        } else if (isNarrowBucket) {
+          labelText = `${mult}`;
+        } else {
+          labelText = `${mult}x`;
+        }
+
         const fontSize =
-          activeRows === 16 ? (mult >= 100 ? 8.5 : 9.5) : activeRows === 12 ? 10.5 : 11.5;
-        ctx.font = `900 ${fontSize}px "JetBrains Mono", monospace`;
+          activeRows === 16
+            ? labelText.length >= 3
+              ? 7.5
+              : 8.5
+            : activeRows === 12
+            ? labelText.length >= 4
+              ? 8.5
+              : 9.5
+            : 10.5;
+        ctx.font = `800 ${fontSize}px "JetBrains Mono", monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const labelText = mult >= 100 ? `${mult}x` : `${mult}x`;
-        ctx.fillText(labelText, bxCenter, by + bucketRowHeight / 2 + 0.5);
+        ctx.fillText(labelText, bxCenter, by + bucketRowHeight / 2 + 0.5, Math.max(8, bucketW - 2));
         ctx.restore();
       }
 
@@ -1075,8 +1114,8 @@ export const PlinkoGameArena: React.FC<{
   const handleHalfBet = () => {
     setBetAmount((prev) =>
       activeTmaCurrency === 'TON'
-        ? Math.max(0.1, Number((prev / 2).toFixed(2)))
-        : Math.max(10, Math.floor(prev / 2))
+        ? Math.max(0.01, Number((prev / 2).toFixed(2)))
+        : Math.max(1, Math.floor(prev / 2))
     );
   };
 
@@ -1084,8 +1123,8 @@ export const PlinkoGameArena: React.FC<{
     const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
     setBetAmount((prev) =>
       activeTmaCurrency === 'TON'
-        ? Math.min(Math.max(0.1, avail), Number((prev * 2).toFixed(2)))
-        : Math.min(Math.max(10, avail), prev * 2)
+        ? Math.min(Math.max(0.01, avail), Number((prev * 2).toFixed(2)))
+        : Math.min(Math.max(1, avail), prev * 2)
     );
   };
 
@@ -1093,8 +1132,8 @@ export const PlinkoGameArena: React.FC<{
     const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
     setBetAmount(
       activeTmaCurrency === 'TON'
-        ? Math.max(0.1, Math.min(200, Number(avail.toFixed(2))))
-        : Math.max(10, Math.min(25000, Math.floor(avail)))
+        ? Math.max(0.01, Number(avail.toFixed(2)))
+        : Math.max(1, Math.floor(avail))
     );
   };
 
@@ -1210,7 +1249,7 @@ export const PlinkoGameArena: React.FC<{
           rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3
           ===================================================================== */}
       <div className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3">
-        {/* ROW 1: Bet Amount Input (h-11 rounded-xl bg-[#090612] px-3) with 1/2, 2x, MAX */}
+        {/* ROW 1: Bet Amount Input (0.01 TON to ∞ Balance) with 1/2, 2x, MAX */}
         <div className="h-11 rounded-xl bg-[#090612] px-3 border border-purple-500/20 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
@@ -1223,12 +1262,16 @@ export const PlinkoGameArena: React.FC<{
             <input
               id="plinko-bet-input"
               type="number"
-              min={0.5}
-              max={1000}
-              step={0.5}
+              min={activeTmaCurrency === 'TON' ? 0.01 : 1}
+              step="any"
               data-testid="plinko-bet-input"
               value={betAmount}
-              onChange={(e) => setBetAmount(Math.max(0.5, Number(e.target.value) || 0.5))}
+              onChange={(e) => {
+                const raw = parseFloat(e.target.value);
+                setBetAmount(
+                  Number.isFinite(raw) ? Math.max(activeTmaCurrency === 'TON' ? 0.01 : 1, raw) : 0.01
+                );
+              }}
               className="w-full bg-transparent text-center text-sm font-mono font-bold text-white focus:outline-none tabular-nums"
             />
           </div>
@@ -1237,8 +1280,19 @@ export const PlinkoGameArena: React.FC<{
             <button
               type="button"
               data-testid="plinko-bet-half"
+              onClick={() => {
+                const minB = activeTmaCurrency === 'TON' ? 0.01 : 1;
+                setBetAmount(minB);
+              }}
+              className="h-7 px-2 text-[10px] font-mono font-bold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-emerald-300 transition-colors cursor-pointer"
+              title="Minimum Bet (0.01 TON)"
+            >
+              MIN
+            </button>
+            <button
+              type="button"
               onClick={handleHalfBet}
-              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
+              className="h-7 px-2 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
             >
               1/2
             </button>
@@ -1246,7 +1300,7 @@ export const PlinkoGameArena: React.FC<{
               type="button"
               data-testid="plinko-bet-double"
               onClick={handleDoubleBet}
-              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
+              className="h-7 px-2 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
             >
               2x
             </button>
@@ -1255,6 +1309,7 @@ export const PlinkoGameArena: React.FC<{
               data-testid="plinko-bet-max"
               onClick={handleMaxBet}
               className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-[#fbbf24] transition-colors cursor-pointer"
+              title="Bet Full Balance (∞)"
             >
               MAX
             </button>

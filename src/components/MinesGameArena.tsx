@@ -182,8 +182,8 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
     const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
     setBetAmountCurrency(
       activeTmaCurrency === 'TON'
-        ? Math.max(0.2, Number(avail.toFixed(2)))
-        : Math.max(10, Math.floor(avail))
+        ? Math.max(0.01, Number(avail.toFixed(2)))
+        : Math.max(1, Math.floor(avail))
     );
   };
 
@@ -297,11 +297,16 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
             </span>
             <input
               type="number"
+              min={activeTmaCurrency === 'TON' ? 0.01 : 1}
+              step="any"
               disabled={roundActive}
               value={betAmountCurrency}
-              onChange={(e) =>
-                setBetAmountCurrency(Math.max(0.1, Number(e.target.value) || 0.5))
-              }
+              onChange={(e) => {
+                const raw = parseFloat(e.target.value);
+                setBetAmountCurrency(
+                  Number.isFinite(raw) ? Math.max(activeTmaCurrency === 'TON' ? 0.01 : 1, raw) : 0.01
+                );
+              }}
               className="w-full bg-transparent text-center text-sm font-mono font-bold text-white focus:outline-none tabular-nums"
             />
           </div>
@@ -313,8 +318,8 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
               onClick={() =>
                 setBetAmountCurrency((v) =>
                   activeTmaCurrency === 'TON'
-                    ? Math.max(0.2, Number((v / 2).toFixed(2)))
-                    : Math.max(10, Math.floor(v / 2))
+                    ? Math.max(0.01, Number((v / 2).toFixed(2)))
+                    : Math.max(1, Math.floor(v / 2))
                 )
               }
               className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
@@ -324,11 +329,14 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
             <button
               type="button"
               disabled={roundActive}
-              onClick={() =>
+              onClick={() => {
+                const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
                 setBetAmountCurrency((v) =>
-                  activeTmaCurrency === 'TON' ? Number((v * 2).toFixed(2)) : v * 2
-                )
-              }
+                  activeTmaCurrency === 'TON'
+                    ? Math.min(Math.max(0.01, avail), Number((v * 2).toFixed(2)))
+                    : Math.min(Math.max(1, avail), v * 2)
+                );
+              }}
               className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
             >
               2x

@@ -24,6 +24,8 @@ import {
   calculateWithdrawalFeeAndNet,
   SolvencyProtectionMode,
   calculateZeroLossTicketSplit,
+  calculateDynamicPariMutuelPool,
+  evaluateHighValueWithdrawalGate,
   getBlockchainExplorerTxUrl,
   generateUniqueUserReferralLink,
   calculateReferralDeductionFromNetProfit,
@@ -35,6 +37,8 @@ import {
   MiniGameEvaluationResult,
   PlinkoRowCount,
   PlinkoRiskLevel,
+  TowerDifficulty,
+  calculateZeroLossTurnoverXp,
   deriveProvablyFairLotteryDraw,
   evaluateTicketPrizeTier,
   evaluateProvablyFairMiniGame,
@@ -67,6 +71,8 @@ import {
   TelegramWebAppUser,
   TmaQuestItem,
   INITIAL_TMA_QUESTS,
+  TON_CONNECT_STANDARD_WALLETS,
+  buildTonConnectAutoTransferPayload,
   DEFAULT_ADMIN_TELEGRAM_USER_IDS,
   DEFAULT_ADMIN_TON_WALLET_ADDRESS,
   DEFAULT_TON_USD_RATE,
@@ -127,6 +133,10 @@ export interface LotteryRoundItem {
   totalPayoutUsdt: string;
   operatorProfitUsdt: string;
   rolloverReserveUsdt: string;
+  durationMinutes?: number;
+  drawTargetTimestampMs?: number;
+  initialSeedUsdt?: string;
+  ticketsSoldCount?: number;
   status: string;
 }
 
@@ -352,6 +362,13 @@ interface LotteryContextType {
     minesCount?: number;
     minesRevealedSafeCount?: number;
     minesHitBomb?: boolean;
+    towerDifficulty?: TowerDifficulty;
+    towerFloorsCleared?: number;
+    towerHitTrap?: boolean;
+    wheelRisk?: 'LOW' | 'MEDIUM' | 'HIGH';
+    hiloMultiplier?: number;
+    hiloWon?: boolean;
+    hiloSummaryLabel?: string;
     usedFreeBonusToken?: boolean;
   }) => Promise<{
     ok: boolean;
@@ -359,7 +376,8 @@ interface LotteryContextType {
     evaluation?: MiniGameEvaluationResult;
     bonusTicketAwarded?: TicketItem | null;
     debitTransactionUuid?: string;
-    balanceUsdt: number;
+    tonBalance: number;
+    starsBalance: number;
   }>;
   // Telegram Mini App (TMA) Dual-Currency, Quests & Admin ID Lock
   activeTmaCurrency: ActiveTmaCurrency;
@@ -420,11 +438,16 @@ interface LotteryContextType {
   setWithdrawModalOpen: (open: boolean) => void;
   aiChatOpen: boolean;
   setAiChatOpen: (open: boolean) => void;
-  // Multi-Lottery Concurrent Engine
+  // Multi-Lottery Concurrent Engine & Dynamic Admin Rounds
   activeLotteryId: LotteryTypeId;
   setActiveLotteryId: (id: LotteryTypeId) => void;
+  activeRoundCode: string;
+  setActiveRoundCode: (roundCode: string) => void;
+  activeRound: LotteryRoundItem | null;
   activeLotterySpec: MultiLotterySpec;
   lotteryTimers: Record<LotteryTypeId, number>;
+  autoWithdrawLimitTon: number;
+  setAutoWithdrawLimitTon: (limitTon: number) => Promise<boolean>;
   // Single & Bulk Ticket Cart State
   selectedMainBalls: number[];
   setSelectedMainBalls: React.Dispatch<React.SetStateAction<number[]>>;
@@ -482,14 +505,25 @@ interface LotteryContextType {
   setKillSwitchState: (active?: boolean) => Promise<void>;
   triggerDraw: (roundCode: string) => Promise<DrawExecutionResult | null>;
   createNewRound: (input: {
-    titleFa: string;
+    titleFa?: string;
     category: string;
-    ticketPriceUsdt: number;
-    rtpPercent: number;
-    jackpotUsdt: number;
+    ticketPriceUsdt?: number;
+    ticketPriceTon?: number;
+    rtpPercent?: number;
+    jackpotUsdt?: number;
+    initialSeedTon?: number;
+    durationMinutes?: number;
+    mainCount?: number;
+    mainMax?: number;
+    goldenMax?: number;
   }) => Promise<boolean>;
   deleteLotteryRound: (roundCode: string) => Promise<boolean>;
-  updateRoundTicketPrice: (roundCode: string, newPriceUsdt: number) => void;
+  deleteAllLotteryRounds: () => Promise<boolean>;
+  updateRoundTicketPrice: (
+    roundCode: string,
+    newPriceUsdt: number,
+    durationMinutes?: number
+  ) => void;
   toggleRoundSales: (roundCode: string) => Promise<void>;
   sendSupportMessage: (
     sessionCode: string,
@@ -522,7 +556,8 @@ interface LotteryContextType {
     netHouseProfitUsdt: number;
     message: string;
   }>;
-  referralEarningsUsdt: number;
+  referralEarningsTon: number;
+  referralEarningsStars: number;
   referredTicketsCount: number;
   referralEvents: ReferralEventItem[];
   // Zero-Loss VIP Loyalty Chest (3% Rollover Reserve)
@@ -608,37 +643,55 @@ const ROUTE_TO_PATH: Record<AppRoute, string> = {
   '404': '/404',
 };
 
-const buildDefaultConcurrentRounds = (): LotteryRoundItem[] =>
-  MULTI_LOTTERY_SPECS.map((spec, idx) => ({
-    id: idx + 1,
-    roundCode: spec.roundCode,
-    lotteryType: spec.id,
-    titleFa: spec.titleFa,
-    titleEn: spec.titleEn,
-    titleZh: spec.titleZh,
-    subtitleFa: spec.subtitleFa,
-    category: spec.category,
-    formatLabel: spec.formatLabel,
-    mainCount: spec.mainCount,
-    mainMax: spec.mainMax,
-    goldenMax: spec.goldenMax,
-    jackpotUsdt: spec.jackpotUsdt.toFixed(2),
-    ticketPriceUsdt: spec.ticketPriceUsdt.toFixed(2),
-    rtpPercent: spec.rtpPercent.toFixed(2),
-    soldPercent: spec.soldPercent,
-    remainingLabel: spec.remainingLabel,
-    drawTimeLabel: spec.drawTimeLabel,
-    serverSeedHash: spec.serverSeedHash,
-    clientSeed: spec.clientSeed,
-    nonce: 1,
-    winningNumbers: JSON.stringify(spec.winningNumbers),
-    winningGoldenBall: spec.winningGoldenBall,
-    totalSalesUsdt: (spec.jackpotUsdt * 1.15).toFixed(2),
-    totalPayoutUsdt: spec.jackpotUsdt.toFixed(2),
-    operatorProfitUsdt: (spec.jackpotUsdt * 0.1).toFixed(2),
-    rolloverReserveUsdt: (spec.jackpotUsdt * 0.03).toFixed(2),
-    status: 'ACTIVE',
-  }));
+const buildDefaultConcurrentRounds = (): LotteryRoundItem[] => {
+  const nowMs = Date.now();
+  return MULTI_LOTTERY_SPECS.map((spec, idx) => {
+    const initialCollectedUsdt =
+      spec.id === 'MEGA_WEEKLY'
+        ? 450
+        : spec.id === 'DAILY_BLITZ'
+        ? 180
+        : spec.id === 'HOURLY_FLASH'
+        ? 65
+        : 220;
+    const poolSplit = calculateDynamicPariMutuelPool(initialCollectedUsdt, 15);
+    const durMin = Math.max(5, Math.round(spec.initialCountdownSec / 60));
+    return {
+      id: idx + 1,
+      roundCode: spec.roundCode,
+      lotteryType: spec.id,
+      titleFa: spec.titleFa,
+      titleEn: spec.titleEn,
+      titleZh: spec.titleZh,
+      subtitleFa: spec.subtitleFa,
+      category: spec.category,
+      formatLabel: spec.formatLabel,
+      mainCount: spec.mainCount,
+      mainMax: spec.mainMax,
+      goldenMax: spec.goldenMax,
+      jackpotUsdt: poolSplit.distributablePool85Usdt.toFixed(2),
+      ticketPriceUsdt: spec.ticketPriceUsdt.toFixed(2),
+      rtpPercent: '85.00',
+      soldPercent: spec.soldPercent,
+      remainingLabel: 'تقسیم ۸۵٪ استخر راس تایم (۱۵٪ سهم سایت)',
+      drawTimeLabel: spec.drawTimeLabel,
+      serverSeedHash: spec.serverSeedHash,
+      clientSeed: spec.clientSeed,
+      nonce: 1,
+      winningNumbers: JSON.stringify(spec.winningNumbers),
+      winningGoldenBall: spec.winningGoldenBall,
+      totalSalesUsdt: poolSplit.grossCollectedUsdt.toFixed(2),
+      totalPayoutUsdt: poolSplit.distributablePool85Usdt.toFixed(2),
+      operatorProfitUsdt: poolSplit.houseFee15Usdt.toFixed(2),
+      rolloverReserveUsdt: '0.00',
+      durationMinutes: durMin,
+      drawTargetTimestampMs: nowMs + durMin * 60 * 1000,
+      initialSeedUsdt: '0.00',
+      ticketsSoldCount: Math.max(1, Math.round(initialCollectedUsdt / spec.ticketPriceUsdt)),
+      status: 'ACTIVE',
+    };
+  });
+};
 
 export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeRoute, setActiveRoute] = useState<AppRoute>(resolveInitialRoute);
@@ -662,8 +715,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const authTokenRef = useRef<string | null>(null);
 
-  const [balanceUsdt, setBalanceUsdt] = useState<number>(3030.3);
-  const [bonusTokensUsdt, setBonusTokensUsdt] = useState<number>(25.0);
+  const [tonBalance, setTonBalance] = useState<number>(606.06);
+  const [bonusTokensTon, setBonusTokensTon] = useState<number>(5.0);
   const [vipTier, setVipTier] = useState<string>('DIAMOND VIP');
   const [displayName, setDisplayName] = useState<string>('کامران سهرابی (VIP)');
   const [rounds, setRounds] = useState<LotteryRoundItem[]>(buildDefaultConcurrentRounds);
@@ -760,9 +813,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isAdminPreviewEnabled, setIsAdminPreviewEnabledState] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem('luckydrop_dev_admin_preview_v1');
-      return raw ? raw === 'true' : false;
+      return raw ? raw === 'true' : true;
     } catch {
-      return false;
+      return true;
     }
   });
   const [freePlinkoDrops, setFreePlinkoDrops] = useState<number>(() => {
@@ -820,8 +873,11 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     isAdminPreviewEnabled
   );
 
-  // Separate TON Balance derived from PAM balance + Stars Balance
-  const tonBalance = Number((balanceUsdt / (tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE)).toFixed(2));
+  // Primary wallet balances are strictly tonBalance (💎 TON) & starsBalance (⭐ Stars);
+  // balanceUsdt and bonusTokensUsdt are computed read-only helpers for UI compatibility
+  const effectiveTonUsdRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
+  const balanceUsdt = Number((tonBalance * effectiveTonUsdRate).toFixed(2));
+  const bonusTokensUsdt = Number((bonusTokensTon * effectiveTonUsdRate).toFixed(2));
 
   const setActiveTmaCurrency = (currency: ActiveTmaCurrency) => {
     HapticEngine.selectionChanged();
@@ -1046,7 +1102,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return '';
     }
   });
-  const [referralEarningsUsdt, setReferralEarningsUsdt] = useState<number>(18.4);
+  const [referralEarningsTon, setReferralEarningsTon] = useState<number>(3.68);
+  const [referralEarningsStars, setReferralEarningsStars] = useState<number>(0);
   const [referredTicketsCount, setReferredTicketsCount] = useState<number>(14);
   const [referralEvents, setReferralEvents] = useState<ReferralEventItem[]>([]);
 
@@ -1069,8 +1126,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [tonConnectModalOpen, setTonConnectModalOpen] = useState<boolean>(false);
   const [aiChatOpen, setAiChatOpen] = useState<boolean>(false);
 
-  // Multi-Lottery Concurrent State
+  // Multi-Lottery Concurrent State & Dynamic Active Round Selection
   const [activeLotteryId, setActiveLotteryIdState] = useState<LotteryTypeId>('MEGA_WEEKLY');
+  const [activeRoundCode, setActiveRoundCodeState] = useState<string>('#ZRN-8493');
+  const [autoWithdrawLimitTon, setAutoWithdrawLimitTonState] = useState<number>(50);
   const [lotteryTimers, setLotteryTimers] = useState<Record<LotteryTypeId, number>>(() => ({
     MEGA_WEEKLY: MULTI_LOTTERY_SPECS[0].initialCountdownSec,
     DAILY_BLITZ: MULTI_LOTTERY_SPECS[1].initialCountdownSec,
@@ -1078,8 +1137,58 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     TON_SPECIAL: MULTI_LOTTERY_SPECS[3].initialCountdownSec,
   }));
 
-  const activeLotterySpec =
-    MULTI_LOTTERY_SPECS.find((s) => s.id === activeLotteryId) || MULTI_LOTTERY_SPECS[0];
+  const activeRound =
+    rounds.find((r) => r.roundCode === activeRoundCode) ||
+    rounds.find((r) => r.lotteryType === activeLotteryId) ||
+    rounds[0] ||
+    null;
+
+  const baseSpec =
+    MULTI_LOTTERY_SPECS.find((s) => s.id === (activeRound?.lotteryType || activeLotteryId)) ||
+    MULTI_LOTTERY_SPECS[0];
+
+  const activeLotterySpec: MultiLotterySpec = activeRound
+    ? {
+        ...baseSpec,
+        roundCode: activeRound.roundCode,
+        titleFa: activeRound.titleFa,
+        subtitleFa: activeRound.subtitleFa || baseSpec.subtitleFa,
+        formatLabel: activeRound.formatLabel || baseSpec.formatLabel,
+        mainCount: Number(activeRound.mainCount) || baseSpec.mainCount,
+        mainMax: Number(activeRound.mainMax) || baseSpec.mainMax,
+        goldenMax:
+          typeof activeRound.goldenMax === 'number' ? activeRound.goldenMax : baseSpec.goldenMax,
+        jackpotUsdt: Number(activeRound.jackpotUsdt) || 0,
+        ticketPriceUsdt: Number(activeRound.ticketPriceUsdt) || baseSpec.ticketPriceUsdt,
+        rtpPercent: Number(activeRound.rtpPercent) || 85,
+        serverSeedHash: activeRound.serverSeedHash || baseSpec.serverSeedHash,
+        clientSeed: activeRound.clientSeed || baseSpec.clientSeed,
+      }
+    : baseSpec;
+
+  const setActiveRoundCode = (roundCode: string) => {
+    setActiveRoundCodeState(roundCode);
+    const target = rounds.find((r) => r.roundCode === roundCode);
+    if (target) {
+      if (target.lotteryType) {
+        setActiveLotteryIdState(target.lotteryType);
+      }
+      const mCount = Number(target.mainCount) || 5;
+      const mMax = Number(target.mainMax) || 50;
+      const gMax = typeof target.goldenMax === 'number' ? target.goldenMax : 15;
+      const generated = generateBulkQuickPickSlips(
+        bulkSlips.length || 1,
+        mCount,
+        mMax,
+        gMax,
+        roundCode.replace('#', '').toLowerCase()
+      );
+      setBulkSlips(generated);
+      setActiveSlipIndex(0);
+      setSelectedMainBalls(generated[0].mainNumbers);
+      setSelectedGoldenBall(generated[0].goldenBall);
+    }
+  };
 
   // Single & Bulk Ticket Cart State
   const [selectedMainBalls, setSelectedMainBalls] = useState<number[]>([7, 14, 23, 38, 49]);
@@ -1097,22 +1206,39 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const syncPamStateEverywhere = useCallback((nextPam: PAMPlayerState, recon?: PAMReconciliationReport) => {
     localPamEngineRef.current.hydrateState(nextPam);
-    setPamState({ ...nextPam });
-    setBalanceUsdt(nextPam.balanceUsdt);
-    setBonusTokensUsdt(nextPam.bonusTokensUsdt);
+    const hydrated = localPamEngineRef.current.getState();
+    setPamState({ ...hydrated });
+    setTonBalance(hydrated.tonBalance);
+    setBonusTokensTon(hydrated.bonusTokensTon);
+    if (typeof hydrated.referralEarningsTon === 'number') {
+      setReferralEarningsTon(hydrated.referralEarningsTon);
+    }
+    if (typeof hydrated.referralEarningsStars === 'number') {
+      setReferralEarningsStars(hydrated.referralEarningsStars);
+    }
+    if (typeof hydrated.starsBalance === 'number') {
+      setStarsBalance(hydrated.starsBalance);
+      try {
+        localStorage.setItem('luckydrop_stars_balance_v1', String(hydrated.starsBalance));
+      } catch {}
+    }
     const computedRecon = recon || localPamEngineRef.current.reconcile().reconciliation || null;
     setPamReconciliation(computedRecon);
-    savePAMStateToIndexedDB(nextPam);
+    savePAMStateToIndexedDB(hydrated);
   }, []);
 
   // Hydrate from IndexedDB on initial mount before network snapshot arrives
   useEffect(() => {
     loadPAMStateFromIndexedDB().then((cached) => {
-      if (cached && typeof cached.balanceUsdt === 'number') {
+      if (cached && typeof cached.tonBalance === 'number') {
         localPamEngineRef.current.hydrateState(cached);
-        setPamState(cached);
-        setBalanceUsdt(cached.balanceUsdt);
-        setBonusTokensUsdt(cached.bonusTokensUsdt || 25);
+        const hydrated = localPamEngineRef.current.getState();
+        setPamState(hydrated);
+        setTonBalance(hydrated.tonBalance);
+        setBonusTokensTon(hydrated.bonusTokensTon || 5);
+        if (typeof hydrated.starsBalance === 'number') {
+          setStarsBalance(hydrated.starsBalance);
+        }
         setPamReconciliation(localPamEngineRef.current.reconcile().reconciliation || null);
       }
     });
@@ -1120,12 +1246,16 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const setActiveLotteryId = (id: LotteryTypeId) => {
     setActiveLotteryIdState(id);
+    const matchingRound = rounds.find((r) => r.lotteryType === id);
+    if (matchingRound) {
+      setActiveRoundCodeState(matchingRound.roundCode);
+    }
     const spec = MULTI_LOTTERY_SPECS.find((s) => s.id === id) || MULTI_LOTTERY_SPECS[0];
     const generated = generateBulkQuickPickSlips(
       bulkSlips.length || 1,
-      spec.mainCount,
-      spec.mainMax,
-      spec.goldenMax,
+      matchingRound?.mainCount || spec.mainCount,
+      matchingRound?.mainMax || spec.mainMax,
+      typeof matchingRound?.goldenMax === 'number' ? matchingRound.goldenMax : spec.goldenMax,
       id.toLowerCase()
     );
     setBulkSlips(generated);
@@ -1191,6 +1321,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
     setOracleSnapshot(snap);
     setFxRates(snap.rates);
+    if (
+      snap.source !== 'FALLBACK_ORACLE_FEED' &&
+      Number.isFinite(snap.rates.TON) &&
+      snap.rates.TON > 0.2
+    ) {
+      setTonUsdRateState(Number(snap.rates.TON.toFixed(3)));
+    }
     setOracleCountdownSec(15);
   }, [oracleMarkupPercent]);
 
@@ -1206,6 +1343,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
+    const tgInitData =
+      typeof window !== 'undefined'
+        ? String((window as any)?.Telegram?.WebApp?.initData || '').trim()
+        : '';
+    if (tgInitData) {
+      headers['X-Telegram-Init-Data'] = tgInitData;
+    }
     if (auth.currentUser) {
       try {
         const token = await auth.currentUser.getIdToken();
@@ -1229,12 +1373,32 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (data.pamState) {
         syncPamStateEverywhere(data.pamState, data.reconciliation);
       } else if (data.user) {
-        setBalanceUsdt(parseFloat(data.user.balanceUsdt) || 3030.3);
+        if (typeof data.user.tonBalance === 'number') {
+          setTonBalance(data.user.tonBalance);
+        }
+        if (typeof data.user.starsBalance === 'number') {
+          setStarsBalance(data.user.starsBalance);
+        }
+        if (typeof data.user.referralEarningsTon === 'number') {
+          setReferralEarningsTon(data.user.referralEarningsTon);
+        }
+        if (typeof data.user.referralEarningsStars === 'number') {
+          setReferralEarningsStars(data.user.referralEarningsStars);
+        }
         setVipTier(data.user.vipTier || 'DIAMOND VIP');
         setDisplayName(data.user.displayName || 'کاربر ویژه VIP');
       }
       if (Array.isArray(data.rounds)) {
         setRounds(data.rounds);
+        if (
+          data.rounds.length > 0 &&
+          !data.rounds.some((r: LotteryRoundItem) => r.roundCode === activeRoundCode)
+        ) {
+          setActiveRoundCodeState(data.rounds[0].roundCode);
+        }
+      }
+      if (typeof data.autoWithdrawLimitTon === 'number' && data.autoWithdrawLimitTon > 0) {
+        setAutoWithdrawLimitTonState(data.autoWithdrawLimitTon);
       }
       if (Array.isArray(data.tickets)) {
         setTickets(data.tickets);
@@ -1275,7 +1439,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (error) {
       console.error('Snapshot fetch error (operating on IndexedDB PAM fallback):', error);
     }
-  }, [getHeaders, syncPamStateEverywhere]);
+  }, [getHeaders, syncPamStateEverywhere, activeRoundCode]);
 
   const triggerDraw = useCallback(
     async (roundCode: string): Promise<DrawExecutionResult | null> => {
@@ -1397,8 +1561,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [getHeaders, refreshSnapshot, syncPamStateEverywhere]
   );
 
-  // 1-second global ticker for the 15s Oracle countdown + 4 concurrent lottery timers
-  // When any timer hits 0, triggers the real Provably Fair Draw Engine for that round!
+  // 1-second global ticker for the 15s Oracle countdown + dynamic round timers
+  // When any active round's drawTargetTimestampMs is reached ("راس تایم"), triggers Provably Fair Draw Engine (85% Pool Distributed / 15% Site Share)!
+  const autoDrawingRoundsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const interval = setInterval(() => {
       setOracleCountdownSec((prev) => {
@@ -1409,12 +1574,29 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return prev - 1;
       });
 
+      const nowMs = Date.now();
+      for (const r of rounds) {
+        if (
+          r.status?.toUpperCase() === 'ACTIVE' &&
+          r.drawTargetTimestampMs &&
+          r.drawTargetTimestampMs <= nowMs &&
+          !autoDrawingRoundsRef.current.has(r.roundCode)
+        ) {
+          autoDrawingRoundsRef.current.add(r.roundCode);
+          triggerDraw(r.roundCode).finally(() => {
+            autoDrawingRoundsRef.current.delete(r.roundCode);
+          });
+        }
+      }
+
       setLotteryTimers((prev) => {
         const next = { ...prev };
         for (const spec of MULTI_LOTTERY_SPECS) {
           const id = spec.id;
-          if (prev[id] <= 1) {
-            triggerDraw(spec.roundCode);
+          const matching = rounds.find((r) => r.lotteryType === id);
+          if (matching?.drawTargetTimestampMs) {
+            next[id] = Math.max(0, Math.floor((matching.drawTargetTimestampMs - nowMs) / 1000));
+          } else if (prev[id] <= 1) {
             next[id] = spec.initialCountdownSec;
           } else {
             next[id] = prev[id] - 1;
@@ -1424,7 +1606,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [refreshPriceOracleNow, triggerDraw]);
+  }, [refreshPriceOracleNow, triggerDraw, rounds]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -1523,8 +1705,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           ok: false,
           operation: 'DEBIT',
           error: `موجودی ستاره‌های تلگرام شما (${starsBalance} ⭐) کافی نیست.`,
-          balanceUsdt,
-          bonusTokensUsdt,
+          currency: 'STARS',
+          tonBalance,
+          starsBalance,
+          referralEarningsTon,
+          referralEarningsStars,
+          bonusTokensTon,
         };
       }
       setStarsBalance((prev) => {
@@ -1798,6 +1984,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     minesCount?: number;
     minesRevealedSafeCount?: number;
     minesHitBomb?: boolean;
+    towerDifficulty?: TowerDifficulty;
+    towerFloorsCleared?: number;
+    towerHitTrap?: boolean;
+    wheelRisk?: 'LOW' | 'MEDIUM' | 'HIGH';
+    hiloMultiplier?: number;
+    hiloWon?: boolean;
+    hiloSummaryLabel?: string;
     usedFreeBonusToken?: boolean;
   }) => {
     if (killSwitchActive) {
@@ -1805,12 +1998,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return {
         ok: false,
         error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: بازی‌های آنی موقتاً متوقف است.',
-        balanceUsdt,
+        tonBalance,
+        starsBalance,
       };
     }
 
     const isFreeBonusRound = Boolean(params.usedFreeBonusToken);
-    const effectiveDebitUsdt = isFreeBonusRound ? 0 : params.betAmountUsdt;
+    const effectiveDebitUsdt = isFreeBonusRound ? 0 : Math.max(0.01, Number(params.betAmountUsdt) || 0.05);
 
     // Progress Quest #4 (Play 10 Rounds in Mini-Games)
     setTmaQuests((prev) => {
@@ -1824,8 +2018,20 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } catch {}
       return next;
     });
+
+    const xpCalc = calculateZeroLossTurnoverXp(effectiveDebitUsdt, false);
     setTmaXpPoints((xp) => {
-      const next = xp + 5;
+      const next = xp + xpCalc.xpEarned;
+      // Every 100 XP (backed by 100 TON cumulative turnover) unlocks 1 Free Lottery Ticket
+      if (Math.floor(next / 100) > Math.floor(xp / 100)) {
+        setFreeLotteryTickets((ft) => {
+          const updatedFt = ft + 1;
+          try {
+            localStorage.setItem('luckydrop_free_lottery_tickets_v1', String(updatedFt));
+          } catch {}
+          return updatedFt;
+        });
+      }
       try {
         localStorage.setItem('luckydrop_tma_xp_v1', String(next));
       } catch {}
@@ -1834,33 +2040,47 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // If active currency is STARS and not a free bonus token, also deduct/credit starsBalance proportionally
     if (!isFreeBonusRound && activeTmaCurrency === 'STARS') {
-      const neededStars = usdtToTmaCurrency(params.betAmountUsdt, 'STARS', tonUsdRate, starsUsdRate);
+      const neededStars = usdtToTmaCurrency(effectiveDebitUsdt, 'STARS', tonUsdRate, starsUsdRate);
       if (starsBalance < neededStars) {
         HapticEngine.notificationOccurred('error');
         setDepositModalOpen(true);
         return {
           ok: false,
           error: `موجودی ستاره‌های تلگرام شما (${starsBalance} ⭐) کافی نیست. لطفاً حساب خود را شارژ کنید.`,
-          balanceUsdt,
+          tonBalance,
+          starsBalance,
         };
       }
     }
 
-    const currentLiveBalance = localPamEngineRef.current.getState().balanceUsdt;
-    if (!isFreeBonusRound && currentLiveBalance < effectiveDebitUsdt && balanceUsdt < effectiveDebitUsdt) {
+    const effectiveDebitTon = Number((effectiveDebitUsdt / effectiveTonUsdRate).toFixed(4));
+    const currentLiveTonBalance = localPamEngineRef.current.getState().tonBalance;
+    if (
+      !isFreeBonusRound &&
+      activeTmaCurrency === 'TON' &&
+      currentLiveTonBalance < effectiveDebitTon &&
+      tonBalance < effectiveDebitTon
+    ) {
       HapticEngine.notificationOccurred('error');
       setDepositModalOpen(true);
       return {
         ok: false,
         error: 'موجودی کیف پول TON/PAM شما کافی نیست.',
-        balanceUsdt,
+        tonBalance,
+        starsBalance,
       };
     }
 
     const txUuid = generateDeterministicUuid('mg_debit');
 
-    // Local deterministic evaluation for MINES, SCRATCH, or Free Bonus Token rounds
-    if (params.gameId === 'MINES' || params.gameId === 'SCRATCH' || isFreeBonusRound) {
+    // Local deterministic evaluation for interactive multi-step games (MINES, SCRATCH, TOWER_3D, HILO_3D) or Free Bonus Token rounds
+    if (
+      params.gameId === 'MINES' ||
+      params.gameId === 'SCRATCH' ||
+      params.gameId === 'TOWER_3D' ||
+      params.gameId === 'HILO_3D' ||
+      isFreeBonusRound
+    ) {
       const seedsBefore = { ...localPamEngineRef.current.getState().seeds };
       const roundId = `MG-${params.gameId}-${seedsBefore.nonce}`;
       if (!isFreeBonusRound && effectiveDebitUsdt > 0) {
@@ -1868,11 +2088,17 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           transactionUuid: txUuid,
           roundId,
           vertical: `INSTANT_${params.gameId}`,
+          currency: activeTmaCurrency,
           amountUsdt: effectiveDebitUsdt,
           note: `Bet ${params.gameId} (${activeTmaCurrency})`,
         });
         if (!debitRes.ok) {
-          return { ok: false, error: debitRes.error, balanceUsdt: debitRes.balanceUsdt };
+          return {
+            ok: false,
+            error: debitRes.error,
+            tonBalance: debitRes.tonBalance,
+            starsBalance: debitRes.starsBalance,
+          };
         }
       } else {
         localPamEngineRef.current.getState().seeds.nonce += 1;
@@ -1883,7 +2109,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         serverSeed: seedsBefore.serverSeed,
         clientSeed: seedsBefore.clientSeed,
         nonce: seedsBefore.nonce,
-        betAmountUsdt: params.betAmountUsdt,
+        betAmountUsdt: effectiveDebitUsdt || params.betAmountUsdt,
         diceRollUnder: params.diceRollUnder,
         diceTarget: params.diceTarget,
         diceMode: params.diceMode,
@@ -1894,6 +2120,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         minesCount: params.minesCount,
         minesRevealedSafeCount: params.minesRevealedSafeCount,
         minesHitBomb: params.minesHitBomb,
+        towerDifficulty: params.towerDifficulty,
+        towerFloorsCleared: params.towerFloorsCleared,
+        towerHitTrap: params.towerHitTrap,
+        wheelRisk: params.wheelRisk,
+        hiloMultiplier: params.hiloMultiplier,
+        hiloWon: params.hiloWon,
+        hiloSummaryLabel: params.hiloSummaryLabel,
       });
 
       if (evaluation.payoutUsdt > 0) {
@@ -1910,7 +2143,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (activeTmaCurrency === 'STARS') {
         const betStars = isFreeBonusRound
           ? 0
-          : usdtToTmaCurrency(params.betAmountUsdt, 'STARS', tonUsdRate, starsUsdRate);
+          : usdtToTmaCurrency(effectiveDebitUsdt, 'STARS', tonUsdRate, starsUsdRate);
         const winStars = usdtToTmaCurrency(evaluation.payoutUsdt, 'STARS', tonUsdRate, starsUsdRate);
         setStarsBalance((prev) => {
           const next = Math.max(0, prev - betStars + winStars);
@@ -1930,7 +2163,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         evaluation,
         bonusTicketAwarded: null,
         debitTransactionUuid: txUuid,
-        balanceUsdt: localPamEngineRef.current.getState().balanceUsdt,
+        tonBalance: localPamEngineRef.current.getState().tonBalance,
+        starsBalance: localPamEngineRef.current.getState().starsBalance,
       };
     }
 
@@ -1941,6 +2175,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         headers,
         body: JSON.stringify({
           ...params,
+          currency: activeTmaCurrency,
+          betAmountUsdt: effectiveDebitUsdt,
           transaction_uuid: txUuid,
         }),
       });
@@ -1955,7 +2191,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setTickets((prev) => [data.bonusTicketAwarded, ...prev]);
         }
         if (activeTmaCurrency === 'STARS' && data.evaluation) {
-          const betStars = usdtToTmaCurrency(params.betAmountUsdt, 'STARS', tonUsdRate, starsUsdRate);
+          const betStars = usdtToTmaCurrency(effectiveDebitUsdt, 'STARS', tonUsdRate, starsUsdRate);
           const winStars = usdtToTmaCurrency(
             data.evaluation.payoutUsdt || 0,
             'STARS',
@@ -1978,13 +2214,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           evaluation: data.evaluation as MiniGameEvaluationResult,
           bonusTicketAwarded: data.bonusTicketAwarded || null,
           debitTransactionUuid: data.debitTransactionUuid || txUuid,
-          balanceUsdt: data.balanceUsdt,
+          tonBalance: data.tonBalance ?? tonBalance,
+          starsBalance: data.starsBalance ?? starsBalance,
         };
       }
       return {
         ok: false,
         error: data.error || 'خطا در اجرای بازی آنی',
-        balanceUsdt: data.balanceUsdt ?? balanceUsdt,
+        tonBalance: data.tonBalance ?? tonBalance,
+        starsBalance: data.starsBalance ?? starsBalance,
       };
     } catch {
       // Local PAM + 52-bit HMAC-SHA256 fallback
@@ -1994,18 +2232,24 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         transactionUuid: txUuid,
         roundId,
         vertical: `INSTANT_${params.gameId}`,
-        amountUsdt: params.betAmountUsdt,
+        currency: activeTmaCurrency,
+        amountUsdt: effectiveDebitUsdt,
         note: `شرط بازی آنی ${params.gameId}`,
       });
       if (!debitRes.ok) {
-        return { ok: false, error: debitRes.error, balanceUsdt: debitRes.balanceUsdt };
+        return {
+          ok: false,
+          error: debitRes.error,
+          tonBalance: debitRes.tonBalance,
+          starsBalance: debitRes.starsBalance,
+        };
       }
       const evaluation = evaluateProvablyFairMiniGame({
         gameId: params.gameId,
         serverSeed: seedsBefore.serverSeed,
         clientSeed: seedsBefore.clientSeed,
         nonce: seedsBefore.nonce,
-        betAmountUsdt: params.betAmountUsdt,
+        betAmountUsdt: effectiveDebitUsdt,
         diceRollUnder: params.diceRollUnder,
         diceTarget: params.diceTarget,
         diceMode: params.diceMode,
@@ -2013,6 +2257,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         crashAutoCashoutX: params.crashAutoCashoutX,
         plinkoRows: params.plinkoRows,
         plinkoRisk: params.plinkoRisk,
+        wheelRisk: params.wheelRisk,
       });
       if (evaluation.payoutUsdt > 0) {
         localPamEngineRef.current.credit({
@@ -2025,7 +2270,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
       }
       let bonusTicketAwarded: TicketItem | null = null;
-      if (evaluation.plinkoBonusTicket) {
+      // Zero-Loss Rule: Only mint instant free ticket on bets >= 5.00 USDT (1.00 TON)
+      if (evaluation.plinkoBonusTicket && effectiveDebitUsdt >= 5.0) {
         const ticketCode = `PLK-${Math.floor(100000 + Math.random() * 900000)}`;
         const txHash = `0x${sha256Hex(`${txUuid}:${ticketCode}`)}`;
         bonusTicketAwarded = {
@@ -2036,7 +2282,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           mainNumbers: JSON.stringify([7, 14, 21, 35, 42]),
           goldenBall: 7,
           costUsdt: '0.00',
-          currencyNetwork: 'PLINKO BONUS TICKET',
+          currencyNetwork: 'GOLDEN SLOT BONUS TICKET (RESERVE-BACKED)',
           txHash,
           transactionUuid: `${txUuid}_bonus_ticket`,
           clientSeed: seedsBefore.clientSeed,
@@ -2047,7 +2293,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           confirmations: 19,
           prizeWonUsdt: '0.00',
           claimed: false,
-          createdAt: 'همین الان (جایزه اسلات ویژه Plinko)',
+          createdAt: 'همین الان (جایزه اسلات طلایی • تامین از ذخیره ۳٪)',
         };
         setTickets((prev) => [bonusTicketAwarded!, ...prev]);
       }
@@ -2060,7 +2306,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         evaluation,
         bonusTicketAwarded,
         debitTransactionUuid: txUuid,
-        balanceUsdt: localPamEngineRef.current.getState().balanceUsdt,
+        tonBalance: localPamEngineRef.current.getState().tonBalance,
+        starsBalance: localPamEngineRef.current.getState().starsBalance,
       };
     }
   };
@@ -2076,17 +2323,23 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setTonConnectModalOpen(true);
       return {
         ok: false,
-        message: '💎 لطفاً ابتدا کیف پول TON خود را متصل کنید (TON Connect).',
+        message: '💎 لطفاً ابتدا کیف پول استاندارد TON Connect خود را متصل کنید.',
       };
     }
-    const safeTon = Math.max(0.1, Number(amountTon) || 1);
+    const safeTon = Math.max(0.01, Number(amountTon) || 1);
     const amountUsdt = tmaCurrencyToUsdt(safeTon, 'TON', tonUsdRate, starsUsdRate);
+    const autoPayload = buildTonConnectAutoTransferPayload({
+      recipientVaultAddress: adminTonWalletAddress,
+      amountTon: safeTon,
+      commentMemo: memo || `LD-TG-${telegramUser.id}`,
+      walletProvider: String(connectedWalletProvider || 'Tonkeeper'),
+    });
     HapticEngine.impactOccurred('medium');
     const res = await submitDepositRequest({
       amountUsdt,
-      network: 'TON (The Open Network)',
+      network: 'TON (TON Connect 2.0 Auto)',
       cryptoKey: 'TON',
-      txHash: `ton_tx_${Date.now().toString(16)}_${memo || telegramUser.id}`,
+      txHash: `ton_tx_${Date.now().toString(16)}_${autoPayload.nanoTon}`,
       senderWallet: activeTonAddr,
       officialRecipientWallet: adminTonWalletAddress,
       mode: 'ONCHAIN_AUTO',
@@ -2096,9 +2349,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       HapticEngine.notificationOccurred('success');
       return {
         ok: true,
-        message: `💎 واریز +${rawFormatCurrency(safeTon, 'TON')} از کیف پول (${truncateTonAddress(
-          activeTonAddr
-        )}) تایید شد!`,
+        message: `💎 تراکنش اتوماتیک TON Connect (+${rawFormatCurrency(
+          safeTon,
+          'TON'
+        )}) از کیف پول (${truncateTonAddress(activeTonAddr)}) امضا و آنی شارژ شد!`,
       };
     }
     return { ok: false, message: res.message };
@@ -2195,11 +2449,22 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
     if (res.ok) {
       HapticEngine.notificationOccurred('success');
+      const gate = evaluateHighValueWithdrawalGate(params.amount, autoWithdrawLimitTon);
+      if (gate.requiresAdminApproval || res.withdrawal?.status === 'pending_review') {
+        return {
+          ok: true,
+          message: `⏳ درخواست برداشت مبلغ بالا (${rawFormatCurrency(
+            params.amount,
+            'TON'
+          )}) ثبت شد و جهت امنیت خزانه در صف تایید ادمین قرار گرفت.`,
+        };
+      }
       return {
         ok: true,
-        message: `💎 برداشت ${rawFormatCurrency(params.amount, 'TON')} به کیف پول (${truncateTonAddress(
-          targetDest
-        )}) با موفقیت ثبت شد!`,
+        message: `💎 برداشت اتوماتیک ${rawFormatCurrency(
+          params.amount,
+          'TON'
+        )} به کیف پول (${truncateTonAddress(targetDest)}) به صورت آنی تسویه شد!`,
       };
     }
     HapticEngine.notificationOccurred('error');
@@ -2335,12 +2600,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (data.pamState) {
         syncPamStateEverywhere(data.pamState);
-      } else if (typeof data.newBalanceUsdt === 'number') {
-        setBalanceUsdt(data.newBalanceUsdt);
+      } else if (typeof data.tonBalance === 'number') {
+        setTonBalance(data.tonBalance);
       }
       if (referredByCode && referredByCode !== referralCode) {
         const split = calculateZeroLossTicketSplit(totalCostUsdt, true, 85, 2);
-        setReferralEarningsUsdt((prev) => Number((prev + split.referralCommissionUsdt).toFixed(2)));
+        const commTon = Number((split.referralCommissionUsdt / effectiveTonUsdRate).toFixed(4));
+        setReferralEarningsTon((prev) => Number((prev + commTon).toFixed(4)));
         setReferredTicketsCount((prev) => prev + slips.length);
       }
       const mintedList: TicketItem[] = Array.isArray(data.tickets)
@@ -2392,6 +2658,21 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         };
       });
       setTickets((prev) => [...fallbackTickets, ...prev]);
+      setRounds((prev) =>
+        prev.map((r) => {
+          if (r.roundCode !== roundCode) return r;
+          const nextCollected = (parseFloat(r.totalSalesUsdt || '0') || 0) + totalCostUsdt;
+          const split = calculateDynamicPariMutuelPool(nextCollected, 15);
+          return {
+            ...r,
+            totalSalesUsdt: split.grossCollectedUsdt.toFixed(2),
+            jackpotUsdt: split.distributablePool85Usdt.toFixed(2),
+            totalPayoutUsdt: split.distributablePool85Usdt.toFixed(2),
+            operatorProfitUsdt: split.houseFee15Usdt.toFixed(2),
+            ticketsSoldCount: (r.ticketsSoldCount || 0) + slips.length,
+          };
+        })
+      );
       setActiveTrackingTicket(fallbackTickets[0]);
       return { ok: true, tickets: fallbackTickets };
     }
@@ -2412,8 +2693,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
       if (res.ok) {
         const data = await res.json();
-        if (typeof data.newBalanceUsdt === 'number') {
-          setBalanceUsdt(data.newBalanceUsdt);
+        if (typeof data.tonBalance === 'number') {
+          setTonBalance(data.tonBalance);
         }
       }
     } catch {
@@ -2618,6 +2899,26 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return true;
   };
 
+  const setAutoWithdrawLimitTon = async (limitTon: number): Promise<boolean> => {
+    const safeLimit = Math.max(1, Number(limitTon) || 50);
+    setAutoWithdrawLimitTonState(safeLimit);
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/withdrawals/threshold', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ autoWithdrawLimitTon: safeLimit }),
+      });
+      if (res.ok) {
+        await refreshSnapshot();
+        return true;
+      }
+    } catch {
+      // fallback
+    }
+    return true;
+  };
+
   const setKillSwitchState = async (active?: boolean) => {
     try {
       const headers = await getHeaders();
@@ -2640,23 +2941,56 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const createNewRound = async (input: {
-    titleFa: string;
+    titleFa?: string;
     category: string;
-    ticketPriceUsdt: number;
-    rtpPercent: number;
-    jackpotUsdt: number;
+    ticketPriceUsdt?: number;
+    ticketPriceTon?: number;
+    rtpPercent?: number;
+    jackpotUsdt?: number;
+    initialSeedTon?: number;
+    durationMinutes?: number;
+    mainCount?: number;
+    mainMax?: number;
+    goldenMax?: number;
   }) => {
+    const effectiveTonRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
+    const priceUsdt =
+      typeof input.ticketPriceTon === 'number' && input.ticketPriceTon > 0
+        ? Number((input.ticketPriceTon * effectiveTonRate).toFixed(2))
+        : Math.max(0.1, Number(input.ticketPriceUsdt) || effectiveTonRate);
+    const seedUsdt =
+      typeof input.initialSeedTon === 'number' && input.initialSeedTon >= 0
+        ? Number((input.initialSeedTon * effectiveTonRate).toFixed(2))
+        : Math.max(0, Number(input.jackpotUsdt) || 0);
+    const durMin = Math.max(1, Number(input.durationMinutes) || 60);
+    const cleanTitle =
+      (input.titleFa || '').trim() || `دور ویژه TON #${rounds.length + 1}`;
+
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/admin/rounds', {
         method: 'POST',
         headers,
-        body: JSON.stringify(input),
+        body: JSON.stringify({
+          titleFa: cleanTitle,
+          category: input.category,
+          ticketPriceUsdt: priceUsdt,
+          rtpPercent: 85,
+          jackpotUsdt: seedUsdt,
+          initialSeedUsdt: seedUsdt,
+          durationMinutes: durMin,
+          mainCount: input.mainCount || 5,
+          mainMax: input.mainMax || 50,
+          goldenMax: typeof input.goldenMax === 'number' ? input.goldenMax : 15,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.rounds)) {
           setRounds(data.rounds);
+          if (data.round?.roundCode) {
+            setActiveRoundCodeState(data.round.roundCode);
+          }
         } else {
           await refreshSnapshot();
         }
@@ -2667,47 +3001,62 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     const fallbackCode = `#ZRN-${Math.floor(1000 + Math.random() * 9000)}`;
     const newSeed = generateCryptographicServerSeed();
+    const poolSplit = calculateDynamicPariMutuelPool(seedUsdt, 15);
+    const mCount = input.mainCount || 5;
+    const mMax = input.mainMax || 50;
+    const gMax = typeof input.goldenMax === 'number' ? input.goldenMax : 15;
     const fallbackRound: LotteryRoundItem = {
       id: Date.now(),
       roundCode: fallbackCode,
       lotteryType: 'MEGA_WEEKLY',
-      titleFa: input.titleFa,
-      titleEn: input.titleFa,
-      titleZh: input.titleFa,
-      subtitleFa: '۵ گوی از ۵۰ + ۱ گوی طلایی',
+      titleFa: cleanTitle,
+      titleEn: cleanTitle,
+      titleZh: cleanTitle,
+      subtitleFa: `${mCount} گوی از ${mMax}${gMax > 0 ? ` + ۱ گوی طلایی از ${gMax}` : ''}`,
       category: input.category,
-      formatLabel: '5/50 + 1/15',
-      mainCount: 5,
-      mainMax: 50,
-      goldenMax: 15,
-      jackpotUsdt: input.jackpotUsdt.toFixed(2),
-      ticketPriceUsdt: input.ticketPriceUsdt.toFixed(2),
-      rtpPercent: input.rtpPercent.toFixed(2),
-      soldPercent: 10,
-      remainingLabel: '۹۰٪ باقی‌مانده',
-      drawTimeLabel: 'فعال در مدار',
+      formatLabel: `${mCount}/${mMax}${gMax > 0 ? ` + 1/${gMax}` : ''}`,
+      mainCount: mCount,
+      mainMax: mMax,
+      goldenMax: gMax,
+      jackpotUsdt: poolSplit.distributablePool85Usdt.toFixed(2),
+      ticketPriceUsdt: priceUsdt.toFixed(2),
+      rtpPercent: '85.00',
+      soldPercent: 0,
+      remainingLabel: 'تقسیم ۸۵٪ استخر راس تایم (۱۵٪ سهم سایت)',
+      drawTimeLabel: `قرعه‌کشی راس ${durMin} دقیقه`,
       serverSeedHash: sha256Hex(newSeed),
       clientSeed: pamState.seeds.clientSeed,
       winningNumbers: '[7,14,23,38,49]',
       winningGoldenBall: 8,
-      totalSalesUsdt: '0.00',
-      totalPayoutUsdt: input.jackpotUsdt.toFixed(2),
-      operatorProfitUsdt: (input.jackpotUsdt * 0.1).toFixed(2),
-      rolloverReserveUsdt: (input.jackpotUsdt * 0.03).toFixed(2),
+      totalSalesUsdt: poolSplit.grossCollectedUsdt.toFixed(2),
+      totalPayoutUsdt: poolSplit.distributablePool85Usdt.toFixed(2),
+      operatorProfitUsdt: poolSplit.houseFee15Usdt.toFixed(2),
+      rolloverReserveUsdt: '0.00',
+      durationMinutes: durMin,
+      drawTargetTimestampMs: Date.now() + durMin * 60 * 1000,
+      initialSeedUsdt: seedUsdt.toFixed(2),
+      ticketsSoldCount: 0,
       status: 'ACTIVE',
     };
     setRounds((prev) => [fallbackRound, ...prev]);
+    setActiveRoundCodeState(fallbackRound.roundCode);
     return true;
   };
 
   const deleteLotteryRound = async (roundCode: string): Promise<boolean> => {
-    setRounds((prev) => prev.filter((r) => r.roundCode !== roundCode));
+    setRounds((prev) => {
+      const next = prev.filter((r) => r.roundCode !== roundCode);
+      if (activeRoundCode === roundCode && next[0]) {
+        setActiveRoundCodeState(next[0].roundCode);
+      }
+      return next;
+    });
     try {
       const headers = await getHeaders();
-      const encoded = encodeURIComponent(roundCode);
-      const res = await fetch(`/api/admin/rounds/${encoded}`, {
-        method: 'DELETE',
+      const res = await fetch('/api/admin/rounds/delete', {
+        method: 'POST',
         headers,
+        body: JSON.stringify({ roundCode }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -2722,23 +3071,69 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return true;
   };
 
-  const updateRoundTicketPrice = (roundCode: string, newPriceUsdt: number) => {
-    const safePrice = Math.max(0.5, Number(newPriceUsdt) || 5);
+  const deleteAllLotteryRounds = async (): Promise<boolean> => {
+    setRounds([]);
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/rounds/delete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ deleteAll: true }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.rounds)) {
+          setRounds(data.rounds);
+        }
+        return true;
+      }
+    } catch {
+      // Already cleared in local state
+    }
+    return true;
+  };
+
+  const updateRoundTicketPrice = (
+    roundCode: string,
+    newPriceUsdt: number,
+    durationMinutes?: number
+  ) => {
+    const safePrice = Math.max(0.1, Number(newPriceUsdt) || 5);
     setRounds((prev) =>
-      prev.map((r) =>
-        r.roundCode === roundCode ? { ...r, ticketPriceUsdt: safePrice.toFixed(2) } : r
-      )
+      prev.map((r) => {
+        if (r.roundCode !== roundCode) return r;
+        const nextDur =
+          typeof durationMinutes === 'number' && durationMinutes > 0
+            ? durationMinutes
+            : r.durationMinutes;
+        return {
+          ...r,
+          ticketPriceUsdt: safePrice.toFixed(2),
+          durationMinutes: nextDur,
+          drawTargetTimestampMs:
+            typeof durationMinutes === 'number' && durationMinutes > 0
+              ? Date.now() + durationMinutes * 60 * 1000
+              : r.drawTargetTimestampMs,
+        };
+      })
     );
     getHeaders().then((headers) => {
       fetch('/api/admin/rounds/price', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ roundCode, ticketPriceUsdt: safePrice }),
+        body: JSON.stringify({ roundCode, ticketPriceUsdt: safePrice, durationMinutes }),
       }).catch(() => {});
     });
   };
 
   const toggleRoundSales = async (roundCode: string) => {
+    setRounds((prev) =>
+      prev.map((r) =>
+        r.roundCode === roundCode
+          ? { ...r, status: r.status?.toUpperCase() === 'ACTIVE' ? 'PAUSED' : 'ACTIVE' }
+          : r
+      )
+    );
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/admin/rounds/toggle', {
@@ -2800,14 +3195,24 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } catch {
         // ignore
       }
-      syncOfficialWalletsToFirestore({ ...updated, solvencyMode });
+      syncOfficialWalletsToFirestore({
+        TON: updated.TON,
+        COLD_TREASURY: updated.COLD_TREASURY,
+        autoWithdrawLimitTon,
+        solvencyMode,
+      });
       return updated;
     });
   };
 
   const setSolvencyMode = (mode: SolvencyProtectionMode) => {
     setSolvencyModeState(mode);
-    syncOfficialWalletsToFirestore({ ...officialWallets, solvencyMode: mode });
+    syncOfficialWalletsToFirestore({
+      TON: officialWallets.TON,
+      COLD_TREASURY: officialWallets.COLD_TREASURY,
+      autoWithdrawLimitTon,
+      solvencyMode: mode,
+    });
   };
 
   const connectWeb3Wallet = async (
@@ -2874,12 +3279,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         uid: firebaseUser.uid,
         displayName: firebaseUser.displayName || displayName,
         vipTier,
-        balanceUsdt,
+        tonBalance,
+        starsBalance,
         connectedWallet: detectedAddress,
         telegramUsername,
         referralCode,
         referredByCode,
-        referralEarningsUsdt,
+        referralEarningsTon,
+        referralEarningsStars,
         referredTicketsCount,
       });
     }
@@ -2912,8 +3319,18 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const connectTonWalletOneTap = async (providerLabel: string = 'Tonkeeper') => {
     HapticEngine.impactOccurred('medium');
-    const res = await connectWeb3Wallet('TON Wallet', 'UQBx78kL9mN2pQrStUvWxYz1234567890AbCdEfGhIj89aF');
-    setConnectedWalletProvider((providerLabel as Web3WalletProviderType) || 'TON Wallet');
+    // Strictly exclude Telegram's built-in @wallet per operator requirement
+    const cleanProvider =
+      providerLabel.toLowerCase().includes('wallet') && providerLabel.includes('@')
+        ? 'Tonkeeper'
+        : providerLabel;
+    const matchedSpec =
+      TON_CONNECT_STANDARD_WALLETS.find(
+        (w) => w.name.toLowerCase() === cleanProvider.toLowerCase() || w.id === cleanProvider.toLowerCase()
+      ) || TON_CONNECT_STANDARD_WALLETS[0];
+    const generatedAddr = `${matchedSpec.samplePrefix}78kL9mN2pQrStUvWxYz1234567890AbCdEfGh89aF`;
+    const res = await connectWeb3Wallet('TON Wallet', generatedAddr);
+    setConnectedWalletProvider((matchedSpec.name as Web3WalletProviderType) || 'TON Wallet');
     completeAndClaimTmaQuest('CONNECT_TON_WALLET');
     setTonConnectModalOpen(false);
     return res;
@@ -2992,8 +3409,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         referralUrl: bundle.referralUrl,
         commissionRatePercent: 2,
         totalReferredTickets: referredTicketsCount,
-        totalCommissionEarnedUsdt: referralEarningsUsdt,
-        netHouseProfitRetainedUsdt: Number((referralEarningsUsdt * 4).toFixed(2)),
+        totalCommissionEarnedTon: referralEarningsTon,
+        totalCommissionEarnedStars: referralEarningsStars,
+        netHouseProfitRetainedTon: Number((referralEarningsTon * 6.5).toFixed(4)),
       });
     }
 
@@ -3010,28 +3428,30 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     claimedUsdt: number;
     message: string;
   }> => {
-    if (referralEarningsUsdt <= 0) {
+    if (referralEarningsTon <= 0 && referralEarningsStars <= 0) {
       return {
         ok: false,
         claimedUsdt: 0,
         message: 'موجودی پورسانت زیرمجموعه‌گیری شما در حال حاضر ۰.۰۰ TON است.',
       };
     }
-    const claimed = Number(referralEarningsUsdt.toFixed(2));
+    const claimedTon = Number(referralEarningsTon.toFixed(4));
+    const claimedUsdt = Number((claimedTon * effectiveTonUsdRate).toFixed(2));
     await pamBonus({
       transactionUuid: generateDeterministicUuid('tx_ref_claim'),
       roundId: referralCode,
       vertical: 'AFFILIATE_REFERRAL',
-      amountUsdt: claimed,
+      amountUsdt: claimedUsdt,
       creditToRealBalance: true,
-      note: `انتقال پورسانت زیرمجموعه‌گیری (${referralCode}) به کیف پول PAM`,
+      note: `انتقال پورسانت زیرمجموعه‌گیری (${referralCode} • ${claimedTon} TON) به کیف پول PAM`,
     });
-    setReferralEarningsUsdt(0);
+    setReferralEarningsTon(0);
+    setReferralEarningsStars(0);
 
     return {
       ok: true,
-      claimedUsdt: claimed,
-      message: `💸 مبلغ ${formatActiveTmaAmount(claimed)} پورسانت زیرمجموعه‌گیری در دفترکل PAM ثبت و به موجودی کیف پول شما اضافه شد!`,
+      claimedUsdt,
+      message: `💸 مبلغ ${claimedTon.toFixed(2)} TON پورسانت زیرمجموعه‌گیری در دفترکل PAM ثبت و به موجودی کیف پول شما اضافه شد!`,
     };
   };
 
@@ -3049,11 +3469,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       commissionRateFromSalesPercent: 2,
     });
 
-    const nextEarnings = Number(
-      (referralEarningsUsdt + ledger.commissionDeductedFromProfit2Usdt).toFixed(2)
-    );
+    const commTon = Number((ledger.commissionDeductedFromProfit2Usdt / effectiveTonUsdRate).toFixed(4));
+    const nextEarningsTon = Number((referralEarningsTon + commTon).toFixed(4));
     const nextTickets = referredTicketsCount + Math.max(1, Math.round(ticketGrossUsdt / 5));
-    setReferralEarningsUsdt(nextEarnings);
+    setReferralEarningsTon(nextEarningsTon);
     setReferredTicketsCount(nextTickets);
 
     const eventItem: ReferralEventItem = {
@@ -3073,17 +3492,19 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setReferralEvents((prev) => [eventItem, ...prev]);
 
     if (firebaseUser) {
+      const effectiveTonRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
       await recordReferralCommissionInFirestore({
         commissionId: `COM_${Date.now()}`,
         referrerCode: referralCode,
         buyerUid: firebaseUser.uid,
         buyerDisplayName: eventItem.buyerDisplayName,
         roundCode: activeLotterySpec.roundCode,
-        ticketGrossUsdt: ledger.ticketGrossUsdt,
-        prizePool85Usdt: ledger.prizePool85Usdt,
-        grossLotteryProfit10Usdt: ledger.grossLotteryProfit10Usdt,
-        commissionDeductedFromProfit2Usdt: ledger.commissionDeductedFromProfit2Usdt,
-        netHouseProfitRetained8Usdt: ledger.netHouseProfitRetained8Usdt,
+        currency: activeTmaCurrency,
+        ticketGrossTon: Number((ledger.ticketGrossUsdt / effectiveTonRate).toFixed(4)),
+        prizePool85Ton: Number((ledger.prizePool85Usdt / effectiveTonRate).toFixed(4)),
+        siteShare15Ton: Number(((ledger.ticketGrossUsdt * 0.15) / effectiveTonRate).toFixed(4)),
+        commissionDeductedTon: Number((ledger.commissionDeductedFromProfit2Usdt / effectiveTonRate).toFixed(4)),
+        netHouseProfitRetainedTon: Number((ledger.netHouseProfitRetained8Usdt / effectiveTonRate).toFixed(4)),
       });
     }
 
@@ -3283,8 +3704,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setAiChatOpen,
         activeLotteryId,
         setActiveLotteryId,
+        activeRoundCode,
+        setActiveRoundCode,
+        activeRound,
         activeLotterySpec,
         lotteryTimers,
+        autoWithdrawLimitTon,
+        setAutoWithdrawLimitTon,
         selectedMainBalls,
         setSelectedMainBalls,
         selectedGoldenBall,
@@ -3311,6 +3737,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         triggerDraw,
         createNewRound,
         deleteLotteryRound,
+        deleteAllLotteryRounds,
         updateRoundTicketPrice,
         toggleRoundSales,
         sendSupportMessage,
@@ -3324,7 +3751,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         generateAndSaveReferralLink,
         claimReferralEarningsToWallet,
         simulateReferredTicketPurchase,
-        referralEarningsUsdt,
+        referralEarningsTon,
+        referralEarningsStars,
         referredTicketsCount,
         referralEvents,
         rolloverReservePoolUsdt,

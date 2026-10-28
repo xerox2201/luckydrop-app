@@ -14,7 +14,12 @@ import {
 } from 'lucide-react';
 import { useLottery, AppRoute } from '../context/LotteryContext.tsx';
 import { CurrencyLang } from '../utils/lotteryEngine.ts';
-import { HapticEngine, formatCurrency, truncateTonAddress } from '../utils/telegramTma.ts';
+import {
+  HapticEngine,
+  formatCurrency,
+  truncateTonAddress,
+  TON_CONNECT_STANDARD_WALLETS,
+} from '../utils/telegramTma.ts';
 
 export const Navbar: React.FC = () => {
   const {
@@ -30,6 +35,8 @@ export const Navbar: React.FC = () => {
     setActiveTmaCurrency,
     tonBalance,
     starsBalance,
+    tonUsdRate,
+    refreshPriceOracleNow,
     telegramUser,
     isTelegramAdmin,
     isAdminPreviewEnabled,
@@ -233,7 +240,7 @@ export const Navbar: React.FC = () => {
         {/* Hidden Compatibility Hooks for Automated Tests */}
         <div className="sr-only" aria-hidden="true">
           <span data-testid="navbar-balance">{formatAmount(balanceUsdt)}</span>
-          <span data-testid="live-oracle-rates-strip">1 TON</span>
+          <span data-testid="live-oracle-rates-strip">1 TON = ${tonUsdRate.toFixed(2)}</span>
           <button
             type="button"
             data-testid="open-pam-wallet-drawer-btn"
@@ -326,24 +333,40 @@ export const Navbar: React.FC = () => {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-xs font-semibold text-purple-200/80">
-                برای واریز و برداشت مستقیم TON، کیف پول تلگرام یا TON Connect خود را انتخاب کنید:
+              <div className="flex items-center justify-between text-[11px] bg-[#090612] border border-purple-500/20 rounded-xl px-3 py-2" dir="ltr">
+                <span className="text-purple-200/80 font-mono flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#00f59b] animate-pulse" />
+                  <span>Live TON Rate: 1 TON = ${tonUsdRate.toFixed(2)}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => refreshPriceOracleNow()}
+                  className="text-[10px] font-bold text-[#00f59b] hover:underline cursor-pointer"
+                >
+                  ↻ Sync
+                </button>
+              </div>
+              <p className="text-xs font-semibold text-purple-200/80" dir="rtl">
+                کیف پول استاندارد شبکه TON خود را برای واریز و برداشت اتوماتیک انتخاب کنید (بدون کیف پول داخلی تلگرام):
               </p>
-              <div className="flex flex-col gap-2" dir="ltr">
-                {(['Tonkeeper', '@wallet (Telegram)', 'MyTonWallet'] as const).map((provider) => (
+              <div className="flex flex-col gap-2 max-h-72 overflow-y-auto no-scrollbar" dir="ltr">
+                {TON_CONNECT_STANDARD_WALLETS.map((w) => (
                   <button
-                    key={provider}
+                    key={w.id}
                     type="button"
-                    data-testid={`modal-ton-connect-${provider.split(' ')[0]}`}
-                    onClick={() => connectTonWalletOneTap(provider)}
-                    className="w-full h-11 px-4 rounded-xl bg-[#1b1333] hover:bg-purple-600/30 border border-purple-500/25 flex items-center justify-between text-xs font-semibold text-white transition-colors cursor-pointer"
+                    data-testid={`modal-ton-connect-${w.name.split(' ')[0]}`}
+                    onClick={() => connectTonWalletOneTap(w.name)}
+                    className="w-full h-12 px-3.5 rounded-xl bg-[#1b1333] hover:bg-purple-600/30 border border-purple-500/25 flex items-center justify-between text-xs font-semibold text-white transition-colors cursor-pointer"
                   >
-                    <span className="flex items-center gap-2">
-                      <span>💎</span>
-                      <span>{provider}</span>
-                    </span>
-                    <span className="text-[11px] font-medium text-purple-300/50 tabular-nums">
-                      One-Tap Connect →
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-base shrink-0">{w.icon}</span>
+                      <div className="text-left min-w-0">
+                        <div className="font-bold text-white truncate">{w.name}</div>
+                        <div className="text-[10px] text-purple-300/60 truncate">{w.badge}</div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg bg-[#00f59b]/15 border border-[#00f59b]/30 text-[10px] font-mono font-bold text-[#00f59b] shrink-0">
+                      Auto Connect →
                     </span>
                   </button>
                 ))}
@@ -353,15 +376,15 @@ export const Navbar: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Floating Bottom Navigation Dock (h-16, rounded-2xl mx-3 mb-2 bg-[#160f29]/95 border border-purple-500/25) */}
+      {/* Floating Bottom Navigation Dock (h-16, rounded-2xl mx-3 bg-[#160f29]/95 border border-purple-500/25) with bottom mask */}
       <div
-        className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 pointer-events-none pb-[env(safe-area-inset-bottom,0px)]"
+        className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[440px] z-40 pointer-events-none bg-gradient-to-t from-[#090612] via-[#090612]/95 to-transparent pt-2 pb-[max(8px,env(safe-area-inset-bottom,8px))]"
         dir="ltr"
       >
         <nav
           data-testid="tma-bottom-nav"
           aria-label="ناوبری پایین مینی‌اپ تلگرام"
-          className="pointer-events-auto h-16 rounded-2xl mx-3 mb-2 bg-[#160f29]/95 border border-purple-500/25 shadow-[0_8px_30px_rgb(0,0,0,0.5)] backdrop-blur-xl px-1.5 flex items-center justify-around"
+          className="pointer-events-auto h-16 rounded-2xl mx-3 bg-[#160f29]/98 border border-purple-500/25 shadow-[0_8px_30px_rgb(0,0,0,0.65)] backdrop-blur-xl px-1.5 flex items-center justify-around"
         >
           {navTabs.map((tab) => {
             const Icon = tab.icon;

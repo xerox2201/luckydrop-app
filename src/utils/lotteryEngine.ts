@@ -1460,6 +1460,87 @@ export function calculateReferralDeductionFromNetProfit(params: {
   };
 }
 
+// ============================================================================
+// DYNAMIC PARI-MUTUEL LOTTERY POOL ENGINE (85% DISTRIBUTED AT DRAW TIME / 15% SITE)
+// & HIGH-VALUE WITHDRAWAL ADMIN GATE
+// ============================================================================
+export interface DynamicPariMutuelPoolBreakdown {
+  grossCollectedUsdt: number;
+  siteShare15Usdt: number;
+  houseFee15Usdt: number;
+  distributablePool85Usdt: number;
+  siteMarginPercent: number;
+  houseFeePercent: number;
+  distributablePercent: number;
+}
 
+export function calculateDynamicPariMutuelPool(
+  grossCollectedUsdt: number,
+  siteMarginPercent: number = 15
+): DynamicPariMutuelPoolBreakdown {
+  const safeGross = Math.max(0, Number(grossCollectedUsdt) || 0);
+  const clampedMargin = Math.min(30, Math.max(5, Number(siteMarginPercent) || 15));
+  const siteShare15Usdt = Number(((safeGross * clampedMargin) / 100).toFixed(4));
+  const distributablePool85Usdt = Number(Math.max(0, safeGross - siteShare15Usdt).toFixed(4));
 
+  return {
+    grossCollectedUsdt: Number(safeGross.toFixed(4)),
+    siteShare15Usdt,
+    houseFee15Usdt: siteShare15Usdt,
+    distributablePool85Usdt,
+    siteMarginPercent: clampedMargin,
+    houseFeePercent: clampedMargin,
+    distributablePercent: Number((100 - clampedMargin).toFixed(2)),
+  };
+}
 
+export function distributePoolAmongWinners(
+  distributablePool85Usdt: number,
+  rawTierWeights: number[]
+): number[] {
+  const safePool = Math.max(0, Number(distributablePool85Usdt) || 0);
+  if (safePool <= 0 || !Array.isArray(rawTierWeights) || rawTierWeights.length === 0) {
+    return rawTierWeights.map(() => 0);
+  }
+  const totalWeight = rawTierWeights.reduce((acc, w) => acc + Math.max(0, Number(w) || 0), 0);
+  if (totalWeight <= 0) {
+    return rawTierWeights.map(() => 0);
+  }
+  return rawTierWeights.map((w) => {
+    const weight = Math.max(0, Number(w) || 0);
+    if (weight <= 0) return 0;
+    return Number(((weight / totalWeight) * safePool).toFixed(2));
+  });
+}
+
+export interface WithdrawalGateEvaluation {
+  amountTon: number;
+  autoWithdrawLimitTon: number;
+  thresholdTon: number;
+  requiresAdminApproval: boolean;
+  status: 'completed' | 'pending_review';
+  initialStatus: 'completed' | 'pending_review';
+  modeLabelFa: string;
+}
+
+export function evaluateHighValueWithdrawalGate(
+  amountTon: number,
+  autoWithdrawLimitTon: number = 50
+): WithdrawalGateEvaluation {
+  const safeTon = Math.max(0, Number(amountTon) || 0);
+  const safeLimit = Math.max(1, Number(autoWithdrawLimitTon) || 50);
+  const requiresAdminApproval = safeTon >= safeLimit;
+  const st = requiresAdminApproval ? 'pending_review' : 'completed';
+
+  return {
+    amountTon: Number(safeTon.toFixed(2)),
+    autoWithdrawLimitTon: Number(safeLimit.toFixed(2)),
+    thresholdTon: Number(safeLimit.toFixed(2)),
+    requiresAdminApproval,
+    status: st,
+    initialStatus: st,
+    modeLabelFa: requiresAdminApproval
+      ? `برداشت مبلغ بالا (>= ${safeLimit} TON) — نیازمند تایید ادمین`
+      : `تسویه اتوماتیک شبکه TON (< ${safeLimit} TON)`,
+  };
+}

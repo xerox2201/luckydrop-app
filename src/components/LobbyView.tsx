@@ -6,6 +6,7 @@ import {
   MULTI_LOTTERY_SPECS,
   COMBINATORIAL_TIERS,
   LotteryTypeId,
+  calculateDynamicPariMutuelPool,
   toPersianDigits,
 } from '../utils/lotteryEngine.ts';
 import { ThreeGoldenSphere } from './ThreeGoldenSphere.tsx';
@@ -25,6 +26,10 @@ export const LobbyView: React.FC = () => {
     setSelectedGoldenBall,
     activeLotteryId,
     setActiveLotteryId,
+    activeRoundCode,
+    setActiveRoundCode,
+    activeRound,
+    activeLotterySpec,
     lotteryTimers,
     provablyFairSeeds,
     setBulkTicketCount,
@@ -53,13 +58,17 @@ export const LobbyView: React.FC = () => {
   } | null>(null);
 
   // Active Pool Spec & Countdown in sleek HH:MM:SS
-  const activeSpec =
-    MULTI_LOTTERY_SPECS.find((s) => s.id === activeLotteryId) || MULTI_LOTTERY_SPECS[0];
-  const mainCount = activeSpec.mainCount || 5;
-  const mainMax = activeSpec.mainMax || 50;
-  const goldenMax = activeSpec.goldenMax ?? 15;
+  const activeSpec = activeLotterySpec || MULTI_LOTTERY_SPECS[0];
+  const mainCount = Number(activeRound?.mainCount) || activeSpec.mainCount || 5;
+  const mainMax = Number(activeRound?.mainMax) || activeSpec.mainMax || 50;
+  const goldenMax =
+    typeof activeRound?.goldenMax === 'number'
+      ? activeRound.goldenMax
+      : activeSpec.goldenMax ?? 15;
 
-  const activeTimerSec = lotteryTimers[activeLotteryId] || 219529;
+  const activeTimerSec = activeRound?.drawTargetTimestampMs
+    ? Math.max(0, Math.floor((activeRound.drawTargetTimestampMs - Date.now()) / 1000))
+    : lotteryTimers[activeLotteryId] || 3600;
   const totalHours = Math.floor(activeTimerSec / 3600);
   const minutes = Math.floor((activeTimerSec % 3600) / 60);
   const seconds = activeTimerSec % 60;
@@ -68,7 +77,7 @@ export const LobbyView: React.FC = () => {
     '0'
   )}:${String(seconds).padStart(2, '0')}`;
 
-  // Dynamic Hero Lottery Ball Rack matching activeSpec.mainCount & activeSpec.mainMax (e.g. 5/50 + 1/15)
+  // Dynamic Hero Lottery Ball Rack matching mainCount & mainMax (e.g. 5/50 + 1/15)
   const [heroBalls, setHeroBalls] = useState<number[]>(() =>
     selectedMainBalls.length === mainCount && selectedMainBalls.every((b) => b <= mainMax)
       ? selectedMainBalls
@@ -111,7 +120,7 @@ export const LobbyView: React.FC = () => {
       setHeroStarBall(selectedGoldenBall);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeLotteryId, mainCount, mainMax, goldenMax]);
+  }, [activeLotteryId, activeRoundCode, mainCount, mainMax, goldenMax]);
 
   const randomizeHeroRack = () => {
     HapticEngine.impactOccurred('light');
@@ -158,16 +167,19 @@ export const LobbyView: React.FC = () => {
     const res = await mintTicket('TON Network');
     if (res.ok && res.ticket) {
       HapticEngine.notificationOccurred('success');
-      setInstantMintBanner(`✅ کوپن #${res.ticket.ticketCode} با تعهد SHA-256 صادر شد!`);
+      setInstantMintBanner(`✅ کوپن #${res.ticket.ticketCode} به استخر ${activeSpec.roundCode} اضافه شد!`);
       setTimeout(() => setInstantMintBanner(null), 4000);
     } else {
       navigateTo('play');
     }
   };
 
-  const handleSelectLotteryAndPlay = (id: LotteryTypeId) => {
+  const handleSelectRoundInLobby = (roundItem: typeof rounds[number]) => {
     HapticEngine.selectionChanged();
-    setActiveLotteryId(id);
+    setActiveRoundCode(roundItem.roundCode);
+    if (roundItem.lotteryType) {
+      setActiveLotteryId(roundItem.lotteryType as LotteryTypeId);
+    }
   };
 
   const handleRunVerification = () => {
@@ -183,8 +195,13 @@ export const LobbyView: React.FC = () => {
     setVerifiedResult(balls);
   };
 
-  const matchingRound = rounds.find((r) => r.roundCode === activeSpec.roundCode);
-  const megaJackpotUsdt = Number(matchingRound?.jackpotUsdt) || activeSpec.jackpotUsdt || 250000;
+  const matchingRound = activeRound || rounds[0];
+  const grossCollectedPoolUsdt =
+    parseFloat(matchingRound?.totalSalesUsdt || '0') ||
+    Number(matchingRound?.jackpotUsdt || 0) / 0.85 ||
+    0;
+  const poolBreakdown = calculateDynamicPariMutuelPool(grossCollectedPoolUsdt, 15);
+  const megaJackpotUsdt = poolBreakdown.distributablePool85Usdt;
   const unitTicketPriceUsdt =
     Number(matchingRound?.ticketPriceUsdt) || activeSpec.ticketPriceUsdt || 5;
   const bundleDiscount = bundleQty === 10 ? 0.9 : bundleQty === 5 ? 0.95 : 1;
@@ -220,48 +237,49 @@ export const LobbyView: React.FC = () => {
 
       {/* =====================================================================
           a) COMPACT HERO JACKPOT CARD
-          Centered Jackpot readout in 💎 TON or ⭐ Stars, sleek HH:MM:SS countdown
-          pill, full seed hash, and the 3D Glass Air-Mix Machine in the center.
+          Dynamic Pool Switcher (synced with Admin Rounds), 85% Distributable Pool
+          readout in 💎 TON or ⭐ Stars, 15% Site Share badge, and 3D Glass Machine.
           ===================================================================== */}
       <section className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex flex-col items-center text-center gap-3">
-        {/* Pool Pill Switcher */}
+        {/* Dynamic Pool Pill Switcher (Renders all active rounds managed by Admin) */}
         <div
-          className="w-full grid grid-cols-4 gap-1.5"
-          dir="ltr"
+          className="w-full flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5"
+          dir="rtl"
         >
-          {MULTI_LOTTERY_SPECS.map((spec) => {
-            const active = activeLotteryId === spec.id;
-            const shortLabel =
-              spec.id === 'MEGA_WEEKLY'
-                ? '👑 Mega 50'
-                : spec.id === 'DAILY_BLITZ'
-                ? '⚡ Daily 35'
-                : spec.id === 'HOURLY_FLASH'
-                ? '⏱ Flash 25'
-                : '💎 TON 40';
+          {rounds.map((r) => {
+            const active =
+              matchingRound?.roundCode === r.roundCode || activeRoundCode === r.roundCode;
             return (
               <motion.button
                 whileTap={{ scale: 0.96 }}
-                key={spec.id}
+                key={r.roundCode}
                 type="button"
-                data-testid={`lobby-lottery-card-${spec.id}`}
-                onClick={() => handleSelectLotteryAndPlay(spec.id)}
-                className={`py-1.5 px-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer border ${
+                data-testid={
+                  r.lotteryType
+                    ? `lobby-lottery-card-${r.lotteryType}`
+                    : `lobby-round-pill-${r.roundCode}`
+                }
+                onClick={() => handleSelectRoundInLobby(r)}
+                className={`py-1.5 px-2.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer border shrink-0 ${
                   active
                     ? 'bg-purple-600/40 border-purple-400/60 text-white shadow-[0_0_12px_rgba(168,85,247,0.35)]'
-                    : 'bg-[#070510]/70 border-purple-500/15 text-purple-300/60 hover:text-white'
+                    : 'bg-[#070510]/70 border-purple-500/15 text-purple-300/65 hover:text-white'
                 }`}
               >
-                {shortLabel}
+                {r.titleFa.includes('(')
+                  ? r.titleFa
+                  : `${r.titleFa} (${r.mainCount || 5}/${r.mainMax || 50})`}
               </motion.button>
             );
           })}
         </div>
 
-        {/* Centered Jackpot Readout & Sleek HH:MM:SS Countdown Pill */}
+        {/* Centered Dynamic 85% Pool Readout & Sleek HH:MM:SS Countdown Pill */}
         <div className="flex flex-col items-center gap-1.5 pt-0.5 w-full">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#070510]/90 border border-purple-500/25">
-            <span className="text-[11px] font-semibold text-purple-200">{activeSpec.titleFa}</span>
+            <span className="text-[11px] font-semibold text-purple-200">
+              {matchingRound?.titleFa || activeSpec.titleFa}
+            </span>
             <span className="text-purple-500/50">•</span>
             <span
               className="text-xs font-semibold text-[#00f59b] font-mono tabular-nums"
@@ -271,13 +289,26 @@ export const LobbyView: React.FC = () => {
             </span>
           </div>
 
+          <div className="text-[10px] font-bold text-[#00f59b]">
+            جایزه خالص قابل تقسیم راس تایم (۸۵٪ استخر جمع‌شده):
+          </div>
+
           <div
             data-testid="hero-jackpot-amount"
-            className="text-3xl font-extrabold tracking-tight tabular-nums text-[#fbbf24] drop-shadow-[0_2px_16px_rgba(251,191,36,0.3)] mt-0.5"
+            className="text-3xl font-extrabold tracking-tight tabular-nums text-[#fbbf24] drop-shadow-[0_2px_16px_rgba(251,191,36,0.3)]"
             dir="ltr"
           >
             {activeTmaCurrency === 'TON' ? '💎 ' : '⭐ '}
             {formatAmount(megaJackpotUsdt)}
+          </div>
+
+          {/* Dynamic Pool Transparency Pill: Gross Collected vs 15% Site Reserved */}
+          <div className="flex items-center justify-center gap-2 flex-wrap text-[10px] text-purple-200/85 bg-[#070510]/80 border border-purple-500/20 rounded-xl px-2.5 py-1">
+            <span>
+              کل استخر جمع‌شده: <strong className="text-white" dir="ltr">{formatAmount(poolBreakdown.grossCollectedUsdt)}</strong>
+            </span>
+            <span className="text-purple-500/50">•</span>
+            <span className="text-[#fbbf24]">۱۵٪ سهم محفوظ سایت</span>
           </div>
 
           {/* Full Real Network Seed Hash ("hash" + complete 64-char hex code) */}

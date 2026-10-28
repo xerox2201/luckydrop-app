@@ -338,12 +338,8 @@ export const WalletDrawer: React.FC = () => {
                 {filteredLedger.map((row) => {
                   const isPositive =
                     row.type === 'CREDIT' || row.type === 'ROLLBACK' || row.type === 'BONUS';
-                  const convertedAmt = usdtToTmaCurrency(
-                    row.amountUsdt,
-                    activeTmaCurrency,
-                    tonUsdRate,
-                    starsUsdRate
-                  );
+                  const rowCurrency = row.currency === 'STARS' ? 'STARS' : 'TON';
+                  const rowAmt = rowCurrency === 'STARS' ? row.amountStars : row.amountTon;
                   return (
                     <tr
                       key={row.transactionUuid}
@@ -369,7 +365,7 @@ export const WalletDrawer: React.FC = () => {
                         }`}
                       >
                         {isPositive ? '+' : '-'}
-                        {formatCurrency(convertedAmt, activeTmaCurrency)}
+                        {formatCurrency(rowAmt, rowCurrency)}
                       </td>
                     </tr>
                   );

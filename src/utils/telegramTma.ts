@@ -28,12 +28,117 @@ export const DEFAULT_ADMIN_TON_WALLET_ADDRESS =
 export const DEFAULT_TON_USD_RATE = 5.0; // 1 TON = 5.00 settlement units (250 ⭐ = 1 TON)
 export const DEFAULT_STARS_USD_RATE = 0.02; // 1 ⭐ = 0.02 settlement units (250 ⭐ = 1 TON)
 
+export interface TonConnectWalletSpec {
+  id: string;
+  name: string;
+  icon: string;
+  badge: string;
+  badgeFa: string;
+  protocol: 'TON Connect 2.0 (Auto-Sign)';
+  universalLink: string;
+  samplePrefix: string;
+}
+
+/**
+ * Standard Automated TON Blockchain Wallets (TON Connect 2.0 Standard)
+ * Strictly excludes Telegram's built-in software wallet (@wallet) per operator policy.
+ */
+export const TON_CONNECT_STANDARD_WALLETS: TonConnectWalletSpec[] = [
+  {
+    id: 'tonkeeper',
+    name: 'Tonkeeper',
+    icon: '💎',
+    badge: 'TON Connect 2.0 • Auto-Sign',
+    badgeFa: 'امضای خودکار آن‌چین (پیشنهادی)',
+    protocol: 'TON Connect 2.0 (Auto-Sign)',
+    universalLink: 'https://app.tonkeeper.com/ton-connect',
+    samplePrefix: 'UQB_TK_',
+  },
+  {
+    id: 'mytonwallet',
+    name: 'MyTonWallet',
+    icon: '🛡️',
+    badge: 'Official TON Web3 • Auto-Sign',
+    badgeFa: 'کیف پول رسمی وب۳ تون',
+    protocol: 'TON Connect 2.0 (Auto-Sign)',
+    universalLink: 'https://connect.mytonwallet.org',
+    samplePrefix: 'UQB_MTW_',
+  },
+  {
+    id: 'tonhub',
+    name: 'Tonhub',
+    icon: '⚡',
+    badge: 'Smart Contract Vault • Auto-Sign',
+    badgeFa: 'تسویه آنی قرارداد هوشمند',
+    protocol: 'TON Connect 2.0 (Auto-Sign)',
+    universalLink: 'https://tonhub.com/ton-connect',
+    samplePrefix: 'UQB_TH_',
+  },
+  {
+    id: 'dewallet',
+    name: 'DeWallet',
+    icon: '🌐',
+    badge: 'Non-Custodial TON • Auto-Sign',
+    badgeFa: 'استاندارد غیرحضانتی TON',
+    protocol: 'TON Connect 2.0 (Auto-Sign)',
+    universalLink: 'https://dewallet.pro',
+    samplePrefix: 'UQB_DW_',
+  },
+  {
+    id: 'bitget_ton',
+    name: 'Bitget TON Wallet',
+    icon: '🚀',
+    badge: 'DeFi TON Bridge • Auto-Sign',
+    badgeFa: 'اتصال مستقیم دیفای TON',
+    protocol: 'TON Connect 2.0 (Auto-Sign)',
+    universalLink: 'https://web3.bitget.com',
+    samplePrefix: 'UQB_BG_',
+  },
+  {
+    id: 'okx_ton',
+    name: 'OKX Web3 TON',
+    icon: '🔷',
+    badge: 'Direct Node Signer • Auto-Sign',
+    badgeFa: 'تایید خودکار نود بلاکچین',
+    protocol: 'TON Connect 2.0 (Auto-Sign)',
+    universalLink: 'https://www.okx.com/web3',
+    samplePrefix: 'UQB_OKX_',
+  },
+];
+
+/**
+ * Builds a standard TON Connect automated transaction payload & deep-link (in nanoTON = 10^9).
+ */
+export function buildTonConnectAutoTransferPayload(params: {
+  recipientVaultAddress: string;
+  amountTon: number;
+  commentMemo: string;
+  walletProvider?: string;
+}): {
+  nanoTon: string;
+  tonDeepLink: string;
+  universalAutoSignUrl: string;
+} {
+  const safeTon = Math.max(0.01, Number(params.amountTon) || 0.01);
+  const nanoTon = String(Math.round(safeTon * 1_000_000_000));
+  const encodedText = encodeURIComponent(params.commentMemo || 'LuckyDrop_TON_Auto');
+  const cleanAddr = (params.recipientVaultAddress || DEFAULT_ADMIN_TON_WALLET_ADDRESS).trim();
+  const tonDeepLink = `ton://transfer/${cleanAddr}?amount=${nanoTon}&text=${encodedText}`;
+  const universalAutoSignUrl = `https://app.tonkeeper.com/transfer/${cleanAddr}?amount=${nanoTon}&text=${encodedText}`;
+  return {
+    nanoTon,
+    tonDeepLink,
+    universalAutoSignUrl,
+  };
+}
+
 export interface TmaQuestItem {
   id: 'CONNECT_TON_WALLET' | 'JOIN_TELEGRAM_CHANNEL' | 'DAILY_STREAK_7' | 'PLAY_10_MINIGAMES';
   titleFa: string;
   titleEn: string;
   subtitleFa: string;
   rewardLabelFa: string;
+  mathRationaleFa: string;
   rewardType: 'FREE_PLINKO_DROPS' | 'FREE_LOTTERY_TICKET' | 'FREE_SCRATCH_CARD' | 'BONUS_XP';
   rewardAmount: number;
   progress: number;
@@ -45,10 +150,12 @@ export interface TmaQuestItem {
 export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
   {
     id: 'CONNECT_TON_WALLET',
-    titleFa: 'اتصال کیف پول TON (One-Tap TON Connect)',
-    titleEn: 'Connect Your TON Wallet',
-    subtitleFa: 'اتصال Tonkeeper، @wallet تلگرام یا MyTonWallet',
-    rewardLabelFa: '+2 Free Plinko Drops (بدون ریسک خزانه)',
+    titleFa: 'اتصال کیف پول استاندارد TON Connect',
+    titleEn: 'Connect Standard TON Wallet',
+    subtitleFa: 'اتصال Tonkeeper، MyTonWallet، Tonhub، DeWallet، Bitget یا OKX',
+    rewardLabelFa: '+2 Free Plinko Drops (Play-Only Bonus)',
+    mathRationaleFa:
+      'هدف: حذف اصطکاک واریز اولیه (Onboarding). پاداش به صورت توکن بازی غیرقابل برداشت مستقیم (Play-Only) از محل ۳٪ استخر ذخیره تبلیغاتی تامین می‌شود؛ بنابراین خروجی نقدی مستقیم خزانه دقیقاً ۰.۰۰ TON است.',
     rewardType: 'FREE_PLINKO_DROPS',
     rewardAmount: 2,
     progress: 0,
@@ -57,10 +164,12 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
   },
   {
     id: 'JOIN_TELEGRAM_CHANNEL',
-    titleFa: 'عضویت در کانال رسمی تلگرام LuckyDrop',
+    titleFa: 'عضویت در کامیونیتی رسمی تلگرام LuckyDrop',
     titleEn: 'Join Official LuckyDrop Telegram Channel',
-    subtitleFa: 'عضویت در @LuckyDrop_TON_Official و تایید آنی',
+    subtitleFa: 'عضویت در @LuckyDrop_TON_Official و تایید آنی عضویت',
     rewardLabelFa: '+1 Free Lottery Ticket (Turnover-Locked)',
+    mathRationaleFa:
+      'هدف: رشد ارگانیک کانال و کاهش هزینه جذب کاربر (CAC = $0). بلیت هدیه از نوع Turnover-Locked است و جایزه آن صرفاً از استخر ۸۵٪ فروش واقعی دور پرداخت می‌شود (بدون یک سنت کسر از سرمایه ادمین).',
     rewardType: 'FREE_LOTTERY_TICKET',
     rewardAmount: 1,
     progress: 0,
@@ -69,10 +178,12 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
   },
   {
     id: 'DAILY_STREAK_7',
-    titleFa: 'چک‌این روزانه ۷ روزه (Daily Streak Check-In)',
+    titleFa: 'چک‌این روزانه ۷ روزه (Daily Retention Streak)',
     titleEn: 'Daily Streak Check-In (7 Days)',
-    subtitleFa: 'دریافت روزانه کارت اسکرچ رایگان و امتیاز XP بلیت لاتاری',
+    subtitleFa: 'ورود روزانه برای دریافت کارت اسکرچ رایگان و XP وفاداری',
     rewardLabelFa: '+1 Free Scratch Card + 35 XP',
+    mathRationaleFa:
+      'هدف: افزایش نرخ بازگشت روزانه (D1/D7 Retention). کارت اسکرچ رایگان دارای سقف جایزه کنترل‌شده از استخر ۳٪ سرریز وفاداری (Rollover Reserve) است و هرگز از اصل خزانه برداشت نمی‌کند.',
     rewardType: 'FREE_SCRATCH_CARD',
     rewardAmount: 1,
     progress: 1,
@@ -82,10 +193,12 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
   },
   {
     id: 'PLAY_10_MINIGAMES',
-    titleFa: 'انجام ۱۰ دور بازی در مینی‌گیم‌های آرکید',
+    titleFa: 'انجام ۱۰ دور گردش واقعی در بازی‌های آرکید',
     titleEn: 'Play 10 Rounds in Mini-Games',
-    subtitleFa: 'Plinko، Crash، 52-Bit Dice، Mines یا Scratch',
-    rewardLabelFa: '+100 XP (صدور آنی کوپن رایگان لاتاری)',
+    subtitleFa: 'Plinko، Crash، Dice، Mines، Tower، Wheel یا Hi-Lo',
+    rewardLabelFa: '+100 XP (شارژ نوار بلیت رایگان Turnover)',
+    mathRationaleFa:
+      'هدف: ایجاد گردش مالی (Liquidity Velocity). با ۱۰ دور بازی، کارمزد خانه (۱٪ تا ۳٪ House Edge) سود قطعی ایجاد می‌کند و بخشی از همین سود به صورت XP به بازیکن برمی‌گردد (۱۰۰٪ بدون ضرر).',
     rewardType: 'BONUS_XP',
     rewardAmount: 100,
     progress: 4,

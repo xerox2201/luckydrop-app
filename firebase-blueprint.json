@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "VIP user account profile, multi-currency balance, Web3 wallet, Telegram identity, and referral metrics",
+      "description": "VIP user account profile strictly tracking dual-currency tonBalance (TON) and starsBalance (Telegram Stars), TON Connect wallet, and referral metrics",
       "type": "object",
       "properties": {
         "uid": {
@@ -21,13 +21,17 @@
           "description": "VIP tier status",
           "maxLength": 40
         },
-        "balanceUsdt": {
+        "tonBalance": {
           "type": "number",
-          "description": "Available user balance in USDT"
+          "description": "Primary user wallet balance in TON (💎 TON)"
+        },
+        "starsBalance": {
+          "type": "number",
+          "description": "Primary user wallet balance in Telegram Stars (⭐ Stars)"
         },
         "connectedWallet": {
           "type": "string",
-          "description": "Connected Web3 wallet address (TronLink, MetaMask, or TON)",
+          "description": "Connected TON Connect 2.0 wallet address",
           "maxLength": 128
         },
         "telegramUsername": {
@@ -45,9 +49,13 @@
           "description": "Referral code of the inviter",
           "maxLength": 32
         },
-        "referralEarningsUsdt": {
+        "referralEarningsTon": {
           "type": "number",
-          "description": "Total USDT earned from 2% referral commission out of the 10% house margin"
+          "description": "Total TON earned from 2% referral commission out of the 15% site share"
+        },
+        "referralEarningsStars": {
+          "type": "number",
+          "description": "Total Telegram Stars earned from referral commission"
         },
         "referredTicketsCount": {
           "type": "number",
@@ -59,42 +67,26 @@
           "maxLength": 64
         }
       },
-      "required": ["uid", "displayName", "balanceUsdt", "referralCode"]
+      "required": ["uid", "displayName", "tonBalance", "starsBalance", "referralCode"]
     },
     "PlatformSettings": {
       "title": "PlatformSettings",
-      "description": "Official site deposit wallets across 5 networks, cold treasury wallet, and zero-loss solvency configuration",
+      "description": "Official TON treasury deposit wallet, high-value withdrawal threshold, and pari-mutuel solvency configuration",
       "type": "object",
       "properties": {
-        "USDT_TRC20": {
-          "type": "string",
-          "description": "Official USDT TRC-20 deposit address",
-          "maxLength": 128
-        },
         "TON": {
           "type": "string",
-          "description": "Official TON network deposit address",
-          "maxLength": 128
-        },
-        "TRX": {
-          "type": "string",
-          "description": "Official TRON native deposit address",
-          "maxLength": 128
-        },
-        "BNB": {
-          "type": "string",
-          "description": "Official BNB Smart Chain BEP-20 deposit address",
-          "maxLength": 128
-        },
-        "BTC": {
-          "type": "string",
-          "description": "Official Bitcoin Native SegWit deposit address",
+          "description": "Official TON network treasury address",
           "maxLength": 128
         },
         "COLD_TREASURY": {
           "type": "string",
-          "description": "Admin hardware cold storage wallet address",
+          "description": "Admin hardware cold storage TON wallet address",
           "maxLength": 128
+        },
+        "autoWithdrawLimitTon": {
+          "type": "number",
+          "description": "Maximum TON amount for instant automatic withdrawal before requiring admin approval"
         },
         "solvencyMode": {
           "type": "string",
@@ -108,11 +100,11 @@
           "maxLength": 64
         }
       },
-      "required": ["USDT_TRC20", "TON", "TRX", "BNB", "BTC", "COLD_TREASURY"]
+      "required": ["TON", "COLD_TREASURY"]
     },
     "DepositRecord": {
       "title": "DepositRecord",
-      "description": "On-chain auto-verified or admin-approved crypto deposit record",
+      "description": "On-chain auto-verified TON Connect 2.0 or Telegram Stars (XTR) deposit record",
       "type": "object",
       "properties": {
         "depositCode": {
@@ -130,29 +122,34 @@
           "description": "Display name of the depositing user",
           "maxLength": 100
         },
-        "network": {
+        "currency": {
           "type": "string",
-          "description": "Blockchain network name",
-          "maxLength": 64
+          "enum": ["TON", "STARS"],
+          "description": "Sole supported deposit currencies: TON or Telegram Stars",
+          "maxLength": 16
         },
-        "amountUsdt": {
+        "amountTon": {
           "type": "number",
-          "description": "Deposit value in USDT"
+          "description": "Deposited amount in TON (💎 TON)"
+        },
+        "amountStars": {
+          "type": "number",
+          "description": "Deposited amount in Telegram Stars (⭐ Stars)"
         },
         "txHash": {
           "type": "string",
-          "description": "Unique blockchain transaction hash",
+          "description": "Unique TON blockchain BOC hash or Telegram Stars charge ID",
           "maxLength": 160
         },
         "verificationMethod": {
           "type": "string",
-          "enum": ["ONCHAIN_AUTO", "ADMIN_MANUAL"],
-          "description": "How the deposit is verified",
+          "enum": ["ONCHAIN_AUTO"],
+          "description": "Automatic verification via TON Connect or Telegram Stars webhook",
           "maxLength": 32
         },
         "status": {
           "type": "string",
-          "enum": ["confirmed", "pending_admin", "rejected"],
+          "enum": ["CREDITED"],
           "description": "Deposit settlement status",
           "maxLength": 32
         },
@@ -162,11 +159,11 @@
           "maxLength": 64
         }
       },
-      "required": ["depositCode", "userUid", "network", "amountUsdt", "txHash", "verificationMethod", "status"]
+      "required": ["depositCode", "userUid", "currency", "txHash", "verificationMethod", "status"]
     },
     "ReferralLink": {
       "title": "ReferralLink",
-      "description": "Unique referral code and URL generated for a user and stored in Firestore",
+      "description": "Unique referral code and URL generated for a user and stored in Firestore with TON and Stars commission metrics",
       "type": "object",
       "properties": {
         "referralCode": {
@@ -192,19 +189,23 @@
         },
         "commissionRatePercent": {
           "type": "number",
-          "description": "Commission percentage carved strictly from the 10% net lottery profit (default 2%)"
+          "description": "Commission percentage carved strictly from the 15% site share (default 2%)"
         },
         "totalReferredTickets": {
           "type": "number",
           "description": "Total tickets purchased via this referral link"
         },
-        "totalCommissionEarnedUsdt": {
+        "totalCommissionEarnedTon": {
           "type": "number",
-          "description": "Total USDT commission earned from net lottery profit"
+          "description": "Total TON commission earned from net lottery profit"
         },
-        "netHouseProfitRetainedUsdt": {
+        "totalCommissionEarnedStars": {
           "type": "number",
-          "description": "Total 8% net profit retained by the house after deducting the 2% commission"
+          "description": "Total Telegram Stars commission earned from net lottery profit"
+        },
+        "netHouseProfitRetainedTon": {
+          "type": "number",
+          "description": "Total net TON profit retained by the house after deducting referral commission"
         },
         "updatedAt": {
           "type": "string",
@@ -219,13 +220,14 @@
         "referralUrl",
         "commissionRatePercent",
         "totalReferredTickets",
-        "totalCommissionEarnedUsdt",
-        "netHouseProfitRetainedUsdt"
+        "totalCommissionEarnedTon",
+        "totalCommissionEarnedStars",
+        "netHouseProfitRetainedTon"
       ]
     },
     "ReferralCommissionLedger": {
       "title": "ReferralCommissionLedger",
-      "description": "Immutable financial ledger entry proving referral commission was deducted strictly from net lottery profit with zero house loss",
+      "description": "Immutable financial ledger entry proving referral commission in TON/Stars was deducted strictly from the 15% site share with zero house loss",
       "type": "object",
       "properties": {
         "commissionId": {
@@ -253,29 +255,31 @@
           "description": "Lottery round code",
           "maxLength": 32
         },
-        "ticketGrossUsdt": {
-          "type": "number",
-          "description": "Gross ticket purchase amount in USDT"
+        "currency": {
+          "type": "string",
+          "enum": ["TON", "STARS"],
+          "description": "Transaction currency (TON or STARS)",
+          "maxLength": 16
         },
-        "prizePool85Usdt": {
+        "ticketGrossTon": {
           "type": "number",
-          "description": "85% prize pool allocation (untouched)"
+          "description": "Gross ticket purchase amount in TON"
         },
-        "grossLotteryProfit10Usdt": {
+        "prizePool85Ton": {
           "type": "number",
-          "description": "10% gross lottery profit before referral deduction"
+          "description": "85% distributable prize pool allocation in TON"
         },
-        "commissionDeductedFromProfit2Usdt": {
+        "siteShare15Ton": {
           "type": "number",
-          "description": "2% referral commission deducted exclusively from the 10% gross lottery profit"
+          "description": "15% site share in TON before referral deduction"
         },
-        "netHouseProfitRetained8Usdt": {
+        "commissionDeductedTon": {
           "type": "number",
-          "description": "8% guaranteed net profit retained by the house"
+          "description": "2% referral commission in TON deducted exclusively from the 15% site share"
         },
-        "platformLossUsdt": {
+        "netHouseProfitRetainedTon": {
           "type": "number",
-          "description": "Always 0 — mathematical zero-loss guarantee"
+          "description": "Guaranteed net TON profit retained by the house"
         },
         "createdAt": {
           "type": "string",
@@ -288,36 +292,35 @@
         "referrerCode",
         "buyerUid",
         "roundCode",
-        "ticketGrossUsdt",
-        "prizePool85Usdt",
-        "grossLotteryProfit10Usdt",
-        "commissionDeductedFromProfit2Usdt",
-        "netHouseProfitRetained8Usdt",
-        "platformLossUsdt"
+        "currency",
+        "ticketGrossTon",
+        "prizePool85Ton",
+        "siteShare15Ton",
+        "commissionDeductedTon",
+        "netHouseProfitRetainedTon"
       ]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
-      "description": "Stores user profile, balance, Web3 wallet, Telegram handle, and referral stats"
+      "description": "Stores user profile, tonBalance, starsBalance, TON wallet, Telegram handle, and referral stats"
     },
     "/settings/{docId}": {
       "schema": { "$ref": "#/entities/PlatformSettings" },
-      "description": "Stores official multi-chain deposit wallets and zero-loss solvency settings"
+      "description": "Stores official TON treasury wallet and auto-withdrawal threshold settings"
     },
     "/deposits/{depositId}": {
       "schema": { "$ref": "#/entities/DepositRecord" },
-      "description": "Stores on-chain verified and admin-queued crypto deposits"
+      "description": "Stores automatic TON Connect and Telegram Stars deposits"
     },
     "/referrals/{referralCode}": {
       "schema": { "$ref": "#/entities/ReferralLink" },
-      "description": "Stores unique user referral codes, full URLs, and cumulative zero-loss profit split metrics"
+      "description": "Stores unique user referral codes, full URLs, and TON/Stars commission split metrics"
     },
     "/referralCommissions/{commissionId}": {
       "schema": { "$ref": "#/entities/ReferralCommissionLedger" },
-      "description": "Stores automatic referral commission deductions carved strictly out of net lottery profit"
+      "description": "Stores automatic TON/Stars referral commission deductions carved strictly out of the 15% site share"
     }
   }
 }
-

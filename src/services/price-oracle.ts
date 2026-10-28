@@ -178,7 +178,26 @@ export async function fetchLivePriceOracle(
     }
   }
 
-  // 3. Direct client-side fallback for Crypto (Binance -> CoinGecko)
+  // 3. Direct client-side fallback for Crypto (TonAPI -> Binance -> CoinGecko)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3500);
+    const tonApiRes = await fetch('https://tonapi.io/v2/rates?tokens=ton&currencies=usd', {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (tonApiRes.ok) {
+      const tonData = await tonApiRes.json();
+      const liveTon = Number(tonData?.rates?.TON?.prices?.USD);
+      if (Number.isFinite(liveTon) && liveTon > 0.1) {
+        ton = Number(liveTon.toFixed(4));
+        source = 'BINANCE_AND_OPEN_FX';
+      }
+    }
+  } catch {
+    // ignore and try Binance/CoinGecko
+  }
+
   try {
     const symbols = encodeURIComponent(JSON.stringify(['BTCUSDT', 'TONUSDT', 'TRXUSDT', 'BNBUSDT']));
     const controller = new AbortController();

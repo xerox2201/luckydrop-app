@@ -419,11 +419,11 @@ export const CrashGameArena: React.FC<{
   const lockBetForCurrentCountdown = useCallback(
     async (customBetAmount?: number, customAutoCashout?: number) => {
       setErrorBanner(null);
-      const minBet = activeTmaCurrency === 'TON' ? 0.1 : 10;
+      const minBet = activeTmaCurrency === 'TON' ? 0.01 : 1;
       const wagerCurrency =
         activeTmaCurrency === 'TON'
-          ? Math.max(minBet, Number((customBetAmount ?? betAmount).toFixed(2)) || 1)
-          : Math.max(minBet, Math.round(customBetAmount ?? betAmount) || 50);
+          ? Math.max(minBet, Number((customBetAmount ?? betAmount).toFixed(2)) || 0.01)
+          : Math.max(minBet, Math.round(customBetAmount ?? betAmount) || 1);
       const wager = tmaCurrencyToUsdt(
         wagerCurrency,
         activeTmaCurrency,
@@ -1225,8 +1225,8 @@ export const CrashGameArena: React.FC<{
   const handleHalfBet = () => {
     setBetAmount((prev) =>
       activeTmaCurrency === 'TON'
-        ? Math.max(0.1, Number((prev / 2).toFixed(2)))
-        : Math.max(10, Math.floor(prev / 2))
+        ? Math.max(0.01, Number((prev / 2).toFixed(2)))
+        : Math.max(1, Math.floor(prev / 2))
     );
   };
 
@@ -1234,8 +1234,8 @@ export const CrashGameArena: React.FC<{
     const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
     setBetAmount((prev) =>
       activeTmaCurrency === 'TON'
-        ? Math.min(Math.max(0.1, avail), Number((prev * 2).toFixed(2)))
-        : Math.min(Math.max(10, avail), prev * 2)
+        ? Math.min(Math.max(0.01, avail), Number((prev * 2).toFixed(2)))
+        : Math.min(Math.max(1, avail), prev * 2)
     );
   };
 
@@ -1243,8 +1243,8 @@ export const CrashGameArena: React.FC<{
     const avail = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
     setBetAmount(
       activeTmaCurrency === 'TON'
-        ? Math.max(0.1, Math.min(200, Number(avail.toFixed(2))))
-        : Math.max(10, Math.min(25000, Math.floor(avail)))
+        ? Math.max(0.01, Number(avail.toFixed(2)))
+        : Math.max(1, Math.floor(avail))
     );
   };
 
@@ -1436,12 +1436,16 @@ export const CrashGameArena: React.FC<{
             <input
               id="crash-bet-input"
               type="number"
-              min={0.5}
-              max={1000}
-              step={0.5}
+              min={activeTmaCurrency === 'TON' ? 0.01 : 1}
+              step="any"
               data-testid="crash-bet-input"
               value={betAmount}
-              onChange={(e) => setBetAmount(Math.max(0.5, Number(e.target.value) || 0.5))}
+              onChange={(e) => {
+                const raw = parseFloat(e.target.value);
+                setBetAmount(
+                  Number.isFinite(raw) ? Math.max(activeTmaCurrency === 'TON' ? 0.01 : 1, raw) : 0.01
+                );
+              }}
               className="w-full bg-transparent text-center text-sm font-mono font-bold text-white focus:outline-none tabular-nums"
             />
           </div>

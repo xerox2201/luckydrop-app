@@ -26,87 +26,54 @@ service cloud.firestore {
       );
     }
 
-    // 3. Entity Validation Helpers
+    // 3. Entity Validation Helpers — STRICT DUAL-CURRENCY (tonBalance & starsBalance ONLY)
+    // Clients can NEVER directly set or mutate tonBalance, starsBalance, vipTier, referralEarningsTon, or referralEarningsStars!
     function isValidUserProfile(data) {
-      return data.keys().hasAll(['uid', 'displayName', 'balanceUsdt', 'referralCode']) &&
+      return data.keys().hasAll(['uid', 'displayName', 'referralCode']) &&
              data.keys().hasOnly([
                'uid',
                'displayName',
                'vipTier',
-               'balanceUsdt',
+               'tonBalance',
+               'starsBalance',
                'connectedWallet',
                'telegramUsername',
                'referralCode',
                'referredByCode',
-               'referralEarningsUsdt',
+               'referralEarningsTon',
+               'referralEarningsStars',
                'referredTicketsCount',
                'updatedAt'
              ]) &&
              data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
-             data.balanceUsdt is number && data.balanceUsdt >= 0 &&
              data.referralCode is string && data.referralCode.size() >= 3 && data.referralCode.size() <= 32 &&
+             (!('tonBalance' in data) || (data.tonBalance is number && data.tonBalance >= 0)) &&
+             (!('starsBalance' in data) || (data.starsBalance is number && data.starsBalance >= 0)) &&
              (!('vipTier' in data) || (data.vipTier is string && data.vipTier.size() <= 40)) &&
              (!('connectedWallet' in data) || (data.connectedWallet is string && data.connectedWallet.size() <= 128)) &&
              (!('telegramUsername' in data) || (data.telegramUsername is string && data.telegramUsername.size() <= 64)) &&
              (!('referredByCode' in data) || (data.referredByCode is string && data.referredByCode.size() <= 32)) &&
-             (!('referralEarningsUsdt' in data) || (data.referralEarningsUsdt is number && data.referralEarningsUsdt >= 0)) &&
+             (!('referralEarningsTon' in data) || (data.referralEarningsTon is number && data.referralEarningsTon >= 0)) &&
+             (!('referralEarningsStars' in data) || (data.referralEarningsStars is number && data.referralEarningsStars >= 0)) &&
              (!('referredTicketsCount' in data) || (data.referredTicketsCount is number && data.referredTicketsCount >= 0)) &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
     function isValidPlatformSettings(data) {
-      return data.keys().hasAll(['USDT_TRC20', 'TON', 'TRX', 'BNB', 'BTC', 'COLD_TREASURY']) &&
+      return data.keys().hasAll(['TON']) &&
              data.keys().hasOnly([
-               'USDT_TRC20',
                'TON',
-               'TRX',
-               'BNB',
-               'BTC',
                'COLD_TREASURY',
                'solvencyMode',
+               'autoWithdrawLimitTon',
                'updatedAt'
              ]) &&
-             data.USDT_TRC20 is string && data.USDT_TRC20.size() >= 10 && data.USDT_TRC20.size() <= 128 &&
              data.TON is string && data.TON.size() >= 10 && data.TON.size() <= 128 &&
-             data.TRX is string && data.TRX.size() >= 10 && data.TRX.size() <= 128 &&
-             data.BNB is string && data.BNB.size() >= 10 && data.BNB.size() <= 128 &&
-             data.BTC is string && data.BTC.size() >= 10 && data.BTC.size() <= 128 &&
-             data.COLD_TREASURY is string && data.COLD_TREASURY.size() >= 10 && data.COLD_TREASURY.size() <= 128 &&
+             (!('COLD_TREASURY' in data) || (data.COLD_TREASURY is string && data.COLD_TREASURY.size() <= 128)) &&
              (!('solvencyMode' in data) || (data.solvencyMode is string && data.solvencyMode.size() <= 32)) &&
+             (!('autoWithdrawLimitTon' in data) || (data.autoWithdrawLimitTon is number && data.autoWithdrawLimitTon >= 1)) &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
-    }
-
-    function isValidDepositRecord(data) {
-      return data.keys().hasAll([
-               'depositCode',
-               'userUid',
-               'network',
-               'amountUsdt',
-               'txHash',
-               'verificationMethod',
-               'status'
-             ]) &&
-             data.keys().hasOnly([
-               'depositCode',
-               'userUid',
-               'userDisplayName',
-               'network',
-               'amountUsdt',
-               'txHash',
-               'verificationMethod',
-               'status',
-               'createdAt'
-             ]) &&
-             data.depositCode is string && data.depositCode.size() >= 3 && data.depositCode.size() <= 64 &&
-             data.userUid is string && data.userUid.size() >= 1 && data.userUid.size() <= 128 &&
-             data.network is string && data.network.size() >= 2 && data.network.size() <= 64 &&
-             data.amountUsdt is number && data.amountUsdt > 0 && data.amountUsdt <= 10000000 &&
-             data.txHash is string && data.txHash.size() >= 8 && data.txHash.size() <= 160 &&
-             data.verificationMethod in ['ONCHAIN_AUTO', 'ADMIN_MANUAL'] &&
-             data.status in ['confirmed', 'pending_admin', 'rejected'] &&
-             (!('userDisplayName' in data) || (data.userDisplayName is string && data.userDisplayName.size() <= 100)) &&
-             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
     }
 
     function isValidReferralLink(data) {
@@ -117,8 +84,9 @@ service cloud.firestore {
                'referralUrl',
                'commissionRatePercent',
                'totalReferredTickets',
-               'totalCommissionEarnedUsdt',
-               'netHouseProfitRetainedUsdt'
+               'totalCommissionEarnedTon',
+               'totalCommissionEarnedStars',
+               'netHouseProfitRetainedTon'
              ]) &&
              data.keys().hasOnly([
                'referralCode',
@@ -127,8 +95,9 @@ service cloud.firestore {
                'referralUrl',
                'commissionRatePercent',
                'totalReferredTickets',
-               'totalCommissionEarnedUsdt',
-               'netHouseProfitRetainedUsdt',
+               'totalCommissionEarnedTon',
+               'totalCommissionEarnedStars',
+               'netHouseProfitRetainedTon',
                'updatedAt'
              ]) &&
              data.referralCode is string && data.referralCode.size() >= 4 && data.referralCode.size() <= 32 &&
@@ -137,55 +106,33 @@ service cloud.firestore {
              data.referralUrl is string && data.referralUrl.size() >= 8 && data.referralUrl.size() <= 256 &&
              data.commissionRatePercent is number && data.commissionRatePercent >= 0 && data.commissionRatePercent <= 3 &&
              data.totalReferredTickets is number && data.totalReferredTickets >= 0 &&
-             data.totalCommissionEarnedUsdt is number && data.totalCommissionEarnedUsdt >= 0 &&
-             data.netHouseProfitRetainedUsdt is number && data.netHouseProfitRetainedUsdt >= 0 &&
+             data.totalCommissionEarnedTon is number && data.totalCommissionEarnedTon >= 0 &&
+             data.totalCommissionEarnedStars is number && data.totalCommissionEarnedStars >= 0 &&
+             data.netHouseProfitRetainedTon is number && data.netHouseProfitRetainedTon >= 0 &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
     }
 
-    function isValidReferralCommissionLedger(data) {
+    function isValidLedgerEntry(data) {
       return data.keys().hasAll([
-               'commissionId',
-               'referrerCode',
-               'buyerUid',
-               'roundCode',
-               'ticketGrossUsdt',
-               'prizePool85Usdt',
-               'grossLotteryProfit10Usdt',
-               'commissionDeductedFromProfit2Usdt',
-               'netHouseProfitRetained8Usdt',
-               'platformLossUsdt'
+               'playerId',
+               'currency',
+               'amountTon',
+               'amountStars',
+               'tonBalanceBefore',
+               'tonBalanceAfter',
+               'starsBalanceBefore',
+               'starsBalanceAfter'
              ]) &&
-             data.keys().hasOnly([
-               'commissionId',
-               'referrerCode',
-               'buyerUid',
-               'buyerDisplayName',
-               'roundCode',
-               'ticketGrossUsdt',
-               'prizePool85Usdt',
-               'grossLotteryProfit10Usdt',
-               'commissionDeductedFromProfit2Usdt',
-               'netHouseProfitRetained8Usdt',
-               'platformLossUsdt',
-               'createdAt'
-             ]) &&
-             data.commissionId is string && data.commissionId.size() >= 3 && data.commissionId.size() <= 64 &&
-             data.referrerCode is string && data.referrerCode.size() >= 4 && data.referrerCode.size() <= 32 &&
-             data.buyerUid is string && data.buyerUid.size() >= 1 && data.buyerUid.size() <= 128 &&
-             data.roundCode is string && data.roundCode.size() >= 2 && data.roundCode.size() <= 32 &&
-             data.ticketGrossUsdt is number && data.ticketGrossUsdt > 0 &&
-             data.prizePool85Usdt is number && data.prizePool85Usdt >= 0 &&
-             data.grossLotteryProfit10Usdt is number && data.grossLotteryProfit10Usdt >= 0 &&
-             data.commissionDeductedFromProfit2Usdt is number &&
-             data.commissionDeductedFromProfit2Usdt >= 0 &&
-             data.commissionDeductedFromProfit2Usdt <= data.grossLotteryProfit10Usdt &&
-             data.netHouseProfitRetained8Usdt is number && data.netHouseProfitRetained8Usdt >= 0 &&
-             data.platformLossUsdt == 0 &&
-             (!('buyerDisplayName' in data) || (data.buyerDisplayName is string && data.buyerDisplayName.size() <= 100)) &&
-             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 64));
+             (data.currency == 'TON' || data.currency == 'STARS') &&
+             data.amountTon is number && data.amountTon >= 0 &&
+             data.amountStars is number && data.amountStars >= 0 &&
+             data.tonBalanceBefore is number && data.tonBalanceBefore >= 0 &&
+             data.tonBalanceAfter is number && data.tonBalanceAfter >= 0 &&
+             data.starsBalanceBefore is number && data.starsBalanceBefore >= 0 &&
+             data.starsBalanceAfter is number && data.starsBalanceAfter >= 0;
     }
 
-    // 4. Collection Rules
+    // 4. Collection Rules — ZERO CLIENT-SIDE FINANCIAL MUTATION
     match /admins/{adminUid} {
       allow get: if isSignedIn() && isValidId(adminUid) && request.auth.uid == adminUid;
       allow list, create, update, delete: if false;
@@ -193,57 +140,77 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isVerifiedAdmin());
-      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isVerifiedAdmin());
+      allow list: if isVerifiedAdmin();
+      // Clients creating a profile cannot inject a non-zero tonBalance, starsBalance, or referral earnings
       allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId &&
-                    isValidUserProfile(incoming()) && incoming().uid == request.auth.uid;
+                    isValidUserProfile(incoming()) && incoming().uid == request.auth.uid && (
+                      isVerifiedAdmin() ||
+                      (
+                        (!('tonBalance' in incoming()) || incoming().tonBalance == 0) &&
+                        (!('starsBalance' in incoming()) || incoming().starsBalance == 0) &&
+                        (!('referralEarningsTon' in incoming()) || incoming().referralEarningsTon == 0) &&
+                        (!('referralEarningsStars' in incoming()) || incoming().referralEarningsStars == 0) &&
+                        (!('referredTicketsCount' in incoming()) || incoming().referredTicketsCount == 0)
+                      )
+                    );
+      // Clients can NEVER modify tonBalance, starsBalance, vipTier, referralEarningsTon, referralEarningsStars, or referredTicketsCount!
       allow update: if isSignedIn() && isValidId(userId) && isValidUserProfile(incoming()) &&
                     incoming().uid == existing().uid && (
                       isVerifiedAdmin() ||
                       (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly([
                         'displayName',
-                        'vipTier',
-                        'balanceUsdt',
                         'connectedWallet',
                         'telegramUsername',
                         'referralCode',
                         'referredByCode',
-                        'referralEarningsUsdt',
-                        'referredTicketsCount',
                         'updatedAt'
                       ]))
                     );
       allow delete: if false;
     }
 
+    // Treasury & Platform Settings: Publicly readable, strictly Admin-only write
     match /settings/{docId} {
       allow get: if isValidId(docId);
       allow list: if false;
-      allow create: if isVerifiedAdmin() && isValidId(docId) && isValidPlatformSettings(incoming());
-      allow update: if isVerifiedAdmin() && isValidId(docId) && isValidPlatformSettings(incoming()) &&
-                    incoming().diff(existing()).affectedKeys().hasOnly([
-                      'USDT_TRC20',
-                      'TON',
-                      'TRX',
-                      'BNB',
-                      'BTC',
-                      'COLD_TREASURY',
-                      'solvencyMode',
-                      'updatedAt'
-                    ]);
+      allow create, update: if isVerifiedAdmin() && isValidId(docId) && isValidPlatformSettings(incoming());
       allow delete: if false;
+    }
+
+    match /treasury/{docId} {
+      allow get: if isVerifiedAdmin();
+      allow list, create, update, delete: if isVerifiedAdmin();
+    }
+
+    // PAM Ledger (Strictly TON & Stars), Lottery Tickets, Deposits, Withdrawals & Draws: Strictly Server/Admin Write Only!
+    match /ledger/{entryId} {
+      allow get: if isSignedIn() && isValidId(entryId) && (resource.data.playerId == request.auth.uid || isVerifiedAdmin());
+      allow list: if isVerifiedAdmin();
+      allow create, update: if isVerifiedAdmin() && isValidLedgerEntry(incoming());
+      allow delete: if false;
+    }
+
+    match /tickets/{ticketId} {
+      allow get: if isSignedIn() && isValidId(ticketId) && (resource.data.userUid == request.auth.uid || isVerifiedAdmin());
+      allow list: if isSignedIn() && (resource.data.userUid == request.auth.uid || isVerifiedAdmin());
+      allow create, update, delete: if isVerifiedAdmin();
+    }
+
+    match /draws/{drawId} {
+      allow get, list: if true;
+      allow create, update, delete: if isVerifiedAdmin();
     }
 
     match /deposits/{depositId} {
       allow get: if isSignedIn() && isValidId(depositId) && (resource.data.userUid == request.auth.uid || isVerifiedAdmin());
       allow list: if isSignedIn() && (resource.data.userUid == request.auth.uid || isVerifiedAdmin());
-      allow create: if isSignedIn() && isValidId(depositId) && isValidDepositRecord(incoming()) &&
-                    incoming().userUid == request.auth.uid;
-      allow update: if isSignedIn() && isValidId(depositId) && isValidDepositRecord(incoming()) &&
-                    incoming().userUid == existing().userUid &&
-                    existing().status == 'pending_admin' &&
-                    isVerifiedAdmin() &&
-                    incoming().diff(existing()).affectedKeys().hasOnly(['status']);
-      allow delete: if false;
+      allow create, update, delete: if isVerifiedAdmin();
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow get: if isSignedIn() && isValidId(withdrawalId) && (resource.data.userUid == request.auth.uid || isVerifiedAdmin());
+      allow list: if isSignedIn() && (resource.data.userUid == request.auth.uid || isVerifiedAdmin());
+      allow create, update, delete: if isVerifiedAdmin();
     }
 
     match /referrals/{referralCode} {
@@ -251,7 +218,14 @@ service cloud.firestore {
       allow list: if isSignedIn() && (resource.data.ownerUid == request.auth.uid || isVerifiedAdmin());
       allow create: if isSignedIn() && isValidId(referralCode) && isValidReferralLink(incoming()) &&
                     incoming().referralCode == referralCode &&
-                    incoming().ownerUid == request.auth.uid;
+                    incoming().ownerUid == request.auth.uid && (
+                      isVerifiedAdmin() ||
+                      (
+                        incoming().totalCommissionEarnedTon == 0 &&
+                        incoming().totalCommissionEarnedStars == 0 &&
+                        incoming().totalReferredTickets == 0
+                      )
+                    );
       allow update: if isSignedIn() && isValidId(referralCode) && isValidReferralLink(incoming()) &&
                     incoming().referralCode == existing().referralCode &&
                     incoming().ownerUid == existing().ownerUid && (
@@ -259,9 +233,6 @@ service cloud.firestore {
                       (request.auth.uid == existing().ownerUid && incoming().diff(existing()).affectedKeys().hasOnly([
                         'ownerDisplayName',
                         'referralUrl',
-                        'totalReferredTickets',
-                        'totalCommissionEarnedUsdt',
-                        'netHouseProfitRetainedUsdt',
                         'updatedAt'
                       ]))
                     );
@@ -271,11 +242,7 @@ service cloud.firestore {
     match /referralCommissions/{commissionId} {
       allow get: if isSignedIn() && isValidId(commissionId) && (resource.data.buyerUid == request.auth.uid || isVerifiedAdmin());
       allow list: if isSignedIn() && (resource.data.buyerUid == request.auth.uid || isVerifiedAdmin());
-      allow create: if isSignedIn() && isValidId(commissionId) && isValidReferralCommissionLedger(incoming()) &&
-                    incoming().commissionId == commissionId &&
-                    incoming().buyerUid == request.auth.uid;
-      allow update, delete: if false;
+      allow create, update, delete: if isVerifiedAdmin();
     }
   }
 }
-
