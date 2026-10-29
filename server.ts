@@ -3180,7 +3180,16 @@ app.post('/api/ai/support', optionalAuth, async (req: AuthRequest, res) => {
 
 async function startServer() {
   const vite = await createViteServer({
-    server: { middlewareMode: true },
+    server: {
+      middlewareMode: true,
+      allowedHosts: [
+        'luckydrop-60r3.onrender.com',
+        '.onrender.com',
+        '.run.app',
+        'localhost',
+        '127.0.0.1',
+      ],
+    },
     appType: 'spa',
   });
 
