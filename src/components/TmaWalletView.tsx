@@ -37,9 +37,6 @@ export const TmaWalletView: React.FC = () => {
     updateProvablyFairClientSeed,
     rotateProvablyFairServerSeed,
     navigateTo,
-    isTelegramAdmin,
-    isAdminPreviewEnabled,
-    setIsAdminPreviewEnabled,
     adminTonWalletAddress,
   } = useLottery();
 
@@ -61,19 +58,17 @@ export const TmaWalletView: React.FC = () => {
     setTimeout(() => setCopiedWalletAddr(false), 2000);
   };
 
-  const handleOneTapTonConnect = async (walletLabel: string) => {
+  const handleOneTapTonConnect = async (walletLabel?: string) => {
     const res = await connectTonWalletOneTap(walletLabel);
-    setWalletBanner(
-      `💎 ${walletLabel} متصل شد (${truncateTonAddress(res.address)}) + ۲ دراپ رایگان Plinko!`
-    );
+    setWalletBanner(res.message);
     setTimeout(() => setWalletBanner(null), 4500);
   };
 
   const handleTonDeposit = async (amount: number) => {
     if (!connectedTonWallet) {
       HapticEngine.notificationOccurred('warning');
-      setTonConnectModalOpen(true);
-      setWalletBanner('💎 برای واریز TON ابتدا کیف پول TON خود را متصل کنید.');
+      await connectTonWalletOneTap();
+      setWalletBanner('💎 برای واریز TON ابتدا کیف پول TON خود را در پنجره TON Connect متصل کنید.');
       setTimeout(() => setWalletBanner(null), 3500);
       return;
     }
@@ -93,7 +88,7 @@ export const TmaWalletView: React.FC = () => {
     if (activeTmaCurrency === 'TON') {
       if (!connectedTonWallet) {
         HapticEngine.notificationOccurred('warning');
-        setTonConnectModalOpen(true);
+        await connectTonWalletOneTap();
         setWalletBanner('💎 برای برداشت TON ابتدا کیف پول TON خود را متصل کنید.');
         setTimeout(() => setWalletBanner(null), 3500);
         return;
@@ -261,13 +256,13 @@ export const TmaWalletView: React.FC = () => {
               <div className="text-[11px] text-purple-300/75 font-medium">
                 اتصال اتوماتیک کیف پول‌های استاندارد شبکه TON (بدون ولت داخلی تلگرام):
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" dir="ltr">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" dir="ltr">
                 {TON_CONNECT_STANDARD_WALLETS.map((w) => (
                   <button
                     key={w.id}
                     type="button"
                     data-testid={`ton-connect-${w.name.split(' ')[0]}`}
-                    onClick={() => handleOneTapTonConnect(w.name)}
+                    onClick={() => handleOneTapTonConnect(w.appName)}
                     className="h-10 px-2.5 rounded-xl bg-[#070510]/90 hover:bg-purple-600/25 border border-purple-500/25 text-[11px] font-semibold text-purple-200/90 hover:text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5 truncate"
                   >
                     <span>{w.icon}</span>
@@ -275,6 +270,15 @@ export const TmaWalletView: React.FC = () => {
                   </button>
                 ))}
               </div>
+              <button
+                type="button"
+                data-testid="wallet-open-tonconnect-modal-btn"
+                onClick={() => handleOneTapTonConnect()}
+                className="w-full h-10 rounded-xl bg-gradient-to-r from-purple-600/80 to-indigo-600/80 hover:from-purple-500 hover:to-indigo-500 border border-purple-400/40 text-xs font-bold text-white flex items-center justify-center gap-2 cursor-pointer"
+                dir="ltr"
+              >
+                <span>💎 Connect TON Wallet (Official Modal)</span>
+              </button>
             </div>
           )}
         </div>
@@ -646,22 +650,6 @@ export const TmaWalletView: React.FC = () => {
                 );
               })}
             </div>
-          </div>
-
-          {/* Admin Preview Access Toggle */}
-          <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex items-center justify-between">
-            <span className="text-xs font-semibold text-purple-200/80 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-purple-400" />
-              <span>دسترسی پنل مدیریت تلگرام (Admin Gate)</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsAdminPreviewEnabled(!isAdminPreviewEnabled)}
-              className="px-3 py-1.5 rounded-xl bg-[#070510] border border-purple-500/25 text-[11px] font-medium text-purple-300/50 tabular-nums cursor-pointer"
-              dir="ltr"
-            >
-              {isTelegramAdmin ? 'Admin: ON' : 'Admin: OFF'}
-            </button>
           </div>
         </div>
       )}

@@ -350,3 +350,9 @@
   background: #4c1d95;
   border-radius: 8px;
 }
+
+/* Strictly exclude built-in Telegram @wallet from TON Connect UI picker */
+[data-tc-wallet-item="telegram-wallet"],
+button[data-tc-wallet-item="telegram-wallet"] {
+  display: none !important;
+}

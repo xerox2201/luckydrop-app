@@ -26,7 +26,8 @@ export const EarnQuestsView: React.FC = () => {
     referredTicketsCount,
     claimReferralEarningsToWallet,
     simulateReferredTicketPurchase,
-    connectWeb3Wallet,
+    connectedTonWallet,
+    connectTonWalletOneTap,
     navigateTo,
   } = useLottery();
 
@@ -39,7 +40,12 @@ export const EarnQuestsView: React.FC = () => {
   const handleQuestAction = async (questId: (typeof tmaQuests)[number]['id']) => {
     HapticEngine.impactOccurred('medium');
     if (questId === 'CONNECT_TON_WALLET') {
-      await connectWeb3Wallet('TON Wallet');
+      if (!connectedTonWallet) {
+        const res = await connectTonWalletOneTap();
+        setBannerMsg(res.message);
+        setTimeout(() => setBannerMsg(null), 4500);
+        return;
+      }
     } else if (questId === 'JOIN_TELEGRAM_CHANNEL') {
       const twa = (window as any)?.Telegram?.WebApp;
       if (twa?.openTelegramLink) {

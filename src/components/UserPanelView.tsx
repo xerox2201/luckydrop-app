@@ -46,10 +46,9 @@ export const UserPanelView: React.FC = () => {
     openLoyaltyChest,
     setViralCardTicket,
     firestoreConnected,
+    isTelegramAdmin,
   } = useLottery();
 
-  const [adminMasterPin, setAdminMasterPin] = useState<string>('SOVEREIGN-777');
-  const [adminTotpCode, setAdminTotpCode] = useState<string>('849201');
   const [securityBanner, setSecurityBanner] = useState<string | null>(null);
   const [claimingCode, setClaimingCode] = useState<string | null>(null);
   const [openingChest, setOpeningChest] = useState<boolean>(false);
@@ -70,25 +69,6 @@ export const UserPanelView: React.FC = () => {
     ticketsPerChest: 3,
   });
   const referralInviteUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://luckydrop.vip'}/?ref=${referralCode}`;
-
-  const handleUnlockAdminSession = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminTotpCode.trim().length < 4) {
-      setSecurityBanner('⚠️ لطفاً کد ۶ رقمی تایید دو مرحله‌ای (2FA TOTP) را وارد کنید.');
-      return;
-    }
-    setStealthCookieAuthorized(true);
-    setSecurityBanner(
-      '✅ سشن رمزنگاری‌شده AES-256-GCM (__Host_ld_ops_k82_vault) فعال شد. اکنون می‌توانید وارد کاکپیت فرماندهی شوید.'
-    );
-  };
-
-  const handleSecureAdminExit = () => {
-    setStealthCookieAuthorized(false);
-    setSecurityBanner(
-      '🔒 خروج امن انجام شد: کوکی AES-256-GCM باطل گردید و مسیر /ops-k82-cockpit مجدداً روی تله ۴۰۴ قفل شد.'
-    );
-  };
 
   const handleQuickClaim = async (ticketCode: string, prizeUsdt: number, net: string) => {
     setClaimingCode(ticketCode);
@@ -906,176 +886,35 @@ export const UserPanelView: React.FC = () => {
         </div>
       </section>
 
-      {/* 4. WORLD-STANDARD ZERO-TRUST ADMIN GATEWAY & ENTRY/EXIT GUIDE */}
-      <section
-        id="admin-security-gateway"
-        data-testid="admin-security-gateway"
-        className="relative rounded-3xl overflow-hidden border-2 border-amber-500/45 bg-gradient-to-br from-[#141022] via-[#0b0f19] to-[#191209] p-6 sm:p-8 shadow-2xl space-y-6"
-      >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-black">
-              <span className="material-symbols-outlined text-base">shield_lock</span>
-              <span>استاندارد جهانی امنیت ادمین • ZERO-TRUST STEALTH ADMIN PROTOCOL</span>
+      {/* 4. SERVER-VERIFIED ADMIN GATEWAY (Strictly rendered ONLY when backend verifies user.id in ADMIN_TELEGRAM_USER_IDS) */}
+      {isTelegramAdmin && (
+        <section
+          id="admin-security-gateway"
+          data-testid="admin-security-gateway"
+          className="relative rounded-3xl overflow-hidden border-2 border-amber-500/45 bg-gradient-to-br from-[#141022] via-[#0b0f19] to-[#191209] p-6 sm:p-8 shadow-2xl space-y-6"
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-5">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-black">
+                <span className="material-symbols-outlined text-base">shield_lock</span>
+                <span>تایید شده توسط سرور • SERVER-VERIFIED ADMIN SESSION</span>
+              </div>
+              <h2 className="text-xl sm:text-3xl font-black text-white">
+                درگاه فرماندهی اپراتور ارشد (کاکپیت مدیریت)
+              </h2>
             </div>
-            <h2 className="text-xl sm:text-3xl font-black text-white">
-              راهنمای رسمی و درگاه امن ورود و خروج اپراتور ارشد (کاکپیت مدیریت)
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-3xl leading-relaxed">
-              بر طبق بالاترین استاندارد امنیتی وب۳ (OWASP &amp; Zero-Trust)، مسیرهای عمومی مانند{' '}
-              <code className="text-rose-400 font-mono">/admin</code> همیشه به صفحه فریبنده ۴۰۴ هدایت می‌شوند و ورود اپراتور صرفاً با کوکی رمزنگاری‌شده{' '}
-              <code className="text-emerald-300 font-mono">AES-256-GCM</code> امکان‌پذیر است.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <span
-              data-testid="admin-gate-cookie-status"
-              className={`px-4 py-2 rounded-2xl text-xs font-mono font-black border flex items-center gap-2 ${
-                stealthCookieAuthorized
-                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
-                  : 'bg-rose-500/20 border-rose-400 text-rose-300'
-              }`}
+            <button
+              type="button"
+              data-testid="enter-admin-cockpit-btn"
+              onClick={() => navigateTo('cockpit')}
+              className="py-3 px-5 rounded-xl gold-gradient-cta font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <span className="material-symbols-outlined text-base">
-                {stealthCookieAuthorized ? 'verified_user' : 'lock'}
-              </span>
-              <span>
-                {stealthCookieAuthorized
-                  ? 'وضعیت سشن ادمین: فعال (AUTHORIZED)'
-                  : 'وضعیت سشن ادمین: قفل (LOCKED)'}
-              </span>
-            </span>
+              <span className="material-symbols-outlined text-base">shield_lock</span>
+              <span>ورود به کاکپیت ادمین</span>
+            </button>
           </div>
-        </div>
-
-        {/* 4-Step Visual Architecture Explanation + Interactive Auth Console */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* 4 Security Pillars */}
-          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-[#090d16]/90 border border-white/10 rounded-2xl p-4 space-y-2">
-              <div className="text-xs font-black text-amber-400 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-base">visibility_off</span>
-                <span>۱. پنهان‌سازی مسیر و تله ۴۰۴ (Decoy 404)</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                هرگونه تلاش هکرها یا بات‌ها برای باز کردن <code className="text-rose-300">/admin</code> یا{' '}
-                <code className="text-rose-300">/login</code> بلافاصله صفحه فریبنده ۴۰۴ را نمایش می‌دهد.
-              </p>
-              <button
-                type="button"
-                onClick={() => navigateTo('admin_unauthorized')}
-                className="text-xs font-bold text-amber-300 hover:underline cursor-pointer"
-              >
-                تست عملی تله /admin (مشاهده ۴۰۴ فریبنده) ←
-              </button>
-            </div>
-
-            <div className="bg-[#090d16]/90 border border-white/10 rounded-2xl p-4 space-y-2">
-              <div className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-base">vpn_key</span>
-                <span>۲. احراز هویت دو مرحله‌ای اپراتور ارشد</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                ورود به بخش مدیریت و خزانه صرفاً با کلید رمزنگاری‌شده اپراتور و کد ۶ رقمی Google Authenticator مجاز است.
-              </p>
-            </div>
-
-            <div className="bg-[#090d16]/90 border border-white/10 rounded-2xl p-4 space-y-2">
-              <div className="text-xs font-black text-sky-400 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-base">encrypted</span>
-                <span>۳. کوکی سخت‌افزاری AES-256-GCM</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                پس از تایید ۲ مرحله‌ای، نشست امنیتی با پرچم{' '}
-                <code className="text-slate-200">HttpOnly; SameSite=Strict</code> صادر می‌گردد.
-              </p>
-            </div>
-
-            <div className="bg-[#090d16]/90 border border-white/10 rounded-2xl p-4 space-y-2">
-              <div className="text-xs font-black text-rose-400 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-base">power_settings_new</span>
-                <span>۴. خروج امن ۱-کلیکی (Zero-Trace Logout)</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                پس از اتمام کار در پنل مدیریت، با زدن دکمه <strong>«خروج امن و قفل سشن»</strong> دسترسی بلافاصله قطع می‌شود.
-              </p>
-            </div>
-          </div>
-
-          {/* Interactive Admin Login / Lock Terminal */}
-          <div className="lg:col-span-5 bg-[#080b12] border border-amber-500/40 rounded-3xl p-5 space-y-4">
-            <h3 className="text-base font-black text-white flex items-center gap-2">
-              <span className="material-symbols-outlined text-amber-400">terminal</span>
-              <span>ترمینال احراز هویت اپراتور ارشد</span>
-            </h3>
-
-            <form onSubmit={handleUnlockAdminSession} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  کلید ارشد اپراتور (Master Secret Key):
-                </label>
-                <input
-                  type="password"
-                  value={adminMasterPin}
-                  onChange={(e) => setAdminMasterPin(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full bg-[#111623] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs font-mono text-amber-300"
-                  dir="ltr"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  کد ۶ رقمی تایید دو مرحله‌ای (2FA TOTP):
-                </label>
-                <input
-                  type="password"
-                  maxLength={6}
-                  value={adminTotpCode}
-                  onChange={(e) => setAdminTotpCode(e.target.value)}
-                  className="w-full bg-[#111623] border border-white/15 rounded-xl px-3.5 py-2.5 text-sm font-mono font-black tracking-[0.35em] text-center text-emerald-400"
-                  dir="ltr"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
-                {!stealthCookieAuthorized ? (
-                  <button
-                    type="submit"
-                    data-testid="unlock-admin-vault-btn"
-                    className="sm:col-span-2 py-3 px-4 rounded-xl emerald-gradient-cta font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-base">lock_open</span>
-                    <span>تایید ۲ مرحله‌ای و بازگشایی سشن ادمین</span>
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      data-testid="enter-admin-cockpit-btn"
-                      onClick={() => navigateTo('cockpit')}
-                      className="py-3 px-4 rounded-xl gold-gradient-cta font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-base">shield_lock</span>
-                      <span>ورود به کاکپیت ادمین</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="lock-admin-vault-btn"
-                      onClick={handleSecureAdminExit}
-                      className="py-3 px-4 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/45 text-rose-300 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-base">lock</span>
-                      <span>خروج امن و قفل سشن</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            </form>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 };

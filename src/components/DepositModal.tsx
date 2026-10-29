@@ -31,7 +31,7 @@ export const DepositModal: React.FC = () => {
     HapticEngine.impactOccurred('medium');
     if (activeTmaCurrency === 'TON') {
       if (!connectedTonWallet) {
-        await connectTonWalletOneTap('Tonkeeper');
+        await connectTonWalletOneTap();
         return;
       }
       setSubmitting(true);

@@ -39,8 +39,6 @@ export const Navbar: React.FC = () => {
     refreshPriceOracleNow,
     telegramUser,
     isTelegramAdmin,
-    isAdminPreviewEnabled,
-    setIsAdminPreviewEnabled,
     connectedTonWallet,
     connectTonWalletOneTap,
     disconnectTonWallet,
@@ -158,8 +156,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="navbar-connect-ton-btn"
                 onClick={() => {
-                  HapticEngine.impactOccurred('medium');
-                  setTonConnectModalOpen(true);
+                  connectTonWalletOneTap();
                 }}
                 className="h-9 px-2 rounded-xl bg-[#130d24]/90 hover:bg-[#1c1335] border border-purple-500/25 flex items-center gap-1.5 transition-colors cursor-pointer max-w-[122px]"
               >
@@ -248,13 +245,6 @@ export const Navbar: React.FC = () => {
           >
             Ledger
           </button>
-          <button
-            type="button"
-            data-testid="toggle-tma-admin-preview-btn"
-            onClick={() => setIsAdminPreviewEnabled(!isAdminPreviewEnabled)}
-          >
-            Toggle Admin
-          </button>
           <button type="button" data-testid="nav-play" onClick={() => navigateTo('play')}>
             Play
           </button>
@@ -279,13 +269,15 @@ export const Navbar: React.FC = () => {
             >
               MiniGames
             </button>
-            <button
-              type="button"
-              data-testid="vertical-tab-cockpit"
-              onClick={() => navigateTo('cockpit')}
-            >
-              Cockpit
-            </button>
+            {isTelegramAdmin && (
+              <button
+                type="button"
+                data-testid="vertical-tab-cockpit"
+                onClick={() => navigateTo('cockpit')}
+              >
+                Cockpit
+              </button>
+            )}
           </div>
           {(['FA', 'EN', 'ZH'] as CurrencyLang[]).map((code) => (
             <button
@@ -302,79 +294,6 @@ export const Navbar: React.FC = () => {
           </button>
         </div>
       </header>
-
-      {/* One-Tap TON Wallet Connect Modal */}
-      <AnimatePresence>
-        {tonConnectModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
-            onClick={() => setTonConnectModalOpen(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.94, opacity: 0, y: 10 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.94, opacity: 0, y: 10 }}
-              onClick={(e) => e.stopPropagation()}
-              data-testid="ton-connect-modal"
-              className="w-full max-w-[380px] rounded-2xl bg-[#130d24]/95 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex flex-col gap-3"
-            >
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-bold tracking-wide text-white">
-                  💎 Connect TON Wallet
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setTonConnectModalOpen(false)}
-                  className="p-1.5 rounded-xl bg-purple-500/10 text-purple-200/80 hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex items-center justify-between text-[11px] bg-[#090612] border border-purple-500/20 rounded-xl px-3 py-2" dir="ltr">
-                <span className="text-purple-200/80 font-mono flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#00f59b] animate-pulse" />
-                  <span>Live TON Rate: 1 TON = ${tonUsdRate.toFixed(2)}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => refreshPriceOracleNow()}
-                  className="text-[10px] font-bold text-[#00f59b] hover:underline cursor-pointer"
-                >
-                  ↻ Sync
-                </button>
-              </div>
-              <p className="text-xs font-semibold text-purple-200/80" dir="rtl">
-                کیف پول استاندارد شبکه TON خود را برای واریز و برداشت اتوماتیک انتخاب کنید (بدون کیف پول داخلی تلگرام):
-              </p>
-              <div className="flex flex-col gap-2 max-h-72 overflow-y-auto no-scrollbar" dir="ltr">
-                {TON_CONNECT_STANDARD_WALLETS.map((w) => (
-                  <button
-                    key={w.id}
-                    type="button"
-                    data-testid={`modal-ton-connect-${w.name.split(' ')[0]}`}
-                    onClick={() => connectTonWalletOneTap(w.name)}
-                    className="w-full h-12 px-3.5 rounded-xl bg-[#1b1333] hover:bg-purple-600/30 border border-purple-500/25 flex items-center justify-between text-xs font-semibold text-white transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="text-base shrink-0">{w.icon}</span>
-                      <div className="text-left min-w-0">
-                        <div className="font-bold text-white truncate">{w.name}</div>
-                        <div className="text-[10px] text-purple-300/60 truncate">{w.badge}</div>
-                      </div>
-                    </div>
-                    <span className="px-2 py-1 rounded-lg bg-[#00f59b]/15 border border-[#00f59b]/30 text-[10px] font-mono font-bold text-[#00f59b] shrink-0">
-                      Auto Connect →
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Floating Bottom Navigation Dock (h-16, rounded-2xl mx-3 bg-[#160f29]/95 border border-purple-500/25) with bottom mask */}
       <div

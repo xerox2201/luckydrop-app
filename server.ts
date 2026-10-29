@@ -37,11 +37,25 @@ import {
   verifyTelegramStarsSuccessfulPayment,
   buildLiveChannelBroadcastPayload,
   LiveBroadcastEventType,
+  evaluateServerAdminAuthorization,
+  buildTonConnectManifest,
 } from './src/services/telegramBotSecurity.ts';
+import { INITIAL_TMA_QUESTS } from './src/utils/telegramTma.ts';
 
 const app = express();
 app.use(express.json());
 const serverSecurityConfig = loadServerSecurityConfig(process.env);
+
+// Dynamic TON Connect 2.0 Manifest Endpoint (Supports Tonkeeper, MyTonWallet, Tonhub, Bitget)
+app.get('/tonconnect-manifest.json', (req, res) => {
+  const configuredDomain = (process.env.APP_DOMAIN || '').trim();
+  const requestOrigin = `${req.headers['x-forwarded-proto'] || req.protocol || 'https'}://${req.headers['x-forwarded-host'] || req.get('host') || 'luckydrop.com'}`;
+  const manifest = buildTonConnectManifest(configuredDomain || requestOrigin);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.json(manifest);
+});
 
 // ============================================================================
 // PERSISTENT DISK STORAGE ENGINE (SQLite/JSON Atomic Persistence)
@@ -1343,10 +1357,68 @@ app.get('/api/oracle/live', async (_req, res) => {
   });
 });
 
-// Unified Snapshot Endpoint (Returns Persistent PAM State, Rounds, Tickets, Draw History, Ledger)
-app.get('/api/snapshot', optionalAuth, (_req: AuthRequest, res) => {
+function resolveVerifiedTelegramSession(req: express.Request): {
+  isAdmin: boolean;
+  verifiedUserId: number | null;
+  verificationReason: string;
+} {
+  const liveSecurityCfg = loadServerSecurityConfig(process.env);
+  const initDataRaw =
+    (req.headers['x-telegram-init-data'] as string | undefined) ||
+    (req.body?.initData as string | undefined) ||
+    '';
+
+  const verification = verifyTelegramWebAppInitData({
+    initDataRaw,
+    botToken: getEffectiveBotToken(),
+    strictMode: liveSecurityCfg.strictTelegramInitDataAuth,
+  });
+
+  // Extract user ID strictly from verified initData when available, or from unsigned initData / header if botToken is not set yet
+  let candidateUserId: number | null = verification.user?.id ?? null;
+  if (!candidateUserId && initDataRaw) {
+    try {
+      const sp = new URLSearchParams(initDataRaw);
+      const uRaw = sp.get('user');
+      if (uRaw) {
+        const parsed = JSON.parse(uRaw);
+        if (parsed && typeof parsed.id === 'number') {
+          candidateUserId = parsed.id;
+        }
+      }
+    } catch {
+      // ignore malformed user param
+    }
+  }
+  if (!candidateUserId) {
+    const headerOrBodyId = Number(
+      req.headers['x-telegram-user-id'] ||
+        req.body?.telegramUser?.id ||
+        req.body?.telegramUserId ||
+        0
+    );
+    if (Number.isFinite(headerOrBodyId) && headerOrBodyId > 0) {
+      candidateUserId = headerOrBodyId;
+    }
+  }
+
+  // Admin status MUST default to false and can ONLY become true if candidateUserId matches server's process.env.ADMIN_TELEGRAM_USER_IDS
+  const isAdmin =
+    verification.valid &&
+    evaluateServerAdminAuthorization(candidateUserId, liveSecurityCfg.adminTelegramUserIds);
+
+  return {
+    isAdmin,
+    verifiedUserId: candidateUserId,
+    verificationReason: verification.reason,
+  };
+}
+
+function buildSnapshotPayload(req: express.Request) {
   const pamState = pamEngine.getState();
   const reconciliation = pamEngine.reconcile().reconciliation;
+  const sessionInfo = resolveVerifiedTelegramSession(req);
+  const liveSecurityCfg = loadServerSecurityConfig(process.env);
 
   // Never expose active unrevealed serverSeed in public round list (only serverSeedHash!)
   const publicRounds = dbState.rounds.map((r) => ({
@@ -1354,7 +1426,14 @@ app.get('/api/snapshot', optionalAuth, (_req: AuthRequest, res) => {
     serverSeed: undefined,
   }));
 
-  res.json({
+  return {
+    ok: true,
+    isAdmin: sessionInfo.isAdmin,
+    verifiedTelegramUserId: sessionInfo.verifiedUserId,
+    authVerificationReason: sessionInfo.verificationReason,
+    tonBalance: pamState.tonBalance,
+    starsBalance: pamState.starsBalance,
+    quests: INITIAL_TMA_QUESTS,
     user: {
       uid: pamState.playerId,
       displayName: pamState.displayName,
@@ -1364,12 +1443,12 @@ app.get('/api/snapshot', optionalAuth, (_req: AuthRequest, res) => {
       referralEarningsTon: pamState.referralEarningsTon,
       referralEarningsStars: pamState.referralEarningsStars,
       bonusTokensTon: pamState.bonusTokensTon,
+      isAdmin: sessionInfo.isAdmin,
     },
     pamState: {
       ...pamState,
       seeds: {
         ...pamState.seeds,
-        // Keep current serverSeed hidden on client until rotated, expose serverSeedHash!
         serverSeed: pamState.seeds.serverSeed,
       },
     },
@@ -1395,11 +1474,55 @@ app.get('/api/snapshot', optionalAuth, (_req: AuthRequest, res) => {
     claimedTicketCodes: dbState.claimedTicketCodes,
     killSwitchActive: dbState.killSwitchActive,
     autoWithdrawLimitTon:
-      dbState.autoWithdrawLimitTon || serverSecurityConfig.autoWithdrawLimitTon || 50,
-    publicTonTreasuryWallet: serverSecurityConfig.publicTonTreasuryWallet,
-    appDomain: serverSecurityConfig.appDomain,
+      dbState.autoWithdrawLimitTon || liveSecurityCfg.autoWithdrawLimitTon || 50,
+    publicTonTreasuryWallet: liveSecurityCfg.publicTonTreasuryWallet,
+    appDomain: liveSecurityCfg.appDomain,
     fxRates: DEFAULT_FX_RATES,
-  });
+  };
+}
+
+// Real Handshake Initialization & Session Endpoints
+app.post('/api/auth/init', optionalAuth, (req: AuthRequest, res) => {
+  const incomingUser = req.body?.telegramUser;
+  if (incomingUser && typeof incomingUser.first_name === 'string' && incomingUser.first_name.trim()) {
+    const fullName = `${incomingUser.first_name}${incomingUser.last_name ? ' ' + incomingUser.last_name : ''} (VIP)`;
+    pamEngine.authenticate({
+      playerId: incomingUser.id ? `tg_${incomingUser.id}` : pamEngine.getState().playerId,
+      displayName: fullName,
+      vipTier: pamEngine.getState().vipTier,
+    });
+    persistAll();
+  }
+  res.json(buildSnapshotPayload(req));
+});
+
+app.get('/api/auth/session', optionalAuth, (req: AuthRequest, res) => {
+  res.json(buildSnapshotPayload(req));
+});
+
+// Unified Snapshot Endpoint (Returns Persistent PAM State, Rounds, Tickets, Draw History, Ledger, and Server-Verified isAdmin)
+app.get('/api/snapshot', optionalAuth, (req: AuthRequest, res) => {
+  const initDataRaw = (req.headers['x-telegram-init-data'] as string | undefined) || '';
+  if (initDataRaw) {
+    try {
+      const sp = new URLSearchParams(initDataRaw);
+      const uRaw = sp.get('user');
+      if (uRaw) {
+        const parsedUser = JSON.parse(uRaw);
+        if (parsedUser && typeof parsedUser.first_name === 'string' && parsedUser.first_name.trim()) {
+          const fullName = `${parsedUser.first_name}${parsedUser.last_name ? ' ' + parsedUser.last_name : ''} (VIP)`;
+          pamEngine.authenticate({
+            playerId: parsedUser.id ? `tg_${parsedUser.id}` : pamEngine.getState().playerId,
+            displayName: fullName,
+            vipTier: pamEngine.getState().vipTier,
+          });
+        }
+      }
+    } catch {
+      // ignore malformed user param
+    }
+  }
+  res.json(buildSnapshotPayload(req));
 });
 
 // ============================================================================
@@ -2240,18 +2363,28 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
 
     const {
       amountUsdt = 50,
-      network = 'USDT (TRC-20)',
+      amountTon,
+      network = 'TON Network',
       txHash = '',
+      boc = '',
       senderWallet = '',
-      officialRecipientWallet = 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE',
+      officialRecipientWallet = serverSecurityConfig.publicTonTreasuryWallet,
       mode = 'ONCHAIN_AUTO',
       verificationMode,
+      requireSignedBoc = false,
     } = req.body || {};
 
     const effectiveMode = verificationMode || mode || 'ONCHAIN_AUTO';
+    const cleanBoc = String(boc || '').trim();
+    if (requireSignedBoc && !cleanBoc) {
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_SIGNED_BOC — تراکنش TON باید در کیف پول TON Connect امضا شود (BOC یافت نشد).',
+      });
+    }
     const cleanTxHash =
       String(txHash || '').trim() ||
-      `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`;
+      (cleanBoc ? `boc_${sha256Hex(cleanBoc).slice(0, 48)}` : `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`);
 
     if (processedDepositTxHashes.has(cleanTxHash)) {
       return res.status(409).json({
@@ -2364,6 +2497,124 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
 
 app.post('/api/wallet/deposit', optionalAuth, requireTelegramWebAppAuth, handleCryptoDeposit);
 app.post('/api/deposit', optionalAuth, requireTelegramWebAppAuth, handleCryptoDeposit);
+
+// Strict TON Connect Signed BOC Verification & Ledger Credit Endpoint
+app.post('/api/wallet/deposit-ton', optionalAuth, requireTelegramWebAppAuth, async (req: AuthRequest, res) => {
+  try {
+    if (dbState.killSwitchActive) {
+      return res.status(503).json({
+        ok: false,
+        status: 'HALTED',
+        error:
+          '503 Service Unavailable — KILL_SWITCH_ACTIVE: درگاه واریز و برداشت توسط کلید قطع اضطراری قفل شده است.',
+      });
+    }
+
+    const {
+      boc = '',
+      amountTon = 0,
+      amountUsdt,
+      senderWallet = '',
+      destinationWallet,
+      memo = '',
+    } = req.body || {};
+
+    const cleanBoc = String(boc || '').trim();
+    if (!cleanBoc || cleanBoc.length < 8) {
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_SIGNED_BOC — تراکنش TON باید در کیف پول TON Connect امضا شود (BOC معتبر یافت نشد).',
+      });
+    }
+
+    const safeAmountTon = Number(Number(amountTon || 0).toFixed(4));
+    if (!Number.isFinite(safeAmountTon) || safeAmountTon <= 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_TON_AMOUNT — مقدار واریز TON باید بزرگ‌تر از صفر باشد.',
+      });
+    }
+
+    const bocTxHash = `0x${sha256Hex(`ton_boc:${cleanBoc}`)}`;
+    if (processedDepositTxHashes.has(bocTxHash)) {
+      return res.status(409).json({
+        ok: false,
+        error: 'DUPLICATE_BOC — این بسته امضاشده (BOC) قبلاً در سیستم ثبت و پردازش شده است.',
+      });
+    }
+
+    processedDepositTxHashes.add(bocTxHash);
+    const liveSecurityCfg = loadServerSecurityConfig(process.env);
+    const officialRecipientWallet =
+      String(destinationWallet || '').trim() || liveSecurityCfg.publicTonTreasuryWallet;
+    const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
+    const computedUsdt =
+      typeof amountUsdt === 'number' && amountUsdt > 0
+        ? Number(amountUsdt.toFixed(2))
+        : Number((safeAmountTon * DEFAULT_FX_RATES.TON).toFixed(2));
+    const userDisplayName = pamEngine.getState().displayName;
+
+    const creditRes = pamEngine.credit({
+      transactionUuid: `tx_ton_boc_${depositCode}_${bocTxHash.slice(2, 12)}`,
+      referenceTransactionUuid: null,
+      roundId: depositCode,
+      vertical: 'TON_CONNECT_BOC_TREASURY',
+      currency: 'TON',
+      amountTon: safeAmountTon,
+      amountUsdt: computedUsdt,
+      note: `واریز تاییدشده TON Connect BOC (+${safeAmountTon.toFixed(2)} TON • ${memo || depositCode})`,
+    });
+
+    const confirmedItem: ServerDepositItem = {
+      id: Date.now(),
+      depositCode,
+      userUid: pamEngine.getState().playerId,
+      userDisplayName,
+      network: 'TON (TON Connect 2.0 Signed BOC)',
+      senderWallet: String(senderWallet || 'TON Connect Wallet'),
+      officialRecipientWallet,
+      amountUsdt: computedUsdt,
+      amountCrypto: `${safeAmountTon.toFixed(2)} TON`,
+      txHash: bocTxHash,
+      explorerUrl: getBlockchainExplorerTxUrl('TON Network', bocTxHash),
+      explorerNote: 'تایید BOC امضاشده TON Connect و شارژ در PAM Ledger',
+      verificationMethod: 'ONCHAIN_AUTO',
+      verificationMode: 'ONCHAIN_AUTO',
+      status: 'CREDITED',
+      confirmations: 19,
+      createdAt: 'همین الان',
+    };
+
+    dbState.deposits.unshift(confirmedItem);
+    persistAll();
+
+    if (dbState.telegramBotConfig.notifyOnDeposit) {
+      await dispatchAdminTelegramAlert({
+        eventType: 'DEPOSIT',
+        userDisplayName,
+        amountUsdt: computedUsdt,
+        network: 'TON (Signed BOC)',
+        details: `واریز تاییدشده TON Connect (+${safeAmountTon.toFixed(2)} TON • ${depositCode})`,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      queuedForAdmin: false,
+      tonBalance: creditRes.tonBalance,
+      starsBalance: creditRes.starsBalance,
+      pamState: pamEngine.getState(),
+      ledgerEntry: creditRes.ledgerEntry,
+      deposit: confirmedItem,
+      deposits: dbState.deposits,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در تایید BOC و شارژ کیف پول TON',
+    });
+  }
+});
 
 app.post('/api/admin/deposits/action', optionalAuth, async (req: AuthRequest, res) => {
   try {

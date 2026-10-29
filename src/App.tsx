@@ -5,7 +5,13 @@
 
 import React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { TonConnectUI, TonConnectUIProvider, THEME } from '@tonconnect/ui-react';
 import { LotteryProvider, useLottery } from './context/LotteryContext.tsx';
+import {
+  TON_CONNECT_WALLETS_LIST_CONFIG,
+  filterNonCustodialTonWallets,
+} from './utils/telegramTma.ts';
+import { SplashScreen } from './components/SplashScreen.tsx';
 import { Navbar } from './components/Navbar.tsx';
 import { LobbyView } from './components/LobbyView.tsx';
 import { PlayView } from './components/PlayView.tsx';
@@ -27,8 +33,25 @@ import { DepositModal } from './components/DepositModal.tsx';
 import { WalletDrawer } from './components/WalletDrawer.tsx';
 import { ViralTicketCardModal } from './components/ViralTicketCardModal.tsx';
 
+// Ensure TonConnectUI modal strictly excludes built-in Telegram Wallet (`telegram-wallet`)
+// and prioritizes non-custodial external wallets (`tonkeeper`, `mytonwallet`, `tonhub`).
+if (typeof TonConnectUI !== 'undefined' && TonConnectUI.prototype) {
+  const originalGetWallets = TonConnectUI.prototype.getWallets;
+  if (typeof originalGetWallets === 'function' && !(TonConnectUI.prototype as any).__nonCustodialPatched) {
+    (TonConnectUI.prototype as any).__nonCustodialPatched = true;
+    TonConnectUI.prototype.getWallets = async function () {
+      const list = await originalGetWallets.call(this);
+      return filterNonCustodialTonWallets(list);
+    };
+  }
+}
+
 const MainRouter: React.FC = () => {
-  const { activeRoute } = useLottery();
+  const { activeRoute, isTelegramAdmin, splashState, retryHandshake } = useLottery();
+
+  if (!splashState.ready) {
+    return <SplashScreen state={splashState} onRetry={retryHandshake} />;
+  }
 
   return (
     <div
@@ -58,9 +81,9 @@ const MainRouter: React.FC = () => {
             {activeRoute === 'status' && <TxStatusView />}
             {activeRoute === 'transparency' && <TransparencyView />}
             {activeRoute === 'terms' && <TermsRulesView />}
-            {activeRoute === 'cockpit' && <CockpitView />}
-            {activeRoute === 'finances' && <FinancesView />}
-            {activeRoute === 'launch' && <LaunchOpsView />}
+            {isTelegramAdmin && activeRoute === 'cockpit' && <CockpitView />}
+            {isTelegramAdmin && activeRoute === 'finances' && <FinancesView />}
+            {isTelegramAdmin && activeRoute === 'launch' && <LaunchOpsView />}
             {activeRoute === '404' && <Decoy404View />}
           </motion.div>
         </AnimatePresence>
@@ -73,9 +96,20 @@ const MainRouter: React.FC = () => {
 };
 
 export default function App() {
+  const manifestUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/tonconnect-manifest.json`
+      : 'https://luckydrop.vip/tonconnect-manifest.json';
+
   return (
-    <LotteryProvider>
-      <MainRouter />
-    </LotteryProvider>
+    <TonConnectUIProvider
+      manifestUrl={manifestUrl}
+      uiPreferences={{ theme: THEME.DARK }}
+      walletsListConfiguration={TON_CONNECT_WALLETS_LIST_CONFIG as any}
+    >
+      <LotteryProvider>
+        <MainRouter />
+      </LotteryProvider>
+    </TonConnectUIProvider>
   );
 }

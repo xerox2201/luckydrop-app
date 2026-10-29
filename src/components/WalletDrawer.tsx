@@ -127,14 +127,10 @@ export const WalletDrawer: React.FC = () => {
     });
 
     if (res.ok) {
-      const rbConverted = usdtToTmaCurrency(
-        latestDebit.amountUsdt,
-        activeTmaCurrency,
-        tonUsdRate,
-        starsUsdRate
-      );
+      const rbCurrency = latestDebit.currency === 'STARS' ? 'STARS' : 'TON';
+      const rbAmt = rbCurrency === 'STARS' ? latestDebit.amountStars : latestDebit.amountTon;
       setOpBanner(
-        `↩️ عملیات PAM ROLLBACK: +${formatCurrency(rbConverted, activeTmaCurrency)} مسترد شد!`
+        `↩️ عملیات PAM ROLLBACK: +${formatCurrency(rbAmt, rbCurrency)} مسترد شد!`
       );
       setTimeout(() => setOpBanner(null), 4500);
     }

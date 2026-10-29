@@ -67,6 +67,12 @@ import {
 } from '../services/supabase.ts';
 
 import {
+   useTonConnectUI,
+  useTonAddress,
+  useTonWallet,
+} from '@tonconnect/ui-react';
+import { SplashHandshakeState } from '../components/SplashScreen.tsx';
+import {
   ActiveTmaCurrency,
   TelegramWebAppUser,
   TmaQuestItem,
@@ -78,7 +84,6 @@ import {
   DEFAULT_TON_USD_RATE,
   DEFAULT_STARS_USD_RATE,
   initTelegramMiniAppSdk,
-  isTelegramAdminAuthorized,
   tmaCurrencyToUsdt,
   usdtToTmaCurrency,
   formatTmaCurrency,
@@ -394,9 +399,9 @@ interface LotteryContextType {
   setAdminTelegramUserIds: (ids: number[]) => void;
   adminTonWalletAddress: string;
   setAdminTonWalletAddress: (addr: string) => void;
-  isAdminPreviewEnabled: boolean;
-  setIsAdminPreviewEnabled: (enabled: boolean) => void;
   isTelegramAdmin: boolean;
+  splashState: SplashHandshakeState;
+  retryHandshake: () => Promise<void>;
   freePlinkoDrops: number;
   freeScratchCards: number;
   freeLotteryTickets: number;
@@ -481,6 +486,8 @@ interface LotteryContextType {
     mode?: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
     verificationMode?: 'ONCHAIN_AUTO' | 'ADMIN_MANUAL';
     web3Signed?: boolean;
+    boc?: string;
+    requireSignedBoc?: boolean;
   }) => Promise<{
     ok: boolean;
     queuedForAdmin?: boolean;
@@ -604,16 +611,11 @@ const LotteryContext = createContext<LotteryContextType | null>(null);
 const resolveInitialRoute = (): AppRoute => {
   if (typeof window === 'undefined') return 'lobby';
   const path = window.location.pathname.toLowerCase();
-  const search = window.location.search.toLowerCase();
-  if (search.includes('vault=sovereign-gate-777')) return 'cockpit';
   if (path.startsWith('/earn') || path.startsWith('/quests')) return 'earn';
   if (path.startsWith('/wallet')) return 'wallet';
   if (path.startsWith('/mini-games') || path.startsWith('/instant')) return 'mini-games';
   if (path.startsWith('/user-panel') || path.startsWith('/profile')) return 'user-panel';
   if (path.startsWith('/terms') || path.startsWith('/rules')) return 'terms';
-  if (path.startsWith('/ops/launch')) return 'launch';
-  if (path.startsWith('/ops-k82-cockpit')) return 'cockpit';
-  if (path.startsWith('/admin/finances')) return 'finances';
   if (path === '/admin' || path.startsWith('/404')) return '404';
   if (path.startsWith('/transparency') || path.startsWith('/verifier')) return 'transparency';
   if (path.startsWith('/status')) return 'status';
@@ -694,8 +696,12 @@ const buildDefaultConcurrentRounds = (): LotteryRoundItem[] => {
 };
 
 export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [tonConnectUI] = useTonConnectUI();
+  const realTonAddress = useTonAddress();
+  const realTonWallet = useTonWallet();
+
   const [activeRoute, setActiveRoute] = useState<AppRoute>(resolveInitialRoute);
-  const [stealthCookieAuthorized, setStealthCookieAuthorized] = useState<boolean>(true);
+  const [stealthCookieAuthorized, setStealthCookieAuthorized] = useState<boolean>(false);
   const [lang, setLangState] = useState<CurrencyLang>('FA');
   const [walletDrawerOpen, setWalletDrawerOpen] = useState<boolean>(false);
 
@@ -730,21 +736,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [killSwitchActive, setKillSwitchActive] = useState<boolean>(false);
   const [firestoreConnected, setFirestoreConnected] = useState<boolean>(true);
 
-  // Unified Web3 Wallet & Telegram Identity State
-  const [connectedWeb3Wallet, setConnectedWeb3Wallet] = useState<string>(() => {
-    try {
-      return localStorage.getItem('luckydrop_web3_wallet') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [connectedWalletProvider, setConnectedWalletProvider] = useState<Web3WalletProviderType | null>(() => {
-    try {
-      return (localStorage.getItem('luckydrop_web3_provider') as Web3WalletProviderType) || null;
-    } catch {
-      return null;
-    }
-  });
+  // Unified Web3 Wallet & Telegram Identity State (Strictly bound to real @tonconnect/ui-react useTonAddress)
+  const [connectedWeb3Wallet, setConnectedWeb3Wallet] = useState<string>('');
+  const [connectedWalletProvider, setConnectedWalletProvider] = useState<Web3WalletProviderType | null>(null);
   const [telegramUsername, setTelegramUsername] = useState<string>(() => {
     try {
       const tgUser = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user;
@@ -789,34 +783,20 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return 2500;
     }
   });
-  const [adminTelegramUserIds, setAdminTelegramUserIdsState] = useState<number[]>(() => {
-    try {
-      const raw = localStorage.getItem('luckydrop_admin_tg_ids_v1');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(Number);
-      }
-    } catch {
-      // ignore
-    }
-    return DEFAULT_ADMIN_TELEGRAM_USER_IDS;
-  });
-  const [adminTonWalletAddress, setAdminTonWalletAddressState] = useState<string>(() => {
-    try {
-      return (
-        localStorage.getItem('luckydrop_admin_ton_wallet_v1') || DEFAULT_ADMIN_TON_WALLET_ADDRESS
-      );
-    } catch {
-      return DEFAULT_ADMIN_TON_WALLET_ADDRESS;
-    }
-  });
-  const [isAdminPreviewEnabled, setIsAdminPreviewEnabledState] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem('luckydrop_dev_admin_preview_v1');
-      return raw ? raw === 'true' : true;
-    } catch {
-      return true;
-    }
+  const [adminTelegramUserIds, setAdminTelegramUserIdsState] = useState<number[]>(
+    DEFAULT_ADMIN_TELEGRAM_USER_IDS
+  );
+  const [adminTonWalletAddress, setAdminTonWalletAddressState] = useState<string>(
+    DEFAULT_ADMIN_TON_WALLET_ADDRESS
+  );
+  // Strict Server-Verified Admin Lock: defaults strictly to false and only turns true if backend verifies Telegram user ID
+  const [isTelegramAdmin, setIsTelegramAdmin] = useState<boolean>(false);
+  const [splashState, setSplashState] = useState<SplashHandshakeState>({
+    progress: 25,
+    stepTitleFa: '۱. راه‌اندازی هسته Telegram WebApp SDK',
+    stepSubtitleEn: 'Telegram.WebApp.ready() & expand() + initData extraction',
+    errorStatus: null,
+    ready: false,
   });
   const [freePlinkoDrops, setFreePlinkoDrops] = useState<number>(() => {
     try {
@@ -856,23 +836,6 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return INITIAL_TMA_QUESTS;
   });
 
-  useEffect(() => {
-    const user = initTelegramMiniAppSdk();
-    setTelegramUser(user);
-    if (user.username) {
-      setTelegramUsername(`@${user.username.replace(/^@/, '')}`);
-    }
-    if (user.first_name) {
-      setDisplayName(`${user.first_name}${user.last_name ? ' ' + user.last_name : ''} (VIP)`);
-    }
-  }, []);
-
-  const isTelegramAdmin = isTelegramAdminAuthorized(
-    telegramUser.id,
-    adminTelegramUserIds,
-    isAdminPreviewEnabled
-  );
-
   // Primary wallet balances are strictly tonBalance (💎 TON) & starsBalance (⭐ Stars);
   // balanceUsdt and bonusTokensUsdt are computed read-only helpers for UI compatibility
   const effectiveTonUsdRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
@@ -911,33 +874,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const setAdminTelegramUserIds = (ids: number[]) => {
     const clean = ids.filter((n) => Number.isFinite(n) && n > 0);
-    const next = clean.length > 0 ? clean : DEFAULT_ADMIN_TELEGRAM_USER_IDS;
-    setAdminTelegramUserIdsState(next);
-    try {
-      localStorage.setItem('luckydrop_admin_tg_ids_v1', JSON.stringify(next));
-    } catch {
-      // ignore
-    }
+    setAdminTelegramUserIdsState(clean);
   };
 
   const setAdminTonWalletAddress = (addr: string) => {
     const clean = (addr || '').trim() || DEFAULT_ADMIN_TON_WALLET_ADDRESS;
     setAdminTonWalletAddressState(clean);
-    try {
-      localStorage.setItem('luckydrop_admin_ton_wallet_v1', clean);
-    } catch {
-      // ignore
-    }
-  };
-
-  const setIsAdminPreviewEnabled = (enabled: boolean) => {
-    HapticEngine.impactOccurred('medium');
-    setIsAdminPreviewEnabledState(enabled);
-    try {
-      localStorage.setItem('luckydrop_dev_admin_preview_v1', String(enabled));
-    } catch {
-      // ignore
-    }
   };
 
   const formatCurrency = useCallback(
@@ -1347,8 +1289,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       typeof window !== 'undefined'
         ? String((window as any)?.Telegram?.WebApp?.initData || '').trim()
         : '';
-    if (tgInitData) {
-      headers['X-Telegram-Init-Data'] = tgInitData;
+    headers['X-Telegram-Init-Data'] = tgInitData;
+    const unsafeUserId =
+      typeof window !== 'undefined'
+        ? (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user?.id
+        : undefined;
+    if (unsafeUserId) {
+      headers['X-Telegram-User-Id'] = String(unsafeUserId);
     }
     if (auth.currentUser) {
       try {
@@ -1435,11 +1382,159 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (Array.isArray(data.claimedTicketCodes)) {
         setClaimedTicketCodes(data.claimedTicketCodes);
       }
+      if (typeof data.isAdmin === 'boolean') {
+        const verifiedAdmin = data.isAdmin === true;
+        setIsTelegramAdmin(verifiedAdmin);
+        setStealthCookieAuthorized(verifiedAdmin);
+      }
+      if (typeof data.publicTonTreasuryWallet === 'string' && data.publicTonTreasuryWallet.trim()) {
+        setAdminTonWalletAddressState(data.publicTonTreasuryWallet.trim());
+      }
       if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
     } catch (error) {
-      console.error('Snapshot fetch error (operating on IndexedDB PAM fallback):', error);
+      console.error('Snapshot fetch error:', error);
     }
   }, [getHeaders, syncPamStateEverywhere, activeRoundCode]);
+
+  const executeRealHandshake = useCallback(async () => {
+    try {
+      // Step 1 (25%): Initialize Telegram.WebApp.ready(), expand(), and extract real initData & user profile
+      setSplashState({
+        progress: 25,
+        stepTitleFa: '۱. راه‌اندازی هسته Telegram WebApp SDK',
+        stepSubtitleEn: 'Telegram.WebApp.ready() & expand() + initData extraction',
+        errorStatus: null,
+        ready: false,
+      });
+
+      const user = initTelegramMiniAppSdk();
+      setTelegramUser(user);
+      if (user.username) {
+        setTelegramUsername(`@${user.username.replace(/^@/, '')}`);
+      }
+      if (user.first_name) {
+        setDisplayName(`${user.first_name}${user.last_name ? ' ' + user.last_name : ''} (VIP)`);
+      }
+
+      const rawInitData =
+        typeof window !== 'undefined'
+          ? String((window as any)?.Telegram?.WebApp?.initData || '').trim()
+          : '';
+
+      // Step 2 (60%): Fetch verified user data, balances, and session state from /api/snapshot using X-Telegram-Init-Data
+      setSplashState({
+        progress: 60,
+        stepTitleFa: '۲. احراز هویت سرور و همگام‌سازی دفترکل PAM',
+        stepSubtitleEn: 'GET /api/snapshot (X-Telegram-Init-Data) • Balances, Session & Admin Lock',
+        errorStatus: null,
+        ready: false,
+      });
+
+      const baseHeaders = await getHeaders();
+      const snapshotHeaders: Record<string, string> = {
+        ...baseHeaders,
+        'X-Telegram-Init-Data': rawInitData,
+        'X-Telegram-User-Id': String(user.id || ''),
+      };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch('/api/snapshot', {
+        method: 'GET',
+        headers: snapshotHeaders,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        let serverErr = `HTTP ${res.status} ${res.statusText}`;
+        try {
+          const errJson = await res.json();
+          if (errJson?.error) serverErr = `${serverErr} — ${errJson.error}`;
+        } catch {
+          // ignore
+        }
+        setIsTelegramAdmin(false);
+        setStealthCookieAuthorized(false);
+        setSplashState({
+          progress: 60,
+          stepTitleFa: 'خطا در تایید نشست امنیتی سرور',
+          stepSubtitleEn: 'GET /api/snapshot failed',
+          errorStatus: serverErr,
+          ready: false,
+        });
+        return;
+      }
+
+      const data = await res.json();
+      const verifiedAdmin = data.isAdmin === true;
+      setIsTelegramAdmin(verifiedAdmin);
+      setStealthCookieAuthorized(verifiedAdmin);
+
+      if (typeof data.publicTonTreasuryWallet === 'string' && data.publicTonTreasuryWallet.trim()) {
+        setAdminTonWalletAddressState(data.publicTonTreasuryWallet.trim());
+      }
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState, data.reconciliation);
+      } else {
+        if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+        if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
+      }
+      if (Array.isArray(data.rounds)) setRounds(data.rounds);
+      if (Array.isArray(data.tickets)) setTickets(data.tickets);
+      if (Array.isArray(data.quests) && data.quests.length > 0) {
+        setTmaQuests((prev) => (prev.length > 0 ? prev : data.quests));
+      }
+      if (Array.isArray(data.drawHistory)) setDrawHistory(data.drawHistory);
+      if (Array.isArray(data.transactions)) setTransactions(data.transactions);
+      if (Array.isArray(data.deposits)) setDeposits(data.deposits);
+      if (Array.isArray(data.withdrawals)) setWithdrawals(data.withdrawals);
+      if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
+
+      // Step 3 (100%): Await real TonConnectUIProvider connection restoration (zero fake setTimeout)
+      setSplashState({
+        progress: 100,
+        stepTitleFa: '۳. اتصال پروتکل TON Connect 2.0 (Non-Custodial)',
+        stepSubtitleEn: 'TonConnectUIProvider session & manifest handshake',
+        errorStatus: null,
+        ready: false,
+      });
+
+      if (tonConnectUI?.connectionRestored) {
+        try {
+          await tonConnectUI.connectionRestored;
+        } catch {
+          // ignore if no prior wallet session was stored
+        }
+      }
+
+      setSplashState({
+        progress: 100,
+        stepTitleFa: 'اتصال امن برقرار شد',
+        stepSubtitleEn: 'Handshake Complete',
+        errorStatus: null,
+        ready: true,
+      });
+    } catch (err: any) {
+      setIsTelegramAdmin(false);
+      setStealthCookieAuthorized(false);
+      const msg =
+        err?.name === 'AbortError'
+          ? 'TIMEOUT: Server handshake timed out after 8000ms'
+          : err?.message || 'NETWORK_ERROR: Failed to reach /api/snapshot';
+      setSplashState({
+        progress: 60,
+        stepTitleFa: 'خطا در ارتباط با سرور',
+        stepSubtitleEn: 'GET /api/snapshot error',
+        errorStatus: msg,
+        ready: false,
+      });
+    }
+  }, [getHeaders, syncPamStateEverywhere, tonConnectUI]);
+
+  useEffect(() => {
+    executeRealHandshake();
+  }, [executeRealHandshake]);
 
   const triggerDraw = useCallback(
     async (roundCode: string): Promise<DrawExecutionResult | null> => {
@@ -1630,10 +1725,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if ((target === 'cockpit' || target === 'finances') && (!stealthCookieAuthorized || !isTelegramAdmin)) {
+    if ((target === 'cockpit' || target === 'finances' || target === 'launch') && !isTelegramAdmin) {
       HapticEngine.notificationOccurred('error');
-      setActiveRoute('404');
-      window.history.pushState({}, '', '/404');
+      setActiveRoute('lobby');
+      window.history.pushState({}, '', '/');
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -2314,48 +2409,104 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const depositTonInstant = async (
     amountTon: number,
-    senderWallet?: string,
+    _senderWallet?: string,
     memo?: string
   ): Promise<{ ok: boolean; message: string }> => {
-    const activeTonAddr = senderWallet || connectedWeb3Wallet;
+    const activeTonAddr = realTonAddress;
     if (!activeTonAddr) {
       HapticEngine.notificationOccurred('warning');
-      setTonConnectModalOpen(true);
+      try {
+        await tonConnectUI.openModal();
+      } catch {
+        // ignore modal open errors
+      }
       return {
         ok: false,
-        message: '💎 لطفاً ابتدا کیف پول استاندارد TON Connect خود را متصل کنید.',
+        message: '💎 لطفاً ابتدا کیف پول واقعی خود را از طریق TON Connect متصل کنید.',
       };
     }
+
     const safeTon = Math.max(0.01, Number(amountTon) || 1);
-    const amountUsdt = tmaCurrencyToUsdt(safeTon, 'TON', tonUsdRate, starsUsdRate);
-    const autoPayload = buildTonConnectAutoTransferPayload({
-      recipientVaultAddress: adminTonWalletAddress,
-      amountTon: safeTon,
-      commentMemo: memo || `LD-TG-${telegramUser.id}`,
-      walletProvider: String(connectedWalletProvider || 'Tonkeeper'),
-    });
+    const nanoTonStr = String(Math.floor(safeTon * 1e9));
+    const treasuryDestination = (adminTonWalletAddress || DEFAULT_ADMIN_TON_WALLET_ADDRESS).trim();
+
     HapticEngine.impactOccurred('medium');
-    const res = await submitDepositRequest({
-      amountUsdt,
-      network: 'TON (TON Connect 2.0 Auto)',
-      cryptoKey: 'TON',
-      txHash: `ton_tx_${Date.now().toString(16)}_${autoPayload.nanoTon}`,
-      senderWallet: activeTonAddr,
-      officialRecipientWallet: adminTonWalletAddress,
-      mode: 'ONCHAIN_AUTO',
-      web3Signed: true,
-    });
-    if (res.ok) {
+    let signedBoc = '';
+    try {
+      const txResult = await tonConnectUI.sendTransaction({
+        validUntil: Math.floor(Date.now() / 1000) + 600,
+        messages: [
+          {
+            address: treasuryDestination,
+            amount: nanoTonStr,
+          },
+        ],
+      });
+      signedBoc = String(txResult?.boc || '').trim();
+    } catch (txErr: any) {
+      HapticEngine.notificationOccurred('error');
+      const errDetail = txErr?.message || 'User rejected or cancelled TON Connect transaction';
+      return {
+        ok: false,
+        message: `⚠️ تراکنش در کیف پول TON امضا نشد: ${errDetail}`,
+      };
+    }
+
+    if (!signedBoc) {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: '⚠️ امضای دیجیتال (BOC) از کیف پول TON دریافت نشد. موجودی تغییر نکرد.',
+      };
+    }
+
+    const amountUsdt = tmaCurrencyToUsdt(safeTon, 'TON', tonUsdRate, starsUsdRate);
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/wallet/deposit-ton', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          boc: signedBoc,
+          amountTon: safeTon,
+          amountUsdt,
+          senderWallet: activeTonAddr,
+          destinationWallet: treasuryDestination,
+          memo: memo || `LD-TG-${telegramUser.id}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        HapticEngine.notificationOccurred('error');
+        return {
+          ok: false,
+          message: data.error || 'خطا در تایید BOC در سرور',
+        };
+      }
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState);
+      } else if (typeof data.tonBalance === 'number') {
+        setTonBalance(data.tonBalance);
+      }
+      if (Array.isArray(data.deposits)) {
+        setDeposits(data.deposits);
+      }
+      await refreshSnapshot();
       HapticEngine.notificationOccurred('success');
       return {
         ok: true,
-        message: `💎 تراکنش اتوماتیک TON Connect (+${rawFormatCurrency(
+        message: `💎 تراکنش واقعی TON Connect (+${rawFormatCurrency(
           safeTon,
           'TON'
-        )}) از کیف پول (${truncateTonAddress(activeTonAddr)}) امضا و آنی شارژ شد!`,
+        )}) از کیف پول (${truncateTonAddress(activeTonAddr)}) امضا و تایید شد!`,
+      };
+    } catch (err: any) {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: err?.message || 'خطا در ارسال BOC به سرور (/api/wallet/deposit-ton)',
       };
     }
-    return { ok: false, message: res.message };
   };
 
   const depositTelegramStarsInstant = async (
@@ -2406,9 +2557,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     destination: string;
   }): Promise<{ ok: boolean; message: string }> => {
     HapticEngine.impactOccurred('medium');
-    if (params.currency === 'TON' && !connectedWeb3Wallet) {
+    if (params.currency === 'TON' && !realTonAddress) {
       HapticEngine.notificationOccurred('warning');
-      setTonConnectModalOpen(true);
+      try {
+        await tonConnectUI.openModal();
+      } catch {
+        setTonConnectModalOpen(true);
+      }
       return {
         ok: false,
         message: '💎 برای برداشت TON لطفاً ابتدا کیف پول TON خود را متصل کنید.',
@@ -2416,7 +2571,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     const targetDest =
       params.currency === 'TON'
-        ? params.destination.trim() || connectedWeb3Wallet
+        ? params.destination.trim() || realTonAddress
         : params.destination.trim() || `@${telegramUser.username || 'VIP'}`;
     if (!targetDest) {
       HapticEngine.notificationOccurred('error');
@@ -2717,16 +2872,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const depositCrypto = async (amountUsdt: number, network: string) => {
-    const res = await submitDepositRequest({
-      amountUsdt,
-      network,
-      txHash: `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
-      senderWallet: connectedWeb3Wallet || 'Connected Web3 Wallet',
-      officialRecipientWallet: officialWallets.USDT_TRC20,
-      mode: 'ONCHAIN_AUTO',
-      web3Signed: true,
-    });
-    return res.ok;
+    const safeRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
+    const amountTon = Number((amountUsdt / safeRate).toFixed(4));
+    if (network.toUpperCase().includes('TON')) {
+      const tonRes = await depositTonInstant(amountTon);
+      return tonRes.ok;
+    }
+    return false;
   };
 
   const submitDepositRequest = async (params: {
@@ -2749,6 +2901,17 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     const effectiveMode = params.verificationMode || params.mode || 'ONCHAIN_AUTO';
+    if (params.network.toUpperCase().includes('TON') && effectiveMode === 'ONCHAIN_AUTO') {
+      const safeRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
+      const amountTon = Number((params.amountUsdt / safeRate).toFixed(4));
+      const tonRes = await depositTonInstant(amountTon, params.senderWallet);
+      return {
+        ok: tonRes.ok,
+        queuedForAdmin: false,
+        status: tonRes.ok ? ('CREDITED' as const) : undefined,
+        message: tonRes.message,
+      };
+    }
 
     try {
       const headers = await getHeaders();
@@ -2762,7 +2925,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return {
           ok: false,
           queuedForAdmin: false,
-          message: data.error || 'خطا در بررسی تراکنش واریز',
+          message: data.error || 'خطا در بررسی تراکنش واریز در سرور',
         };
       }
       if (Array.isArray(data.deposits)) {
@@ -2774,7 +2937,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return {
           ok: true,
           queuedForAdmin: true,
-          status: 'PENDING_ADMIN',
+          status: 'PENDING_ADMIN' as const,
           deposit: data.deposit,
           message:
             '📋 فیش و هش تراکنش (TXID) شما با موفقیت در «صف تایید ادمین در کاکپیت» ثبت شد. پس از تایید اپراتور به موجودی شما افزوده می‌شود.',
@@ -2784,33 +2947,17 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return {
         ok: true,
         queuedForAdmin: false,
-        status: 'CREDITED',
+        status: 'CREDITED' as const,
         deposit: data.deposit,
         message: `✅ تراکنش شما در شبکه ${params.network} تایید شد و مبلغ ${formatActiveTmaAmount(
           params.amountUsdt
         )} به صورت آنی در دفترکل PAM شارژ گردید!`,
       };
-    } catch {
-      const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
-      if (effectiveMode === 'ONCHAIN_AUTO') {
-        localPamEngineRef.current.credit({
-          transactionUuid: `tx_dep_${depositCode}`,
-          referenceTransactionUuid: null,
-          roundId: depositCode,
-          vertical: 'CRYPTO_TREASURY',
-          amountUsdt: params.amountUsdt,
-          note: `واریز رمزارزی ${params.network}`,
-        });
-        syncPamStateEverywhere(localPamEngineRef.current.getState());
-      }
+    } catch (err: any) {
       return {
-        ok: true,
-        queuedForAdmin: effectiveMode === 'ADMIN_MANUAL',
-        status: effectiveMode === 'ADMIN_MANUAL' ? 'PENDING_ADMIN' : 'CREDITED',
-        message:
-          effectiveMode === 'ADMIN_MANUAL'
-            ? '📋 فیش و هش تراکنش شما در صف تایید اپراتور ارشد ثبت شد.'
-            : `✅ واریز ${formatActiveTmaAmount(params.amountUsdt)} در شبکه تایید و به حساب شما افزوده شد.`,
+        ok: false,
+        queuedForAdmin: false,
+        message: err?.message || 'خطا در ارتباط با سرور جهت تایید تراکنش واریز',
       };
     }
   };
@@ -3216,128 +3363,101 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const connectWeb3Wallet = async (
-    providerType: Web3WalletProviderType,
-    manualAddressOverride?: string
+    _providerType: Web3WalletProviderType,
+    _manualAddressOverride?: string
   ): Promise<{ ok: boolean; address: string; message: string }> => {
-    let detectedAddress = (manualAddressOverride || '').trim();
-
+    HapticEngine.impactOccurred('medium');
     try {
-      if (!detectedAddress && (providerType === 'TronLink' || providerType === 'TRONLINK')) {
-        const tronLink = (window as any)?.tronLink;
-        const tronWeb = (window as any)?.tronWeb;
-        if (tronLink?.request) {
-          await tronLink.request({ method: 'tron_requestAccounts' });
-        }
-        if (tronWeb?.defaultAddress?.base58) {
-          detectedAddress = String(tronWeb.defaultAddress.base58);
-        }
-      } else if (
-        !detectedAddress &&
-        (providerType === 'MetaMask / TrustWallet' || providerType === 'METAMASK')
-      ) {
-        const ethereum = (window as any)?.ethereum;
-        if (ethereum?.request) {
-          const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-          if (Array.isArray(accounts) && accounts[0]) {
-            detectedAddress = String(accounts[0]);
-          }
-        }
-      } else if (!detectedAddress && (providerType === 'TON Wallet' || providerType === 'TON')) {
-        const ton = (window as any)?.ton;
-        if (ton?.send) {
-          const accounts = await ton.send('ton_requestAccounts');
-          if (Array.isArray(accounts) && accounts[0]) {
-            detectedAddress = String(accounts[0]);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Browser wallet extension prompt notice:', err);
+      await tonConnectUI.openModal();
+    } catch (err: any) {
+      return {
+        ok: false,
+        address: '',
+        message: err?.message || 'خطا در باز کردن پنجره TON Connect',
+      };
     }
 
-    if (!detectedAddress) {
-      if (providerType === 'TronLink' || providerType === 'TRONLINK') {
-        detectedAddress = 'TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb';
-      } else if (providerType === 'MetaMask / TrustWallet' || providerType === 'METAMASK') {
-        detectedAddress = '0x89205A3A3b2A69De6Dbf7f01ED13B2108B2c43e7';
-      } else {
-        detectedAddress = 'UQCV8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_TONVIP';
-      }
-    }
-
-    setConnectedWeb3Wallet(detectedAddress);
-    setConnectedWalletProvider(providerType);
-    try {
-      localStorage.setItem('luckydrop_web3_wallet', detectedAddress);
-      localStorage.setItem('luckydrop_web3_provider', providerType);
-    } catch {
-      // ignore
-    }
-
-    if (firebaseUser) {
-      syncUserProfileToFirestore({
-        uid: firebaseUser.uid,
-        displayName: firebaseUser.displayName || displayName,
-        vipTier,
-        tonBalance,
-        starsBalance,
-        connectedWallet: detectedAddress,
-        telegramUsername,
-        referralCode,
-        referredByCode,
-        referralEarningsTon,
-        referralEarningsStars,
-        referredTicketsCount,
-      });
+    if (realTonAddress) {
+      return {
+        ok: true,
+        address: realTonAddress,
+        message: `✅ کیف پول TON با آدرس ${truncateTonAddress(realTonAddress)} متصل است.`,
+      };
     }
 
     return {
-      ok: true,
-      address: detectedAddress,
-      message: `✅ کیف پول ${providerType} با آدرس ${detectedAddress.slice(0, 8)}...${detectedAddress.slice(-6)} با موفقیت متصل و تایید شد.`,
+      ok: false,
+      address: '',
+      message: '💎 پنجره رسمی TON Connect باز شد. لطفاً در کیف پول خود اتصال را تایید کنید.',
     };
   };
 
   const disconnectWeb3Wallet = () => {
+    tonConnectUI.disconnect().catch(() => {});
     setConnectedWeb3Wallet('');
     setConnectedWalletProvider(null);
-    try {
-      localStorage.removeItem('luckydrop_web3_wallet');
-      localStorage.removeItem('luckydrop_web3_provider');
-    } catch {
-      // ignore
-    }
   };
 
-  const connectedTonWallet = connectedWeb3Wallet
+  // Real @tonconnect/ui-react wallet state: strictly derived from useTonAddress() & useTonWallet()
+  useEffect(() => {
+    if (realTonAddress) {
+      setConnectedWeb3Wallet(realTonAddress);
+      const appName = realTonWallet?.device?.appName || 'TON Wallet';
+      setConnectedWalletProvider(appName as Web3WalletProviderType);
+      completeAndClaimTmaQuest('CONNECT_TON_WALLET');
+    } else {
+      setConnectedWeb3Wallet('');
+      setConnectedWalletProvider(null);
+    }
+  }, [realTonAddress, realTonWallet]);
+
+  const connectedTonWallet = realTonAddress
     ? {
-        address: connectedWeb3Wallet,
-        provider: String(connectedWalletProvider || 'Tonkeeper'),
-        truncated: truncateTonAddress(connectedWeb3Wallet),
+        address: realTonAddress,
+        provider: String(realTonWallet?.device?.appName || 'Tonkeeper'),
+        truncated: truncateTonAddress(realTonAddress),
       }
     : null;
 
-  const connectTonWalletOneTap = async (providerLabel: string = 'Tonkeeper') => {
+  const connectTonWalletOneTap = async (providerLabel?: string) => {
     HapticEngine.impactOccurred('medium');
-    // Strictly exclude Telegram's built-in @wallet per operator requirement
-    const cleanProvider =
-      providerLabel.toLowerCase().includes('wallet') && providerLabel.includes('@')
-        ? 'Tonkeeper'
-        : providerLabel;
-    const matchedSpec =
-      TON_CONNECT_STANDARD_WALLETS.find(
-        (w) => w.name.toLowerCase() === cleanProvider.toLowerCase() || w.id === cleanProvider.toLowerCase()
-      ) || TON_CONNECT_STANDARD_WALLETS[0];
-    const generatedAddr = `${matchedSpec.samplePrefix}78kL9mN2pQrStUvWxYz1234567890AbCdEfGh89aF`;
-    const res = await connectWeb3Wallet('TON Wallet', generatedAddr);
-    setConnectedWalletProvider((matchedSpec.name as Web3WalletProviderType) || 'TON Wallet');
-    completeAndClaimTmaQuest('CONNECT_TON_WALLET');
     setTonConnectModalOpen(false);
-    return res;
+    try {
+      if (providerLabel) {
+        const cleanProvider = providerLabel.toLowerCase().trim();
+        const matchedSpec = TON_CONNECT_STANDARD_WALLETS.find(
+          (w) =>
+            w.name.toLowerCase() === cleanProvider ||
+            w.id.toLowerCase() === cleanProvider ||
+            w.appName.toLowerCase() === cleanProvider
+        );
+        if (matchedSpec && typeof tonConnectUI.openSingleWalletModal === 'function') {
+          await tonConnectUI.openSingleWalletModal(matchedSpec.appName);
+          return {
+            ok: Boolean(realTonAddress),
+            address: realTonAddress || '',
+            message: '💎 پنجره اتصال کیف پول TON Connect باز شد. لطفاً در کیف پول خود تایید کنید.',
+          };
+        }
+      }
+      await tonConnectUI.openModal();
+      return {
+        ok: Boolean(realTonAddress),
+        address: realTonAddress || '',
+        message: '💎 پنجره رسمی TON Connect باز شد. لطفاً کیف پول خود را انتخاب و امضا کنید.',
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        address: '',
+        message: err?.message || 'خطا در باز کردن پنجره TON Connect',
+      };
+    }
   };
 
   const disconnectTonWallet = () => {
     HapticEngine.impactOccurred('light');
+    tonConnectUI.disconnect().catch(() => {});
     disconnectWeb3Wallet();
   };
 
@@ -3671,9 +3791,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setAdminTelegramUserIds,
         adminTonWalletAddress,
         setAdminTonWalletAddress,
-        isAdminPreviewEnabled,
-        setIsAdminPreviewEnabled,
         isTelegramAdmin,
+        splashState,
+        retryHandshake: executeRealHandshake,
         freePlinkoDrops,
         freeScratchCards,
         freeLotteryTickets,

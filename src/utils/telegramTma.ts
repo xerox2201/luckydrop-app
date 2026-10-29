@@ -20,7 +20,7 @@ export interface TelegramWebAppUser {
   photo_url?: string;
 }
 
-export const DEFAULT_ADMIN_TELEGRAM_USER_IDS: number[] = [123456789];
+export const DEFAULT_ADMIN_TELEGRAM_USER_IDS: number[] = [];
 
 export const DEFAULT_ADMIN_TON_WALLET_ADDRESS =
   'UQB_LuckyDrop_Official_TON_Vault_99x88_VIP';
@@ -30,81 +30,149 @@ export const DEFAULT_STARS_USD_RATE = 0.02; // 1 ⭐ = 0.02 settlement units (25
 
 export interface TonConnectWalletSpec {
   id: string;
+  appName: string;
   name: string;
   icon: string;
   badge: string;
   badgeFa: string;
   protocol: 'TON Connect 2.0 (Auto-Sign)';
   universalLink: string;
-  samplePrefix: string;
+  bridgeUrl: string;
+  imageUrl: string;
+  aboutUrl: string;
 }
 
 /**
  * Standard Automated TON Blockchain Wallets (TON Connect 2.0 Standard)
- * Strictly excludes Telegram's built-in software wallet (@wallet) per operator policy.
+ * Strictly excludes Telegram's built-in software wallet (@wallet / telegram-wallet) per operator policy.
  */
+export const EXCLUDED_TON_WALLET_APP_NAMES = ['telegram-wallet', 'wallet'] as const;
+export const PRIORITIZED_NON_CUSTODIAL_TON_WALLETS = [
+  'tonkeeper',
+  'mytonwallet',
+  'tonhub',
+] as const;
+
 export const TON_CONNECT_STANDARD_WALLETS: TonConnectWalletSpec[] = [
   {
     id: 'tonkeeper',
+    appName: 'tonkeeper',
     name: 'Tonkeeper',
     icon: '💎',
     badge: 'TON Connect 2.0 • Auto-Sign',
     badgeFa: 'امضای خودکار آن‌چین (پیشنهادی)',
     protocol: 'TON Connect 2.0 (Auto-Sign)',
     universalLink: 'https://app.tonkeeper.com/ton-connect',
-    samplePrefix: 'UQB_TK_',
+    bridgeUrl: 'https://bridge.tonapi.io/bridge',
+    imageUrl: 'https://tonkeeper.com/assets/tonconnect-icon.png',
+    aboutUrl: 'https://tonkeeper.com',
   },
   {
     id: 'mytonwallet',
+    appName: 'mytonwallet',
     name: 'MyTonWallet',
     icon: '🛡️',
     badge: 'Official TON Web3 • Auto-Sign',
     badgeFa: 'کیف پول رسمی وب۳ تون',
     protocol: 'TON Connect 2.0 (Auto-Sign)',
     universalLink: 'https://connect.mytonwallet.org',
-    samplePrefix: 'UQB_MTW_',
+    bridgeUrl: 'https://tonconnectbridge.mytonwallet.org/bridge/',
+    imageUrl: 'https://static.mytonwallet.io/icon-256.png',
+    aboutUrl: 'https://mytonwallet.io',
   },
   {
     id: 'tonhub',
+    appName: 'tonhub',
     name: 'Tonhub',
     icon: '⚡',
     badge: 'Smart Contract Vault • Auto-Sign',
     badgeFa: 'تسویه آنی قرارداد هوشمند',
     protocol: 'TON Connect 2.0 (Auto-Sign)',
     universalLink: 'https://tonhub.com/ton-connect',
-    samplePrefix: 'UQB_TH_',
+    bridgeUrl: 'https://connect.tonhubapi.com/tonconnect',
+    imageUrl: 'https://tonhub.com/tonconnect_logo.png',
+    aboutUrl: 'https://tonhub.com',
   },
   {
-    id: 'dewallet',
-    name: 'DeWallet',
-    icon: '🌐',
-    badge: 'Non-Custodial TON • Auto-Sign',
-    badgeFa: 'استاندارد غیرحضانتی TON',
-    protocol: 'TON Connect 2.0 (Auto-Sign)',
-    universalLink: 'https://dewallet.pro',
-    samplePrefix: 'UQB_DW_',
-  },
-  {
-    id: 'bitget_ton',
+    id: 'bitgetTonWallet',
+    appName: 'bitgetTonWallet',
     name: 'Bitget TON Wallet',
     icon: '🚀',
     badge: 'DeFi TON Bridge • Auto-Sign',
     badgeFa: 'اتصال مستقیم دیفای TON',
     protocol: 'TON Connect 2.0 (Auto-Sign)',
-    universalLink: 'https://web3.bitget.com',
-    samplePrefix: 'UQB_BG_',
-  },
-  {
-    id: 'okx_ton',
-    name: 'OKX Web3 TON',
-    icon: '🔷',
-    badge: 'Direct Node Signer • Auto-Sign',
-    badgeFa: 'تایید خودکار نود بلاکچین',
-    protocol: 'TON Connect 2.0 (Auto-Sign)',
-    universalLink: 'https://www.okx.com/web3',
-    samplePrefix: 'UQB_OKX_',
+    universalLink: 'https://bkcode.vip/ton-connect',
+    bridgeUrl: 'https://ton-connect-bridge.bgwapi.io/bridge',
+    imageUrl: 'https://raw.githubusercontent.com/bitgetwallet/download/main/logo/png/bitget_wallet_logo_288_mini.png',
+    aboutUrl: 'https://web3.bitget.com',
   },
 ];
+
+export const TON_CONNECT_WALLETS_LIST_CONFIG = {
+  includeWallets: TON_CONNECT_STANDARD_WALLETS.map((w) => ({
+    appName: w.appName,
+    name: w.name,
+    imageUrl: w.imageUrl,
+    aboutUrl: w.aboutUrl,
+    universalLink: w.universalLink,
+    bridgeUrl: w.bridgeUrl,
+    platforms: ['ios', 'android', 'macos', 'windows', 'linux'] as (
+      | 'ios'
+      | 'android'
+      | 'macos'
+      | 'windows'
+      | 'linux'
+    )[],
+  })),
+  excludeWallets: ['telegram-wallet'],
+};
+
+/**
+ * Filters a TON Connect wallets list to strictly exclude the built-in Telegram Wallet (`telegram-wallet`)
+ * and prioritize non-custodial external wallets (`tonkeeper`, `mytonwallet`, `tonhub`).
+ */
+export function filterNonCustodialTonWallets<
+  T extends { appName?: string; name?: string; bridgeUrl?: string }
+>(wallets: T[]): T[] {
+  if (!Array.isArray(wallets)) return [];
+  const excludedSet = new Set([
+    ...EXCLUDED_TON_WALLET_APP_NAMES.map((x) => x.toLowerCase()),
+    'stower',
+    'mirai',
+    'miraiapp-tg',
+  ]);
+  const priorityOrder = PRIORITIZED_NON_CUSTODIAL_TON_WALLETS.map((x) =>
+    x.toLowerCase()
+  );
+
+  const filtered = wallets.filter((w) => {
+    const appName = String(w?.appName || '').toLowerCase().trim();
+    const name = String(w?.name || '').toLowerCase().trim();
+    const bridge = String(w?.bridgeUrl || '').toLowerCase().trim();
+    if (excludedSet.has(appName)) return false;
+    if (
+      appName.includes('telegram-wallet') ||
+      name === 'wallet' ||
+      name.includes('telegram wallet') ||
+      bridge.includes('stower.money') ||
+      bridge.includes('mirai.app')
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  return [...filtered].sort((a, b) => {
+    const aApp = String(a?.appName || '').toLowerCase().trim();
+    const bApp = String(b?.appName || '').toLowerCase().trim();
+    const aIdx = priorityOrder.indexOf(aApp);
+    const bIdx = priorityOrder.indexOf(bApp);
+    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+    if (aIdx !== -1) return -1;
+    if (bIdx !== -1) return 1;
+    return 0;
+  });
+}
 
 /**
  * Builds a standard TON Connect automated transaction payload & deep-link (in nanoTON = 10^9).
@@ -274,13 +342,14 @@ export function resolveTelegramUser(): TelegramWebAppUser {
 
 /**
  * Checks whether the current Telegram user is authorized to see and open the `⚙️ Admin` tab.
+ * Strictly requires server-side verification (`serverVerifiedIsAdmin === true`) or explicit server ID match.
  */
 export function isTelegramAdminAuthorized(
   userId: number,
-  adminTelegramIds: number[] = DEFAULT_ADMIN_TELEGRAM_USER_IDS,
-  isDevAdminPreviewEnabled: boolean = false
+  adminTelegramIds: number[] = DEFAULT_ADMIN_TELEGRAM_USER_IDS
 ): boolean {
-  if (isDevAdminPreviewEnabled) return true;
+  if (!Number.isFinite(Number(userId)) || Number(userId) <= 0) return false;
+  if (!Array.isArray(adminTelegramIds) || adminTelegramIds.length === 0) return false;
   return adminTelegramIds.includes(Number(userId));
 }
 

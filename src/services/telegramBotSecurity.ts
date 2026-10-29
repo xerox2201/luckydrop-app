@@ -18,7 +18,7 @@ export interface ServerSecurityConfig {
 export function loadServerSecurityConfig(
   env: Record<string, string | undefined> = process.env
 ): ServerSecurityConfig {
-  const rawAdminIds = (env.ADMIN_TELEGRAM_USER_IDS || '778899101')
+  const rawAdminIds = (env.ADMIN_TELEGRAM_USER_IDS || '')
     .split(',')
     .map((id) => Number(id.trim()))
     .filter((n) => Number.isFinite(n) && n > 0);
@@ -38,7 +38,7 @@ export function loadServerSecurityConfig(
   return {
     telegramBotToken: (env.TELEGRAM_BOT_TOKEN || '').trim(),
     telegramWebhookSecret: (env.TELEGRAM_WEBHOOK_SECRET || '').trim(),
-    adminTelegramUserIds: rawAdminIds.length > 0 ? rawAdminIds : [778899101],
+    adminTelegramUserIds: rawAdminIds,
     telegramNotificationChatId: (env.TELEGRAM_NOTIFICATION_CHAT_ID || '').trim(),
     publicTonTreasuryWallet: (
       env.PUBLIC_TON_TREASURY_WALLET || 'UQB_LuckyDrop_Official_TON_Vault_99x88_VIP'
@@ -47,6 +47,38 @@ export function loadServerSecurityConfig(
     autoWithdrawLimitTon: Math.max(1, Number(env.AUTO_WITHDRAW_LIMIT_TON) || 50),
     strictTelegramInitDataAuth:
       String(env.STRICT_TELEGRAM_INITDATA_AUTH || '').toLowerCase() === 'true',
+  };
+}
+
+export function evaluateServerAdminAuthorization(
+  telegramUserId: number | string | null | undefined,
+  adminTelegramUserIds: number[]
+): boolean {
+  const numericId = Number(telegramUserId);
+  if (!Number.isFinite(numericId) || numericId <= 0) return false;
+  if (!Array.isArray(adminTelegramUserIds) || adminTelegramUserIds.length === 0) return false;
+  return adminTelegramUserIds.includes(numericId);
+}
+
+export interface TonConnectManifestPayload {
+  url: string;
+  name: string;
+  iconUrl: string;
+  termsOfUseUrl: string;
+  privacyPolicyUrl: string;
+}
+
+export function buildTonConnectManifest(rawOriginOrDomain?: string): TonConnectManifestPayload {
+  const clean = (rawOriginOrDomain || process.env.APP_DOMAIN || 'https://luckydrop.com')
+    .trim()
+    .replace(/\/+$/, '');
+  const baseUrl = clean.startsWith('http') ? clean : `https://${clean}`;
+  return {
+    url: baseUrl,
+    name: 'LuckyDrop VIP — TON Lottery & 3D Games',
+    iconUrl: `${baseUrl}/favicon.ico`,
+    termsOfUseUrl: `${baseUrl}/rules`,
+    privacyPolicyUrl: `${baseUrl}/transparency`,
   };
 }
 

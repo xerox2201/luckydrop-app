@@ -79,6 +79,8 @@ export const DepositView: React.FC = () => {
     connectedWeb3Wallet,
     connectedWalletProvider,
     connectWeb3Wallet,
+    depositTonInstant,
+    tonUsdRate,
   } = useLottery();
   const [selectedNet, setSelectedNet] = useState<DepositNetworkOption>(DEPOSIT_NETWORKS[0]);
   const [amountUsdt, setAmountUsdt] = useState<number>(100);
@@ -115,17 +117,30 @@ export const DepositView: React.FC = () => {
 
   const handleConnectWallet = async () => {
     const res = await connectWeb3Wallet(walletLabel as any);
-    setSenderWalletInput(res.address);
+    if (res.address) {
+      setSenderWalletInput(res.address);
+    }
     setDepositSuccess(true);
     setStatusMessage(res.message);
   };
 
   const handleConfirmDeposit = async () => {
     const effectiveMode = supportsWeb3 ? depositMode : 'ADMIN_MANUAL';
-    if (effectiveMode === 'ADMIN_MANUAL' && txHashInput.trim().length < 6) {
+    if (selectedNet.id === 'TON' && effectiveMode === 'ONCHAIN_AUTO') {
+      setSubmitting(true);
+      const safeRate = tonUsdRate > 0 ? tonUsdRate : 5;
+      const amountTon = Number((amountUsdt / safeRate).toFixed(4));
+      const tonRes = await depositTonInstant(amountTon, connectedWeb3Wallet || undefined);
+      setSubmitting(false);
+      setDepositSuccess(true);
+      setStatusMessage(tonRes.message);
+      return;
+    }
+
+    if (txHashInput.trim().length < 6) {
       setDepositSuccess(true);
       setStatusMessage(
-        '⚠️ برای ثبت فیش جهت تایید ادمین، لطفاً هش تراکنش (TXID) را در کادر مربوطه وارد نمایید.'
+        '⚠️ لطفاً هش تراکنش واقعی (TXID) ثبت‌شده در بلاکچین را در کادر مربوطه وارد نمایید.'
       );
       return;
     }
@@ -133,10 +148,8 @@ export const DepositView: React.FC = () => {
     const res = await submitDepositRequest({
       amountUsdt,
       network: selectedNet.name,
-      txHash:
-        txHashInput.trim() ||
-        `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
-      senderWallet: senderWalletInput.trim() || connectedWeb3Wallet || 'Web3 Wallet',
+      txHash: txHashInput.trim(),
+      senderWallet: senderWalletInput.trim() || connectedWeb3Wallet,
       officialRecipientWallet: dynamicAddress,
       mode: effectiveMode,
       web3Signed: Boolean(connectedWeb3Wallet) && effectiveMode === 'ONCHAIN_AUTO',

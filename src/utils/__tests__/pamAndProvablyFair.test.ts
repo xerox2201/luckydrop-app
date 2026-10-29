@@ -31,7 +31,15 @@ import {
   truncateTonAddress,
   isTelegramAdminAuthorized,
   DEFAULT_ADMIN_TELEGRAM_USER_IDS,
+  TON_CONNECT_STANDARD_WALLETS,
+  TON_CONNECT_WALLETS_LIST_CONFIG,
+  filterNonCustodialTonWallets,
 } from '../telegramTma.ts';
+import {
+  loadServerSecurityConfig,
+  evaluateServerAdminAuthorization,
+  buildTonConnectManifest,
+} from '../../services/telegramBotSecurity.ts';
 import { PAMSeamlessWalletEngine } from '../../services/pamWalletEngine.ts';
 
 describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () => {
@@ -246,7 +254,7 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
     assert.equal(scratchA.hmacHex, scratchB.hmacHex);
     assert.equal(scratchA.cells.length, 9);
 
-    // Verify TMA Dual-Currency & Admin Telegram ID Lock + Exclusive TON/Stars Formatter
+    // Verify TMA Dual-Currency & Strict Server-Verified Admin Lock (Zero hardcoded admin IDs or preview bypass)
     assert.equal(tmaCurrencyToUsdt(10, 'TON', 5.0, 0.02), 50);
     assert.equal(usdtToTmaCurrency(50, 'TON', 5.0, 0.02), 10);
     assert.equal(tmaCurrencyToUsdt(500, 'STARS', 5.0, 0.02), 10);
@@ -254,9 +262,29 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
     assert.equal(formatCurrency(12.5, 'TON'), '12.50 TON');
     assert.equal(formatCurrency(2500, 'STARS'), '2,500 ⭐');
     assert.equal(truncateTonAddress('UQBx7kM2nPqR8tW4yZ1cF5hJ6kL0mN3pQ89aF'), 'UQBx...89aF');
-    assert.equal(isTelegramAdminAuthorized(123456789, DEFAULT_ADMIN_TELEGRAM_USER_IDS, false), true);
-    assert.equal(isTelegramAdminAuthorized(999999999, DEFAULT_ADMIN_TELEGRAM_USER_IDS, false), false);
-    assert.equal(isTelegramAdminAuthorized(999999999, DEFAULT_ADMIN_TELEGRAM_USER_IDS, true), true);
+    assert.deepEqual(DEFAULT_ADMIN_TELEGRAM_USER_IDS, []);
+    assert.equal(isTelegramAdminAuthorized(778899101, DEFAULT_ADMIN_TELEGRAM_USER_IDS), false);
+    assert.equal(isTelegramAdminAuthorized(123456789, [123456789]), true);
+    assert.equal(isTelegramAdminAuthorized(999999999, [123456789]), false);
+
+    // Verify loadServerSecurityConfig defaults to empty admin list when ADMIN_TELEGRAM_USER_IDS is unset
+    const emptyCfg = loadServerSecurityConfig({});
+    assert.deepEqual(emptyCfg.adminTelegramUserIds, []);
+    assert.equal(evaluateServerAdminAuthorization(778899101, emptyCfg.adminTelegramUserIds), false);
+    const configuredCfg = loadServerSecurityConfig({ ADMIN_TELEGRAM_USER_IDS: '55443322, 99887766' });
+    assert.deepEqual(configuredCfg.adminTelegramUserIds, [55443322, 99887766]);
+    assert.equal(evaluateServerAdminAuthorization(55443322, configuredCfg.adminTelegramUserIds), true);
+    assert.equal(evaluateServerAdminAuthorization(778899101, configuredCfg.adminTelegramUserIds), false);
+
+    // Verify dynamic TON Connect manifest & exclusion of telegram-wallet
+    const manifest = buildTonConnectManifest('luckydrop.vip');
+    assert.equal(manifest.url, 'https://luckydrop.vip');
+    assert.equal(manifest.name, 'LuckyDrop VIP — TON Lottery & 3D Games');
+    assert.equal(
+      TON_CONNECT_STANDARD_WALLETS.some((w) => w.appName === 'telegram-wallet' || w.id === 'telegram-wallet'),
+      false,
+      'telegram-wallet must be strictly excluded from TON_CONNECT_STANDARD_WALLETS'
+    );
 
     // Verify new 3D games (TOWER_3D, WHEEL_3D, HILO_3D) & Zero-Loss Free Ticket math
     const towerEval = evaluateProvablyFairMiniGame({
@@ -453,5 +481,31 @@ describe('Core PAM & Seamless Dual-Currency Wallet Engine (7 Operations + Idempo
 
     const recon = pam.reconcile();
     assert.equal(recon.reconciliation?.reconciled, true);
+  });
+
+  it('excludes built-in Telegram Wallet (telegram-wallet) and prioritizes tonkeeper, mytonwallet, and tonhub', () => {
+    assert.ok(TON_CONNECT_WALLETS_LIST_CONFIG.excludeWallets.includes('telegram-wallet'));
+    const includedAppNames = TON_CONNECT_WALLETS_LIST_CONFIG.includeWallets.map((w) => w.appName);
+    assert.equal(includedAppNames.includes('telegram-wallet'), false);
+    assert.deepEqual(includedAppNames.slice(0, 3), ['tonkeeper', 'mytonwallet', 'tonhub']);
+
+    const rawRegistryWallets = [
+      { appName: 'telegram-wallet', name: 'Wallet' },
+      { appName: 'dewallet', name: 'DeWallet' },
+      { appName: 'tonhub', name: 'Tonhub' },
+      { appName: 'mytonwallet', name: 'MyTonWallet' },
+      { appName: 'tonkeeper', name: 'Tonkeeper' },
+    ];
+    const filtered = filterNonCustodialTonWallets(rawRegistryWallets);
+    assert.equal(
+      filtered.some((w) => w.appName === 'telegram-wallet'),
+      false,
+      'telegram-wallet must be completely excluded'
+    );
+    assert.deepEqual(
+      filtered.slice(0, 3).map((w) => w.appName),
+      ['tonkeeper', 'mytonwallet', 'tonhub'],
+      'Non-custodial wallets tonkeeper, mytonwallet, tonhub must be prioritized first'
+    );
   });
 });

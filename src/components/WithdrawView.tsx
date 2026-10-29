@@ -63,6 +63,7 @@ export const WithdrawView: React.FC = () => {
     requestWithdrawal,
     killSwitchActive,
     navigateTo,
+    isTelegramAdmin,
   } = useLottery();
 
   const [selectedNet, setSelectedNet] = useState<NetworkMeta>(WITHDRAW_NETWORKS[0]);
@@ -183,13 +184,15 @@ export const WithdrawView: React.FC = () => {
               معادل زنده: {formatAmount(balanceUsdt)}
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => navigateTo('cockpit')}
-            className="px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-amber-500/15 border border-white/10 text-xs text-amber-300 font-bold"
-          >
-            میز تایید ادمین ←
-          </button>
+          {isTelegramAdmin && (
+            <button
+              type="button"
+              onClick={() => navigateTo('cockpit')}
+              className="px-3.5 py-2.5 rounded-xl bg-white/5 hover:bg-amber-500/15 border border-white/10 text-xs text-amber-300 font-bold"
+            >
+              میز تایید ادمین ←
+            </button>
+          )}
         </div>
       </div>
 
