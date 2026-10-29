@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
-import { optionalAuth, AuthRequest } from './src/middleware/auth.ts';
+import { optionalAuth, type AuthRequest } from './src/middleware/auth.ts';
 import {
   DEFAULT_FX_RATES,
   MULTI_LOTTERY_SPECS,
@@ -22,12 +22,12 @@ import {
   deriveProvablyFairLotteryDraw,
   evaluateTicketPrizeTier,
   evaluateProvablyFairMiniGame,
-  InstantMiniGameId,
-  VerifiableDrawHistoryRecord,
+  type InstantMiniGameId,
+  type VerifiableDrawHistoryRecord,
 } from './src/utils/provablyFair.ts';
 import {
   PAMSeamlessWalletEngine,
-  PAMPlayerState,
+  type PAMPlayerState,
   generateDeterministicUuid,
 } from './src/services/pamWalletEngine.ts';
 import {
@@ -36,7 +36,7 @@ import {
   buildTelegramStartCommandPayload,
   verifyTelegramStarsSuccessfulPayment,
   buildLiveChannelBroadcastPayload,
-  LiveBroadcastEventType,
+  type LiveBroadcastEventType,
   evaluateServerAdminAuthorization,
   buildTonConnectManifest,
 } from './src/services/telegramBotSecurity.ts';

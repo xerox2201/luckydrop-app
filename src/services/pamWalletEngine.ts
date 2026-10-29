@@ -14,7 +14,7 @@
  */
 
 import {
-  ProvablyFairSeedState,
+  type ProvablyFairSeedState,
   generateCryptographicServerSeed,
   sha256Hex,
 } from '../utils/provablyFair.ts';

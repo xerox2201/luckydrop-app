@@ -1,5 +1,5 @@
 import {
-  ActiveTmaCurrency,
+  type ActiveTmaCurrency,
   DEFAULT_TON_USD_RATE,
   DEFAULT_STARS_USD_RATE,
   formatCurrency,
