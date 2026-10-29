@@ -96,11 +96,18 @@ export const EarnQuestsView: React.FC = () => {
       data-testid="tma-earn-quests-view"
       className="space-y-3 px-3 pt-2 pb-24 max-w-[440px] mx-auto"
     >
-      {/* Top Bonus Inventory Card */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-3">
-        <div className="flex items-center justify-between gap-2">
+      {/* Top Bonus Inventory Card with 3D Backdrop */}
+      <div className="relative overflow-hidden rounded-2xl bg-[#130d24]/95 border border-amber-400/30 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.5)] backdrop-blur-md space-y-3">
+        <img
+          src="/assets/aistudio/Gemini_Generated_Image___13__cf879f0e.jpg"
+          alt="LuckyDrop 3D Telegram Quests"
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#090514]/82 via-[#130d24]/85 to-[#090514]/94 pointer-events-none" />
+        <div className="relative z-10 flex items-center justify-between gap-2">
           <h1 className="text-base font-bold tracking-wide text-white">
-            🎁 ماموریت‌ها و دعوت دوستان
+            🎁 ماموریت‌ها و دعوت دوستان LuckyDrop
           </h1>
           <span className="text-xs font-semibold text-[#fbbf24] font-mono tabular-nums" dir="ltr">
             {tmaXpPoints} XP
@@ -108,7 +115,7 @@ export const EarnQuestsView: React.FC = () => {
         </div>
 
         {/* 3 Bonus Token Pills */}
-        <div className="grid grid-cols-3 gap-2" dir="ltr">
+        <div className="relative z-10 grid grid-cols-3 gap-2" dir="ltr">
           <motion.button
             whileTap={{ scale: 0.96 }}
             type="button"
@@ -184,10 +191,10 @@ export const EarnQuestsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Interactive Quests List with Zero-Loss Mathematical Rationale */}
+      {/* Interactive Quests List */}
       <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-2.5">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold tracking-wide text-white">📋 ماموریت‌های روزانه و منطق پاداش</h2>
+          <h2 className="text-base font-bold tracking-wide text-white">📋 ماموریت‌های روزانه و جوایز رایگان</h2>
           <span className="text-[11px] font-medium text-purple-300/50 tabular-nums" dir="ltr">
             {tmaQuests.filter((q) => q.claimed).length}/{tmaQuests.length} Done
           </span>
@@ -228,48 +235,16 @@ export const EarnQuestsView: React.FC = () => {
                   {quest.claimed ? '✓ دریافت شد' : 'دریافت'}
                 </motion.button>
               </div>
-
-              {quest.mathRationaleFa && (
-                <div className="pt-1.5 border-t border-purple-500/15 text-[10px] text-purple-200/75 leading-relaxed">
-                  📐 <strong className="text-[#fbbf24]">منطق اقتصادی تسک:</strong> {quest.mathRationaleFa}
-                </div>
-              )}
             </div>
           ))}
         </div>
-      </div>
-
-      {/* Zero-Loss Mathematical Proof Card (تضمین ریاضی عدم ضرر سایت در تسک‌ها، بلیت رایگان و بازی‌ها) */}
-      <div
-        data-testid="earn-zero-loss-math-audit"
-        className="rounded-2xl bg-[#130d24]/90 border border-[#00f59b]/30 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-2.5"
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-extrabold text-[#00f59b]">
-            🛡️ اثبات ریاضی عدم ضرر پلتفرم (Zero-Loss Mathematical Proof)
-          </h3>
-          <span className="text-[10px] font-mono text-[#fbbf24]" dir="ltr">
-            House Edge 1%–3%
-          </span>
-        </div>
-        <ul className="space-y-1.5 text-[11px] text-purple-100/85 leading-relaxed list-disc pr-4">
-          <li>
-            <strong className="text-white">فرمول صدور بلیت رایگان لاتاری در بازی‌ها:</strong> بلیت رایگان (به ارزش ۱ TON / $5) در اسلات‌های طلایی Plinko، پرواز بالای 5x در Crash یا عدد 77.77 در Dice تنها زمانی به صورت آنی صادر می‌شود که <strong className="text-[#00f59b]">مبلغ شرط دور حداقل 1.00 TON</strong> باشد و موجودی <strong className="text-[#00f59b]">استخر ذخیره ۳٪ (Rollover Reserve Pool)</strong> آن را پوشش دهد. برای شرط‌های خرد (<strong className="text-white">0.01 تا 0.99 TON</strong>)، به نسبت حاشیه سود کازینو (House Edge) امتیاز <strong className="text-[#fbbf24]">Turnover XP</strong> ذخیره شده و هر ۱۰۰ XP یک بلیت کاملاً پوشش‌داده‌شده صادر می‌گردد.
-          </li>
-          <li>
-            <strong className="text-white">سقف پرداخت پویا بر اساس موجودی خزانه (Dynamic Solvency Cap):</strong> بازیکن می‌تواند از <strong className="text-[#00f59b]">0.01 TON تا بی‌نهایت (کل موجودی)</strong> شرط ببندد، اما حداکثر جایزه هر دور به سقف نقدینگی آزاد خزانه محدود می‌شود تا واریانس شرط‌های سنگین هرگز خزانه را وارد تراز منفی نکند.
-          </li>
-          <li>
-            <strong className="text-white">کمیسیون دعوت دوستان (Referral):</strong> پورسانت دعوت دوستان ضریب ثابتی از اصل پول نیست، بلکه دقیقاً <strong className="text-[#00f59b]">۱۰٪ از سهم سود خالص پلتفرم (22% House Share)</strong> یعنی معادل ۲.۲٪ از فروش بلیت است؛ بنابراین ۱۸.۸٪ سود خالص همواره برای خزانه باقی می‌ماند.
-          </li>
-        </ul>
       </div>
 
       {/* Viral Telegram Referral Card */}
       <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-bold tracking-wide text-white">
-            🚀 دعوت دوستان (۱۰٪ سهم سود)
+            🚀 دعوت دوستان به LuckyDrop
           </h3>
           <span className="text-[11px] font-medium text-[#fbbf24] tabular-nums" dir="ltr">
             @{telegramUser.username || 'VIP'}

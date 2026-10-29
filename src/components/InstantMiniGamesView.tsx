@@ -16,6 +16,7 @@ import {
   HiLo3DGameArena,
   GoldenCoin3DGameArena,
 } from './Extra3DMiniGamesArena.tsx';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 import { HapticEngine } from '../utils/telegramTma.ts';
 
 interface GameCardSpec {
@@ -167,141 +168,29 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
   },
 ];
 
-/* Dedicated 3D Isometric SVG Banner Artwork for each Category */
+/* Dedicated 8K Octane 3D Rendered Banner Artwork for each Category */
 const Category3DBannerArtwork: React.FC<{ theme: GameCategorySpec['bannerTheme'] }> = ({
   theme,
 }) => {
-  if (theme === 'ARCADE') {
-    return (
-      <svg viewBox="0 0 400 96" className="w-full h-20 rounded-xl overflow-hidden block">
-        <defs>
-          <linearGradient id="arcBg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#1e1038" />
-            <stop offset="55%" stopColor="#0f172a" />
-            <stop offset="100%" stopColor="#064e3b" />
-          </linearGradient>
-          <radialGradient id="orbGlow" cx="0.5" cy="0.5" r="0.5">
-            <stop offset="0%" stopColor="#00f59b" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#00f59b" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <rect width="400" height="96" fill="url(#arcBg)" />
-        <circle cx="85" cy="48" r="42" fill="url(#orbGlow)" />
-        {/* 3D Plinko Pyramid Pegs */}
-        {[0, 1, 2, 3].map((r) =>
-          Array.from({ length: r + 2 }, (_, c) => (
-            <circle
-              key={`${r}-${c}`}
-              cx={65 - r * 10 + c * 20}
-              cy={22 + r * 15}
-              r="3.5"
-              fill="#e2e8f0"
-            />
-          ))
-        )}
-        <circle cx="72" cy="42" r="6" fill="#fbbf24" />
-        {/* 3D Exponential Crash Rocket Curve */}
-        <path
-          d="M 190 78 Q 265 74 335 20"
-          fill="none"
-          stroke="#00f59b"
-          strokeWidth="3.5"
-          strokeLinecap="round"
-        />
-        <polygon points="342,15 326,20 334,30" fill="#fbbf24" />
-      </svg>
-    );
-  }
-
-  if (theme === 'STRATEGY') {
-    return (
-      <svg viewBox="0 0 400 96" className="w-full h-24 rounded-xl overflow-hidden block">
-        <defs>
-          <linearGradient id="stratBg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#171033" />
-            <stop offset="50%" stopColor="#1e1b4b" />
-            <stop offset="100%" stopColor="#3b0764" />
-          </linearGradient>
-        </defs>
-        <rect width="400" height="96" fill="url(#stratBg)" />
-        {/* Isometric 3D Vault Tiles */}
-        {[0, 1, 2].map((r) =>
-          [0, 1, 2].map((c) => (
-            <rect
-              key={`${r}-${c}`}
-              x={34 + c * 22}
-              y={14 + r * 20}
-              width="17"
-              height="16"
-              rx="4"
-              fill={r === 1 && c === 1 ? '#00f59b' : '#312e81'}
-              stroke="#a855f7"
-              strokeWidth="1"
-            />
-          ))
-        )}
-        {/* 3D Crystal Tower Layers */}
-        {[0, 1, 2, 3].map((f) => (
-          <rect
-            key={f}
-            x={265 - (3 - f) * 6}
-            y={14 + f * 15}
-            width={72 + (3 - f) * 12}
-            height="11"
-            rx="3"
-            fill={f === 0 ? '#fbbf24' : '#7e22ce'}
-            opacity={0.9 - f * 0.12}
-          />
-        ))}
-      </svg>
-    );
-  }
-
-  if (theme === 'WHEEL') {
-    return (
-      <svg viewBox="0 0 400 96" className="w-full h-24 rounded-xl overflow-hidden block">
-        <defs>
-          <linearGradient id="whlBg" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#2e1065" />
-            <stop offset="55%" stopColor="#0f172a" />
-            <stop offset="100%" stopColor="#451a03" />
-          </linearGradient>
-        </defs>
-        <rect width="400" height="96" fill="url(#whlBg)" />
-        {/* 3D Wheel of Fortune Graphic */}
-        <circle cx="72" cy="44" r="30" fill="#1e1b4b" stroke="#fbbf24" strokeWidth="3" />
-        <circle cx="72" cy="44" r="19" fill="none" stroke="#00f59b" strokeWidth="2" strokeDasharray="8 6" />
-        <circle cx="72" cy="44" r="6" fill="#fbbf24" />
-        {/* 3D Quantum Slider Track */}
-        <rect x="165" y="36" width="195" height="14" rx="7" fill="#090612" stroke="#a855f7" strokeWidth="1.5" />
-        <rect x="167" y="38" width="115" height="10" rx="5" fill="#00f59b" />
-        <polygon points="282,22 294,31 282,40 270,31" fill="#fbbf24" />
-      </svg>
-    );
-  }
+  const bannerImg =
+    theme === 'ARCADE'
+      ? LUXURY_IMAGES.gamesBanner3d
+      : theme === 'STRATEGY'
+      ? LUXURY_IMAGES.fairnessAudit
+      : theme === 'WHEEL'
+      ? LUXURY_IMAGES.poolHourlyFlash
+      : LUXURY_IMAGES.userVipBanner;
 
   return (
-    <svg viewBox="0 0 400 96" className="w-full h-24 rounded-xl overflow-hidden block">
-      <defs>
-        <linearGradient id="holoBg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#3b0764" />
-          <stop offset="50%" stopColor="#1e1b4b" />
-          <stop offset="100%" stopColor="#422006" />
-        </linearGradient>
-      </defs>
-      <rect width="400" height="96" fill="url(#holoBg)" />
-      {/* 3D Holographic Playing Cards */}
-      <rect x="38" y="14" width="38" height="52" rx="6" transform="rotate(-8 57 40)" fill="#1e1b4b" stroke="#00f59b" strokeWidth="2" />
-      <rect x="66" y="14" width="38" height="52" rx="6" transform="rotate(8 85 40)" fill="#311042" stroke="#fbbf24" strokeWidth="2" />
-      <text x="77" y="45" fill="#fbbf24" fontSize="14" fontWeight="900" fontFamily="monospace">
-        A♠
-      </text>
-      {/* 3D Golden TON Coin */}
-      <circle cx="325" cy="42" r="24" fill="#f59e0b" stroke="#fef08a" strokeWidth="2.5" />
-      <text x="314" y="47" fill="#090612" fontSize="12" fontWeight="900" fontFamily="monospace">
-        TON
-      </text>
-    </svg>
+    <div className="relative w-full h-24 rounded-xl overflow-hidden bg-[#080512]">
+      <img
+        src={bannerImg}
+        alt={`LuckyDrop 3D ${theme} Arena`}
+        referrerPolicy="no-referrer"
+        className="w-full h-full object-cover object-center opacity-85 scale-105"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#090612] via-[#090612]/35 to-transparent" />
+    </div>
   );
 };
 
@@ -374,10 +263,17 @@ export const InstantMiniGamesView: React.FC = () => {
       {/* =====================================================================
           TOP HEADER BAR: QUICK PILL SWITCHER + CATEGORIZED 3D HUB TOGGLE
           ===================================================================== */}
-      <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#130d24]/90 border border-purple-500/25 px-3 py-2">
-        <div className="min-w-0">
+      <div className="relative overflow-hidden flex items-center justify-between gap-2 rounded-2xl bg-[#130d24]/95 border border-amber-400/30 px-3.5 py-2.5 shadow-lg">
+        <img
+          src={LUXURY_IMAGES.gamesBanner3d}
+          alt="LuckyDrop 3D Games Arena Banner"
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 w-full h-full object-cover opacity-35 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-gradient-to-l from-[#090514]/90 via-[#130d24]/82 to-[#090514]/90 pointer-events-none" />
+        <div className="relative z-10 min-w-0">
           <div className="text-xs font-extrabold text-white flex items-center gap-1.5 flex-wrap">
-            <span className="whitespace-nowrap">🎮 آرنا سه‌بعدی</span>
+            <span className="whitespace-nowrap">🎮 آرنا سه‌بعدی LuckyDrop</span>
             <span
               dir="ltr"
               className="px-1.5 py-0.5 rounded-md bg-[#00f59b]/15 border border-[#00f59b]/30 text-[10px] font-mono text-[#00f59b] whitespace-nowrap shrink-0"
@@ -385,7 +281,7 @@ export const InstantMiniGamesView: React.FC = () => {
               0.01 – ∞ TON
             </span>
           </div>
-          <div className="text-[10px] text-purple-300/75 mt-0.5 font-mono truncate" dir="ltr">
+          <div className="text-[10px] text-purple-200/85 mt-0.5 font-mono truncate" dir="ltr">
             Free Ticket XP: {xpProgressInCurrentCycle}/100 • Tickets: {tickets.length}
           </div>
         </div>
@@ -397,10 +293,10 @@ export const InstantMiniGamesView: React.FC = () => {
             HapticEngine.selectionChanged();
             setShowCategoryCatalog((prev) => !prev);
           }}
-          className={`h-8 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-1 whitespace-nowrap ${
+          className={`relative z-10 h-8 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-1 whitespace-nowrap ${
             showCategoryCatalog
               ? 'bg-[#00f59b] text-[#041f14] border-[#00f59b]'
-              : 'bg-purple-600/35 text-white border-purple-400/40 hover:bg-purple-600/50'
+              : 'bg-purple-600/45 text-white border-amber-400/40 hover:bg-purple-600/60'
           }`}
         >
           <span>{showCategoryCatalog ? '🎯 بازگشت به بازی' : '🗂️ دسته‌بندی (۹ بازی)'}</span>
@@ -577,14 +473,15 @@ export const InstantMiniGamesView: React.FC = () => {
       </AnimatePresence>
 
       {/* =====================================================================
-          COMPACT PROVABLY FAIR SEED, ZERO-LOSS FREE TICKET ENGINE & AUDIT BAR
+          PLAYER LOYALTY XP BAR & POST-GAME VERIFICATION RESULT
+          (Pre-game hash is hidden; hash is displayed strictly AFTER round finishes)
           ===================================================================== */}
       <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-2.5">
-        {/* Zero-Loss Free Lottery Ticket Progress Bar */}
+        {/* Clean Player Loyalty XP Progress Bar */}
         <div className="rounded-xl bg-[#090612]/90 border border-purple-500/20 p-2.5 space-y-1.5">
           <div className="flex items-center justify-between text-[11px]">
             <span className="font-bold text-[#fbbf24]">
-              🎟️ موتور بلیت رایگان لاتاری (بدون ریسک ضرر خزانه)
+              🎟️ پاداش وفاداری LuckyDrop (بلیت رایگان لاتاری)
             </span>
             <span className="font-mono text-[10px] text-[#00f59b]" dir="ltr">
               {xpProgressInCurrentCycle} / 100 XP
@@ -597,30 +494,23 @@ export const InstantMiniGamesView: React.FC = () => {
             />
           </div>
           <p className="text-[10px] text-purple-200/75 leading-relaxed">
-            شرط‌های بالای <strong className="text-white">1.00 TON</strong> در اسلات‌های طلایی مستقیماً از محل{' '}
-            <strong className="text-[#00f59b]">استخر ذخیره ۳٪ (Rollover Reserve)</strong> بلیت رایگان صادر می‌کنند و شرط‌های خرد (<strong className="text-white">0.01 تا 0.99 TON</strong>) امتیاز XP جمع می‌کنند تا در ۱۰۰ XP بلیت رایگان بدون کسری خزانه صادر شود. (نرخ زنده: 1 TON = ${tonUsdRate.toFixed(2)})
+            با هر دور بازی امتیاز XP دریافت می‌کنید و با رسیدن به ۱۰۰ XP یک کوپن رایگان قرعه‌کشی به حساب شما اضافه می‌شود. (1 TON = ${tonUsdRate.toFixed(2)})
           </p>
         </div>
 
-        <div className="flex items-start justify-between gap-2" dir="ltr">
-          <div className="flex items-baseline gap-1.5 min-w-0 flex-1">
-            <span className="text-[11px] font-mono font-bold text-[#fbbf24] shrink-0">hash</span>
-            <code
-              data-testid="minigame-prebet-seed-hash"
-              className="text-[10px] font-mono text-purple-200/90 break-all select-all leading-relaxed"
-            >
-              {provablyFairSeeds.serverSeedHash}
-            </code>
-          </div>
+        <div className="flex items-center justify-between gap-2" dir="rtl">
+          <span className="text-[10px] text-purple-200/80">
+            🔒 کد هش (<code className="font-mono text-[#fbbf24]">hash</code>) پس از پایان هر دست بازی نمایش داده می‌شود.
+          </span>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0" dir="ltr">
             <motion.button
               whileTap={{ scale: 0.96 }}
               type="button"
               onClick={() => setShowFairnessDrawer((prev) => !prev)}
               className="px-2 py-1 rounded-lg bg-[#090612] border border-purple-500/25 text-[10px] font-medium text-purple-200/80 hover:text-white cursor-pointer"
             >
-              Seeds
+              Client Seed
             </motion.button>
             <motion.button
               whileTap={{ scale: 0.96 }}
@@ -662,29 +552,44 @@ export const InstantMiniGamesView: React.FC = () => {
         {lastResult && (
           <div
             data-testid="minigame-result-card"
-            className="pt-2 border-t border-purple-500/15 flex items-center justify-between gap-2 text-xs"
+            className="pt-2 border-t border-purple-500/15 space-y-1.5 text-xs"
             dir="ltr"
           >
-            <span
-              className={`font-semibold tabular-nums ${
-                lastResult.won ? 'text-[#00f59b]' : 'text-purple-300/60'
-              }`}
-            >
-              {lastResult.payoutUsdt > 0
-                ? `+${formatActiveTmaAmount(lastResult.payoutUsdt)} (${lastResult.multiplier}x)`
-                : `Round ${lastResult.roundId} • 0x`}
-            </span>
-
-            {lastDebitUuid && (
-              <button
-                type="button"
-                data-testid="minigame-rollback-round-btn"
-                onClick={handleVoidAndRollbackLastRound}
-                className="px-2 py-0.5 rounded-lg bg-purple-950/80 border border-purple-500/30 text-purple-200 text-[10px] font-semibold cursor-pointer"
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className={`font-semibold tabular-nums ${
+                  lastResult.won ? 'text-[#00f59b]' : 'text-purple-300/60'
+                }`}
               >
-                ↩ PAM Rollback
-              </button>
-            )}
+                {lastResult.payoutUsdt > 0
+                  ? `+${formatActiveTmaAmount(lastResult.payoutUsdt)} (${lastResult.multiplier}x)`
+                  : `Round ${lastResult.roundId} • 0x`}
+              </span>
+
+              {lastDebitUuid && (
+                <button
+                  type="button"
+                  data-testid="minigame-rollback-round-btn"
+                  onClick={handleVoidAndRollbackLastRound}
+                  className="px-2 py-0.5 rounded-lg bg-purple-950/80 border border-purple-500/30 text-purple-200 text-[10px] font-semibold cursor-pointer"
+                >
+                  ↩ PAM Rollback
+                </button>
+              )}
+            </div>
+
+            {/* Post-Game Cryptographic Hash revealed strictly AFTER round completion */}
+            <div className="rounded-lg bg-[#090612] border border-purple-500/20 px-2.5 py-1.5 flex items-baseline gap-1.5">
+              <span className="text-[10px] font-mono font-bold text-[#fbbf24] shrink-0">
+                hash
+              </span>
+              <code
+                data-testid="minigame-postbet-hash"
+                className="text-[9.5px] font-mono text-purple-200/90 break-all select-all"
+              >
+                {lastResult.hmacHex}
+              </code>
+            </div>
           </div>
         )}
       </div>

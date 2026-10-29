@@ -599,7 +599,7 @@ export interface OfficialSiteWallets {
 
 export const DEFAULT_OFFICIAL_WALLETS: OfficialSiteWallets = {
   USDT_TRC20: 'TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE',
-  TON: 'UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
+  TON: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
   TRX: 'TXk8Y2khEsLJW1ChVWFMSMeRDow5KcbL99',
   BNB: '0x71C8F9409a89bC20D471980D772094B112039A8F',
   BTC: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
@@ -675,7 +675,7 @@ const buildDefaultConcurrentRounds = (): LotteryRoundItem[] => {
       ticketPriceUsdt: spec.ticketPriceUsdt.toFixed(2),
       rtpPercent: '85.00',
       soldPercent: spec.soldPercent,
-      remainingLabel: 'تقسیم ۸۵٪ استخر راس تایم (۱۵٪ سهم سایت)',
+      remainingLabel: 'قرعه‌کشی خودکار راس تایم',
       drawTimeLabel: spec.drawTimeLabel,
       serverSeedHash: spec.serverSeedHash,
       clientSeed: spec.clientSeed,
@@ -793,8 +793,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isTelegramAdmin, setIsTelegramAdmin] = useState<boolean>(false);
   const [splashState, setSplashState] = useState<SplashHandshakeState>({
     progress: 25,
-    stepTitleFa: '۱. راه‌اندازی هسته Telegram WebApp SDK',
-    stepSubtitleEn: 'Telegram.WebApp.ready() & expand() + initData extraction',
+    stepTitleFa: 'برقراری اتصال امن با حساب تلگرام',
+    stepSubtitleEn: 'Connecting Telegram Account',
     errorStatus: null,
     ready: false,
   });
@@ -1401,8 +1401,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // Step 1 (25%): Initialize Telegram.WebApp.ready(), expand(), and extract real initData & user profile
       setSplashState({
         progress: 25,
-        stepTitleFa: '۱. راه‌اندازی هسته Telegram WebApp SDK',
-        stepSubtitleEn: 'Telegram.WebApp.ready() & expand() + initData extraction',
+        stepTitleFa: 'برقراری اتصال امن با حساب تلگرام',
+        stepSubtitleEn: 'Connecting Telegram Account',
         errorStatus: null,
         ready: false,
       });
@@ -1424,8 +1424,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // Step 2 (60%): Fetch verified user data, balances, and session state from /api/snapshot using X-Telegram-Init-Data
       setSplashState({
         progress: 60,
-        stepTitleFa: '۲. احراز هویت سرور و همگام‌سازی دفترکل PAM',
-        stepSubtitleEn: 'GET /api/snapshot (X-Telegram-Init-Data) • Balances, Session & Admin Lock',
+        stepTitleFa: 'همگام‌سازی استخرهای قرعه‌کشی و کیف پول',
+        stepSubtitleEn: 'Syncing Prize Pools & Wallet',
         errorStatus: null,
         ready: false,
       });
@@ -1494,8 +1494,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // Step 3 (100%): Await real TonConnectUIProvider connection restoration (zero fake setTimeout)
       setSplashState({
         progress: 100,
-        stepTitleFa: '۳. اتصال پروتکل TON Connect 2.0 (Non-Custodial)',
-        stepSubtitleEn: 'TonConnectUIProvider session & manifest handshake',
+        stepTitleFa: 'آماده‌سازی تالار قرعه‌کشی زنده LuckyDrop',
+        stepSubtitleEn: 'Ready',
         errorStatus: null,
         ready: false,
       });
@@ -2409,54 +2409,72 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const depositTonInstant = async (
     amountTon: number,
-    _senderWallet?: string,
+    senderWalletOrTxHash?: string,
     memo?: string
   ): Promise<{ ok: boolean; message: string }> => {
-    const activeTonAddr = realTonAddress;
-    if (!activeTonAddr) {
-      HapticEngine.notificationOccurred('warning');
-      try {
-        await tonConnectUI.openModal();
-      } catch {
-        // ignore modal open errors
-      }
+    const safeTon = Number(Number(amountTon || 0).toFixed(4));
+    if (!Number.isFinite(safeTon) || safeTon < 0.1) {
+      HapticEngine.notificationOccurred('error');
       return {
         ok: false,
-        message: '💎 لطفاً ابتدا کیف پول واقعی خود را از طریق TON Connect متصل کنید.',
+        message: '⚠️ حداقل مقدار شارژ در شبکه TON معادل 0.10 TON است.',
       };
     }
 
-    const safeTon = Math.max(0.01, Number(amountTon) || 1);
-    const nanoTonStr = String(Math.floor(safeTon * 1e9));
+    const activeTonAddr = realTonAddress || (senderWalletOrTxHash || '').trim();
     const treasuryDestination = (adminTonWalletAddress || DEFAULT_ADMIN_TON_WALLET_ADDRESS).trim();
 
-    HapticEngine.impactOccurred('medium');
-    let signedBoc = '';
-    try {
-      const txResult = await tonConnectUI.sendTransaction({
-        validUntil: Math.floor(Date.now() / 1000) + 600,
-        messages: [
-          {
-            address: treasuryDestination,
-            amount: nanoTonStr,
-          },
-        ],
-      });
-      signedBoc = String(txResult?.boc || '').trim();
-    } catch (txErr: any) {
-      HapticEngine.notificationOccurred('error');
-      const errDetail = txErr?.message || 'User rejected or cancelled TON Connect transaction';
-      return {
-        ok: false,
-        message: `⚠️ تراکنش در کیف پول TON امضا نشد: ${errDetail}`,
-      };
-    }
+    // If user passed an explicit TXID/BOC string from manual transfer, verify directly on server
+    const manualProof =
+      senderWalletOrTxHash && senderWalletOrTxHash.startsWith('tx_')
+        ? senderWalletOrTxHash.replace(/^tx_/, '').trim()
+        : '';
+
+    let signedBoc = manualProof;
 
     if (!signedBoc) {
+      if (!realTonAddress) {
+        HapticEngine.notificationOccurred('warning');
+        try {
+          await tonConnectUI.openModal();
+        } catch {
+          // ignore modal open errors
+        }
+        return {
+          ok: false,
+          message:
+            '💎 برای پرداخت اتوماتیک ۱-کلیکی ابتدا کیف پول TON خود را متصل کنید، یا پس از انتقال به آدرس خزانه، کد پیگیری/هش تراکنش را ثبت نمایید.',
+        };
+      }
+
+      const nanoTonStr = String(Math.floor(safeTon * 1e9));
+      HapticEngine.impactOccurred('medium');
+      try {
+        const txResult = await tonConnectUI.sendTransaction({
+          validUntil: Math.floor(Date.now() / 1000) + 600,
+          messages: [
+            {
+              address: treasuryDestination,
+              amount: nanoTonStr,
+            },
+          ],
+        });
+        signedBoc = String(txResult?.boc || '').trim();
+      } catch (txErr: any) {
+        HapticEngine.notificationOccurred('error');
+        const errDetail = txErr?.message || 'تراکنش در کیف پول لغو شد';
+        return {
+          ok: false,
+          message: `⚠️ تراکنش در کیف پول TON امضا نشد: ${errDetail}`,
+        };
+      }
+    }
+
+    if (!signedBoc || signedBoc.length < 8) {
       HapticEngine.notificationOccurred('error');
       return {
         ok: false,
-        message: '⚠️ امضای دیجیتال (BOC) از کیف پول TON دریافت نشد. موجودی تغییر نکرد.',
+        message: '⚠️ امضای دیجیتال (BOC / TXID) معتبر دریافت نشد. موجودی تغییر نکرد.',
       };
     }
 
@@ -2470,7 +2488,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           boc: signedBoc,
           amountTon: safeTon,
           amountUsdt,
-          senderWallet: activeTonAddr,
+          senderWallet: activeTonAddr || 'TON Wallet',
           destinationWallet: treasuryDestination,
           memo: memo || `LD-TG-${telegramUser.id}`,
         }),
@@ -2480,7 +2498,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         HapticEngine.notificationOccurred('error');
         return {
           ok: false,
-          message: data.error || 'خطا در تایید BOC در سرور',
+          message: data.error || 'خطا در تایید واریز TON در سرور',
         };
       }
       if (data.pamState) {
@@ -2495,16 +2513,16 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       HapticEngine.notificationOccurred('success');
       return {
         ok: true,
-        message: `💎 تراکنش واقعی TON Connect (+${rawFormatCurrency(
+        message: `💎 واریز +${rawFormatCurrency(
           safeTon,
           'TON'
-        )}) از کیف پول (${truncateTonAddress(activeTonAddr)}) امضا و تایید شد!`,
+        )} با موفقیت در سرور تایید و به موجودی شما اضافه شد!`,
       };
     } catch (err: any) {
       HapticEngine.notificationOccurred('error');
       return {
         ok: false,
-        message: err?.message || 'خطا در ارسال BOC به سرور (/api/wallet/deposit-ton)',
+        message: err?.message || 'خطا در ارتباط با سرور (/api/wallet/deposit-ton)',
       };
     }
   };
@@ -2512,43 +2530,67 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const depositTelegramStarsInstant = async (
     amountStars: number
   ): Promise<{ ok: boolean; message: string }> => {
-    const safeStars = Math.max(50, Math.round(Number(amountStars) || 500));
-    const amountUsdt = tmaCurrencyToUsdt(safeStars, 'STARS', tonUsdRate, starsUsdRate);
-    HapticEngine.impactOccurred('medium');
-
-    const twa = (window as any)?.Telegram?.WebApp;
-    if (twa?.openInvoice) {
-      try {
-        twa.openInvoice(`https://t.me/$LuckyDropStarsInvoice_${safeStars}`);
-      } catch {
-        // fallback in preview
-      }
+    const safeStars = Math.round(Number(amountStars) || 0);
+    if (!Number.isFinite(safeStars) || safeStars < 10) {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: '⚠️ حداقل مقدار شارژ ستاره تلگرام ۱۰ ⭐ است.',
+      };
     }
 
-    setStarsBalance((prev) => {
-      const next = prev + safeStars;
-      try {
-        localStorage.setItem('luckydrop_stars_balance_v1', String(next));
-      } catch {}
-      return next;
-    });
+    HapticEngine.impactOccurred('medium');
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/wallet/deposit-stars', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          amountStars: safeStars,
+          memo: `STARS-TG-${telegramUser.id}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        HapticEngine.notificationOccurred('error');
+        return {
+          ok: false,
+          message: data.error || 'خطا در شارژ کیف پول ستاره تلگرام',
+        };
+      }
 
-    await pamBonus({
-      transactionUuid: generateDeterministicUuid('tx_stars_topup'),
-      roundId: `#STARS-${safeStars}`,
-      vertical: 'TELEGRAM_STARS_INVOICE',
-      amountUsdt,
-      creditToRealBalance: false,
-      note: `Telegram Stars In-App Purchase (+${safeStars} ⭐)`,
-    });
+      const twa = (window as any)?.Telegram?.WebApp;
+      if (data.invoiceLink && twa?.openInvoice) {
+        try {
+          twa.openInvoice(data.invoiceLink);
+        } catch {
+          // continue
+        }
+      }
 
-    HapticEngine.notificationOccurred('success');
-    return {
-      ok: true,
-      message: `⭐ پرداخت درون‌برنامه‌ای تلگرام تایید شد و +${safeStars.toLocaleString(
-        'en-US'
-      )} Stars به کیف پول ستاره شما اضافه گردید!`,
-    };
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState);
+      } else if (typeof data.starsBalance === 'number') {
+        setStarsBalance(data.starsBalance);
+      }
+      if (Array.isArray(data.deposits)) {
+        setDeposits(data.deposits);
+      }
+      await refreshSnapshot();
+      HapticEngine.notificationOccurred('success');
+      return {
+        ok: true,
+        message: `⭐ شارژ +${safeStars.toLocaleString(
+          'en-US'
+        )} Stars با موفقیت تایید و به موجودی ستاره‌های شما اضافه شد!`,
+      };
+    } catch (err: any) {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: err?.message || 'خطا در ارتباط با سرور جهت شارژ Telegram Stars',
+      };
+    }
   };
 
   const withdrawTonOrStars = async (params: {
@@ -2557,73 +2599,145 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     destination: string;
   }): Promise<{ ok: boolean; message: string }> => {
     HapticEngine.impactOccurred('medium');
-    if (params.currency === 'TON' && !realTonAddress) {
-      HapticEngine.notificationOccurred('warning');
-      try {
-        await tonConnectUI.openModal();
-      } catch {
-        setTonConnectModalOpen(true);
+    const numericAmount = Number(params.amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      HapticEngine.notificationOccurred('error');
+      return { ok: false, message: 'لطفاً یک مبلغ معتبر وارد کنید.' };
+    }
+
+    if (params.currency === 'STARS') {
+      const safeStars = Math.round(numericAmount);
+      if (safeStars < 50) {
+        HapticEngine.notificationOccurred('error');
+        return { ok: false, message: 'حداقل مقدار برداشت ستاره تلگرام ۵۰ ⭐ است.' };
       }
+      if (safeStars > starsBalance) {
+        HapticEngine.notificationOccurred('error');
+        return {
+          ok: false,
+          message: `موجودی ستاره‌های شما (${starsBalance.toLocaleString('en-US')} ⭐) برای برداشت ${safeStars.toLocaleString('en-US')} ⭐ کافی نیست.`,
+        };
+      }
+      const targetDest =
+        params.destination.trim() || `@${telegramUser.username || telegramUser.first_name || 'VIP'}`;
+      try {
+        const headers = await getHeaders();
+        const res = await fetch('/api/wallet/withdraw-stars', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            amountStars: safeStars,
+            destination: targetDest,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          HapticEngine.notificationOccurred('error');
+          return {
+            ok: false,
+            message: data.error || 'خطا در ثبت برداشت ستاره تلگرام',
+          };
+        }
+        if (data.pamState) {
+          syncPamStateEverywhere(data.pamState);
+        } else if (typeof data.starsBalance === 'number') {
+          setStarsBalance(data.starsBalance);
+        }
+        if (Array.isArray(data.withdrawals)) {
+          setWithdrawals(data.withdrawals);
+        }
+        await refreshSnapshot();
+        HapticEngine.notificationOccurred('success');
+        return {
+          ok: true,
+          message: `⭐ برداشت ${rawFormatCurrency(
+            safeStars,
+            'STARS'
+          )} به حساب تلگرام (${targetDest}) با موفقیت ثبت و تسویه شد!`,
+        };
+      } catch (err: any) {
+        HapticEngine.notificationOccurred('error');
+        return {
+          ok: false,
+          message: err?.message || 'خطا در ارتباط با سرور جهت برداشت Stars',
+        };
+      }
+    }
+
+    // TON Withdrawal
+    const safeTon = Number(numericAmount.toFixed(4));
+    if (safeTon < 0.1) {
+      HapticEngine.notificationOccurred('error');
+      return { ok: false, message: 'حداقل مقدار برداشت در شبکه TON معادل 0.10 TON است.' };
+    }
+    if (safeTon > tonBalance) {
+      HapticEngine.notificationOccurred('error');
       return {
         ok: false,
-        message: '💎 برای برداشت TON لطفاً ابتدا کیف پول TON خود را متصل کنید.',
-      };
-    }
-    const targetDest =
-      params.currency === 'TON'
-        ? params.destination.trim() || realTonAddress
-        : params.destination.trim() || `@${telegramUser.username || 'VIP'}`;
-    if (!targetDest) {
-      HapticEngine.notificationOccurred('error');
-      return { ok: false, message: 'لطفاً آدرس کیف پول TON یا شناسه تلگرام مقصد را وارد کنید.' };
-    }
-    const amountUsdt = tmaCurrencyToUsdt(params.amount, params.currency, tonUsdRate, starsUsdRate);
-    if (params.currency === 'STARS') {
-      if (params.amount > starsBalance) {
-        HapticEngine.notificationOccurred('error');
-        return { ok: false, message: 'موجودی ستاره‌های تلگرام شما برای این برداشت کافی نیست.' };
-      }
-      setStarsBalance((prev) => {
-        const next = Math.max(0, prev - Math.round(params.amount));
-        try {
-          localStorage.setItem('luckydrop_stars_balance_v1', String(next));
-        } catch {}
-        return next;
-      });
-      HapticEngine.notificationOccurred('success');
-      return {
-        ok: true,
-        message: `⭐ برداشت ${rawFormatCurrency(params.amount, 'STARS')} از طریق تلگرام به مقصد ${targetDest} ثبت شد.`,
+        message: `موجودی TON شما (${rawFormatCurrency(tonBalance, 'TON')}) برای برداشت ${rawFormatCurrency(safeTon, 'TON')} کافی نیست.`,
       };
     }
 
-    const res = await requestWithdrawal({
-      network: 'TON Network',
-      destinationAddress: targetDest,
-      amountUsdt,
-    });
-    if (res.ok) {
+    const targetDest = (params.destination || '').trim() || realTonAddress;
+    if (!targetDest || targetDest.length < 10) {
+      HapticEngine.notificationOccurred('warning');
+      return {
+        ok: false,
+        message: '💎 لطفاً آدرس کیف پول TON مقصد (با پیشوند UQ یا EQ) را وارد کنید یا کیف پول خود را متصل نمایید.',
+      };
+    }
+
+    const amountUsdt = tmaCurrencyToUsdt(safeTon, 'TON', tonUsdRate, starsUsdRate);
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/wallet/withdraw', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          network: 'TON Network',
+          destinationAddress: targetDest,
+          amountTon: safeTon,
+          grossAmountUsdt: amountUsdt,
+          networkFeeUsdt: 0.1,
+          netAmountUsdt: Math.max(0.05, amountUsdt - 0.1),
+          netAmountCrypto: `${Math.max(0.01, safeTon - 0.02).toFixed(2)} TON`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        HapticEngine.notificationOccurred('error');
+        return { ok: false, message: data.error || 'خطا در ثبت برداشت TON' };
+      }
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState);
+      } else if (typeof data.tonBalance === 'number') {
+        setTonBalance(data.tonBalance);
+      }
+      if (Array.isArray(data.withdrawals)) {
+        setWithdrawals(data.withdrawals);
+      }
+      await refreshSnapshot();
       HapticEngine.notificationOccurred('success');
-      const gate = evaluateHighValueWithdrawalGate(params.amount, autoWithdrawLimitTon);
-      if (gate.requiresAdminApproval || res.withdrawal?.status === 'pending_review') {
+      if (data.requiresAdminApproval || data.withdrawal?.status === 'pending_review') {
         return {
           ok: true,
           message: `⏳ درخواست برداشت مبلغ بالا (${rawFormatCurrency(
-            params.amount,
+            safeTon,
             'TON'
-          )}) ثبت شد و جهت امنیت خزانه در صف تایید ادمین قرار گرفت.`,
+          )}) ثبت شد و جهت امنیت در صف تایید قرار گرفت.`,
         };
       }
       return {
         ok: true,
         message: `💎 برداشت اتوماتیک ${rawFormatCurrency(
-          params.amount,
+          safeTon,
           'TON'
-        )} به کیف پول (${truncateTonAddress(targetDest)}) به صورت آنی تسویه شد!`,
+        )} به آدرس (${truncateTonAddress(targetDest)}) با موفقیت ثبت و تسویه شد!`,
       };
+    } catch (err: any) {
+      HapticEngine.notificationOccurred('error');
+      return { ok: false, message: err?.message || 'خطا در ارتباط با سرور جهت برداشت TON' };
     }
-    HapticEngine.notificationOccurred('error');
-    return { ok: false, message: res.error || 'خطا در ثبت برداشت TON' };
   };
 
   useEffect(() => {
@@ -3305,7 +3419,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     sessionCode: string,
     message: string,
     senderRole: string = 'OPERATOR',
-    senderName: string = 'اپراتور ارشد زرین'
+    senderName: string = 'اپراتور ارشد LuckyDrop'
   ) => {
     try {
       const headers = await getHeaders();

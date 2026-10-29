@@ -85,7 +85,7 @@ export const TxStatusView: React.FC = () => {
           {
             step: 3,
             title: '۳. صدور کوپن قرارداد هوشمند (Coupon Minted)',
-            desc: 'کد یکتای بلیط به همراه هش تعهد SHA-256 در دفترکل دائمی زرین لاتاری ثبت گردید.',
+            desc: 'کد یکتای بلیط در دفترکل دائمی LuckyDrop ثبت گردید.',
             badge: 'MINTED & LOCKED ON-CHAIN',
             icon: 'verified',
           },

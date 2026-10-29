@@ -41,7 +41,7 @@ export function loadServerSecurityConfig(
     adminTelegramUserIds: rawAdminIds,
     telegramNotificationChatId: (env.TELEGRAM_NOTIFICATION_CHAT_ID || '').trim(),
     publicTonTreasuryWallet: (
-      env.PUBLIC_TON_TREASURY_WALLET || 'UQB_LuckyDrop_Official_TON_Vault_99x88_VIP'
+      env.PUBLIC_TON_TREASURY_WALLET || 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ'
     ).trim(),
     appDomain: normalizedDomain,
     autoWithdrawLimitTon: Math.max(1, Number(env.AUTO_WITHDRAW_LIMIT_TON) || 50),
@@ -341,11 +341,11 @@ export function buildTelegramStartCommandPayload(params: {
   const greetingName = (params.firstName || 'کاربر VIP').replace(/[<>&]/g, '');
 
   const text = [
-    `👑 <b>خوش آمدید ${greetingName} به مینی‌اپ رسمی LuckyDrop VIP!</b>`,
+    `👑 <b>خوش آمدید ${greetingName} به مینی‌اپ رسمی LuckyDrop!</b>`,
     ``,
     `💎 <b>ویژگی‌های پلتفرم Web3 تلگرام:</b>`,
-    `• 🎰 <b>لاتاری استخر پویا (Pari-Mutuel):</b> ۸۵٪ کل استخر جمع‌شده راس تایم بین برندگان تقسیم می‌شود!`,
-    `• 🎮 <b>مینی‌گیم‌های ۳ بعدی (HMAC-SHA256):</b> Plinko، Crash، Tower 3D، Mines و Dice با اثبات عدالت ۶۴ کاراکتری`,
+    `• 🎰 <b>لاتاری‌های بزرگ راس تایم:</b> جوایز استخر قرعه‌کشی راس تایم به صورت آنی بین برندگان تقسیم می‌شود!`,
+    `• 🎮 <b>مینی‌گیم‌های ۳ بعدی:</b> Plinko، Crash، Tower 3D، Mines و Dice با بررسی رمزنگاری پس از پایان هر دور`,
     `• ⚡ <b>واریز و برداشت آنی:</b> اتصال مستقیم به تمامی کیف پول‌های استاندارد <b>TON Connect 2.0</b> و <b>Telegram Stars (⭐)</b>`,
     refCode ? `\n🎁 <b>کد دعوت فعال‌شده شما:</b> <code>${refCode}</code>` : '',
     ``,
@@ -478,7 +478,7 @@ export function buildLiveChannelBroadcastPayload(
         })} TON`
       : `${((params.amountUsdt || 0) / 5.2).toFixed(2)} TON`;
 
-  let header = '📣 <b>گزارش زنده شبکه LuckyDrop VIP</b>';
+  let header = '📣 <b>گزارش زنده شبکه LuckyDrop</b>';
   const lines: string[] = [];
 
   if (params.eventType === 'DEPOSIT') {
@@ -504,9 +504,9 @@ export function buildLiveChannelBroadcastPayload(
         params.ticketCount || 1
       } بلیت)`
     );
-    lines.push(`💎 <b>افزایش استخر:</b> <code>+${tonStr}</code> (۸۵٪ جایزه راس تایم)`);
+    lines.push(`💎 <b>افزایش استخر جایزه:</b> <code>+${tonStr}</code>`);
   } else if (params.eventType === 'DRAW_RESULT') {
-    header = `🏆 <b>نتیجه رسمی قرعه‌کشی راس تایم (${params.roundCode || '#ZRN'})</b>`;
+    header = `🏆 <b>نتیجه رسمی قرعه‌کشی راس تایم (${params.roundCode || '#LDR'})</b>`;
     if (params.roundTitleFa) lines.push(`🎰 <b>دور:</b> ${params.roundTitleFa}`);
     if (params.winningBalls && params.winningBalls.length > 0) {
       const ballsStr = params.winningBalls.map((n) => String(n).padStart(2, '0')).join(' - ');
@@ -516,9 +516,9 @@ export function buildLiveChannelBroadcastPayload(
           : '';
       lines.push(`🎱 <b>گوی‌های برنده:</b> <code>[${ballsStr}]${starStr}</code>`);
     }
-    lines.push(`💎 <b>جایزه تقسیم‌شده (۸۵٪ استخر):</b> <code>${tonStr}</code>`);
+    lines.push(`💎 <b>جایزه تقسیم‌شده استخر:</b> <code>${tonStr}</code>`);
     if (params.seedHash) {
-      lines.push(`🔐 <b>hash:</b> <code>${params.seedHash.replace(/^0x/, '')}</code>`);
+      lines.push(`🔐 <b>هش تایید دوره:</b> <code>${params.seedHash.replace(/^0x/, '')}</code>`);
     }
   } else if (params.eventType === 'HIGH_VALUE_WITHDRAWAL') {
     header = '🛡️ <b>درخواست برداشت مبلغ بالا — نیازمند تایید ادمین</b>';
@@ -529,8 +529,8 @@ export function buildLiveChannelBroadcastPayload(
       lines.push(`📬 <b>مقصد TON:</b> <code>${params.destinationAddress}</code>`);
     }
   } else {
-    header = '✅ <b>تست اتصال ربات و کانال نوتیفیکیشن LuckyDrop VIP</b>';
-    lines.push(`📡 اتصال سرور به API تلگرام، وب‌هوک Stars و استخر ۸۵٪/۱۵٪ کاملاً برقرار است.`);
+    header = '✅ <b>تست اتصال ربات و کانال نوتیفیکیشن LuckyDrop</b>';
+    lines.push(`📡 اتصال سرور به API تلگرام و درگاه TON / Stars کاملاً برقرار است.`);
   }
 
   const text = `${header}\n\n${lines.join('\n')}`;

@@ -245,7 +245,7 @@ export const WalletDrawer: React.FC = () => {
           </button>
         </div>
 
-        {/* Provably Fair Seeds */}
+        {/* Provably Fair Seeds (Hash revealed strictly after seed rotation / round completion) */}
         <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <span className="text-base font-bold tracking-wide text-white">
@@ -259,13 +259,19 @@ export const WalletDrawer: React.FC = () => {
               Nonce #{provablyFairSeeds.nonce}
             </span>
           </div>
-          <code
-            data-testid="pam-server-seed-hash"
-            className="text-[11px] font-medium text-purple-300/50 tabular-nums break-all bg-[#070510] p-2.5 rounded-xl border border-purple-500/20"
-            dir="ltr"
-          >
-            {provablyFairSeeds.serverSeedHash}
-          </code>
+          {provablyFairSeeds.previousServerSeed ? (
+            <code
+              data-testid="pam-server-seed-hash"
+              className="text-[11px] font-medium text-[#00f59b] tabular-nums break-all bg-[#070510] p-2.5 rounded-xl border border-purple-500/20"
+              dir="ltr"
+            >
+              Revealed Last Seed: {provablyFairSeeds.previousServerSeed}
+            </code>
+          ) : (
+            <div className="text-[11px] text-purple-300/70 bg-[#070510] p-2.5 rounded-xl border border-purple-500/20">
+              🔒 کد هش و بذر سرور پس از پایان دور یا چرخش Seed نمایش داده می‌شود.
+            </div>
+          )}
           <form onSubmit={handleSaveClientSeed} className="flex gap-2" dir="ltr">
             <input
               type="text"

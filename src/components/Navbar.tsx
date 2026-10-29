@@ -115,16 +115,22 @@ export const Navbar: React.FC = () => {
 
         {/* Strict h-14 px-4 Top Header with ONLY 3 aligned elements */}
         <div className="h-14 px-4 flex items-center justify-between gap-1.5 overflow-hidden" dir="ltr">
-          {/* 1) Left: Compact User Avatar / Connected TON Address badge */}
+          {/* 1) Left: Official LuckyDrop Brand Emblem + Connected TON Address / Connect Button */}
           <div className="flex items-center min-w-0 shrink">
             {connectedTonWallet ? (
               <div
                 data-testid="header-connected-ton-badge"
-                className="flex items-center gap-1 h-9 pl-1.5 pr-1 rounded-xl bg-[#130d24]/90 border border-purple-500/25 shadow-sm"
+                className="flex items-center gap-1.5 h-9 pl-1.5 pr-1 rounded-xl bg-[#130d24]/90 border border-amber-400/30 shadow-sm"
               >
-                <div className="w-5 h-5 rounded-full bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-[10px] shrink-0">
-                  💎
-                </div>
+                <img
+                  src="/assets/3d/luckydrop-3d-logo.png"
+                  alt="LuckyDrop 3D Logo"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = '/luckydrop-logo.svg';
+                  }}
+                  className="w-6 h-6 rounded-lg object-cover border border-amber-400/50 shrink-0 shadow-[0_0_10px_rgba(251,191,36,0.35)]"
+                />
                 <button
                   type="button"
                   onClick={() => handleNavigate('wallet')}
@@ -158,17 +164,23 @@ export const Navbar: React.FC = () => {
                 onClick={() => {
                   connectTonWalletOneTap();
                 }}
-                className="h-9 px-2 rounded-xl bg-[#130d24]/90 hover:bg-[#1c1335] border border-purple-500/25 flex items-center gap-1.5 transition-colors cursor-pointer max-w-[122px]"
+                className="h-9 px-2 rounded-xl bg-[#130d24]/90 hover:bg-[#1c1335] border border-amber-400/30 flex items-center gap-1.5 transition-colors cursor-pointer max-w-[138px]"
               >
-                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-                  {(telegramUser.first_name || 'V').slice(0, 1).toUpperCase()}
-                </div>
+                <img
+                  src="/assets/3d/luckydrop-3d-logo.png"
+                  alt="LuckyDrop 3D Logo"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = '/luckydrop-logo.svg';
+                  }}
+                  className="w-6 h-6 rounded-lg object-cover border border-amber-400/50 shrink-0 shadow-[0_0_10px_rgba(251,191,36,0.35)]"
+                />
                 <div className="text-left leading-none min-w-0">
-                  <span className="block text-[11px] font-semibold text-purple-200/90 truncate">
-                    Connect TON
+                  <span className="block text-[11px] font-extrabold text-amber-300 truncate">
+                    LuckyDrop
                   </span>
-                  <span className="block text-[10px] font-medium text-purple-300/50 tabular-nums mt-0.5 truncate">
-                    @{telegramUser.username || telegramUser.first_name}
+                  <span className="block text-[10px] font-medium text-purple-200/80 tabular-nums mt-0.5 truncate">
+                    Connect TON
                   </span>
                 </div>
               </button>

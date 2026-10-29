@@ -23,7 +23,7 @@ export interface TelegramWebAppUser {
 export const DEFAULT_ADMIN_TELEGRAM_USER_IDS: number[] = [];
 
 export const DEFAULT_ADMIN_TON_WALLET_ADDRESS =
-  'UQB_LuckyDrop_Official_TON_Vault_99x88_VIP';
+  'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ';
 
 export const DEFAULT_TON_USD_RATE = 5.0; // 1 TON = 5.00 settlement units (250 ⭐ = 1 TON)
 export const DEFAULT_STARS_USD_RATE = 0.02; // 1 ⭐ = 0.02 settlement units (250 ⭐ = 1 TON)
@@ -220,10 +220,9 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
     id: 'CONNECT_TON_WALLET',
     titleFa: 'اتصال کیف پول استاندارد TON Connect',
     titleEn: 'Connect Standard TON Wallet',
-    subtitleFa: 'اتصال Tonkeeper، MyTonWallet، Tonhub، DeWallet، Bitget یا OKX',
-    rewardLabelFa: '+2 Free Plinko Drops (Play-Only Bonus)',
-    mathRationaleFa:
-      'هدف: حذف اصطکاک واریز اولیه (Onboarding). پاداش به صورت توکن بازی غیرقابل برداشت مستقیم (Play-Only) از محل ۳٪ استخر ذخیره تبلیغاتی تامین می‌شود؛ بنابراین خروجی نقدی مستقیم خزانه دقیقاً ۰.۰۰ TON است.',
+    subtitleFa: 'اتصال Tonkeeper، MyTonWallet، Tonhub یا Bitget Wallet',
+    rewardLabelFa: '+2 توپ رایگان Plinko',
+    mathRationaleFa: 'فعال‌سازی آنی پس از اولین اتصال کیف پول در LuckyDrop',
     rewardType: 'FREE_PLINKO_DROPS',
     rewardAmount: 2,
     progress: 0,
@@ -232,12 +231,11 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
   },
   {
     id: 'JOIN_TELEGRAM_CHANNEL',
-    titleFa: 'عضویت در کامیونیتی رسمی تلگرام LuckyDrop',
+    titleFa: 'عضویت در کانال رسمی تلگرام LuckyDrop',
     titleEn: 'Join Official LuckyDrop Telegram Channel',
-    subtitleFa: 'عضویت در @LuckyDrop_TON_Official و تایید آنی عضویت',
-    rewardLabelFa: '+1 Free Lottery Ticket (Turnover-Locked)',
-    mathRationaleFa:
-      'هدف: رشد ارگانیک کانال و کاهش هزینه جذب کاربر (CAC = $0). بلیت هدیه از نوع Turnover-Locked است و جایزه آن صرفاً از استخر ۸۵٪ فروش واقعی دور پرداخت می‌شود (بدون یک سنت کسر از سرمایه ادمین).',
+    subtitleFa: 'عضویت در کامیونیتی رسمی و دریافت اطلاعیه‌های قرعه‌کشی',
+    rewardLabelFa: '+1 بلیت رایگان لاتاری',
+    mathRationaleFa: 'صدور خودکار کوپن هدیه پس از تایید عضویت در کانال',
     rewardType: 'FREE_LOTTERY_TICKET',
     rewardAmount: 1,
     progress: 0,
@@ -246,12 +244,11 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
   },
   {
     id: 'DAILY_STREAK_7',
-    titleFa: 'چک‌این روزانه ۷ روزه (Daily Retention Streak)',
+    titleFa: 'حضور روزانه ۷ روزه (Daily Check-In)',
     titleEn: 'Daily Streak Check-In (7 Days)',
-    subtitleFa: 'ورود روزانه برای دریافت کارت اسکرچ رایگان و XP وفاداری',
-    rewardLabelFa: '+1 Free Scratch Card + 35 XP',
-    mathRationaleFa:
-      'هدف: افزایش نرخ بازگشت روزانه (D1/D7 Retention). کارت اسکرچ رایگان دارای سقف جایزه کنترل‌شده از استخر ۳٪ سرریز وفاداری (Rollover Reserve) است و هرگز از اصل خزانه برداشت نمی‌کند.',
+    subtitleFa: 'ورود روزانه به مینی‌اپ برای دریافت کارت اسکرچ و امتیاز وفاداری',
+    rewardLabelFa: '+1 کارت اسکرچ رایگان + 35 XP',
+    mathRationaleFa: 'پاداش وفاداری ویژه کاربران فعال روزانه',
     rewardType: 'FREE_SCRATCH_CARD',
     rewardAmount: 1,
     progress: 1,
@@ -261,12 +258,11 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
   },
   {
     id: 'PLAY_10_MINIGAMES',
-    titleFa: 'انجام ۱۰ دور گردش واقعی در بازی‌های آرکید',
+    titleFa: 'انجام ۱۰ دور بازی در بخش آرکید',
     titleEn: 'Play 10 Rounds in Mini-Games',
     subtitleFa: 'Plinko، Crash، Dice، Mines، Tower، Wheel یا Hi-Lo',
-    rewardLabelFa: '+100 XP (شارژ نوار بلیت رایگان Turnover)',
-    mathRationaleFa:
-      'هدف: ایجاد گردش مالی (Liquidity Velocity). با ۱۰ دور بازی، کارمزد خانه (۱٪ تا ۳٪ House Edge) سود قطعی ایجاد می‌کند و بخشی از همین سود به صورت XP به بازیکن برمی‌گردد (۱۰۰٪ بدون ضرر).',
+    rewardLabelFa: '+100 XP (شارژ بلیت هدیه)',
+    mathRationaleFa: 'تکمیل نوار امتیاز XP و دریافت کوپن قرعه‌کشی رایگان',
     rewardType: 'BONUS_XP',
     rewardAmount: 100,
     progress: 4,

@@ -27,7 +27,7 @@ const WITHDRAW_NETWORKS: NetworkMeta[] = [
   {
     network: 'TON Network',
     shortLabel: 'TON • Telegram',
-    sampleAddress: 'UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
+    sampleAddress: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
     badge: 'شاردینگ بومی تلگرام',
     minUsdt: 5,
   },

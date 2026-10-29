@@ -24,7 +24,7 @@ export const TransparencyView: React.FC = () => {
   const [ticketCount, setTicketCount] = useState<number>(10);
   const [copiedVault, setCopiedVault] = useState<string | null>(null);
 
-  // Interactive HMAC-SHA256 52-Bit Float Verifier State
+  // Interactive HMAC-SHA256 52-Bit Float Verifier State (for completed draws)
   const initialHistory = drawHistory[0];
   const [verifyServerSeed, setVerifyServerSeed] = useState<string>(
     initialHistory?.serverSeed ||
@@ -32,11 +32,11 @@ export const TransparencyView: React.FC = () => {
       '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08'
   );
   const [verifyClientSeed, setVerifyClientSeed] = useState<string>(
-    initialHistory?.clientSeed || provablyFairSeeds.clientSeed || 'zarrin_vip_genesis_client_seed'
+    initialHistory?.clientSeed || provablyFairSeeds.clientSeed || 'luckydrop_vip_client_seed'
   );
   const [verifyNonce, setVerifyNonce] = useState<number>(initialHistory?.nonce || 1);
   const [verifyRoundCode, setVerifyRoundCode] = useState<string>(
-    initialHistory?.roundCode || '#ZRN-8492'
+    initialHistory?.roundCode || '#LD-8492'
   );
   const [editClientSeed, setEditClientSeed] = useState<string>(provablyFairSeeds.clientSeed);
   const [seedSavedMsg, setSeedSavedMsg] = useState<string | null>(null);
@@ -92,21 +92,21 @@ export const TransparencyView: React.FC = () => {
             />
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#00e701]/15 border border-[#00e701]/40 text-[#00e701] text-[10px] font-mono font-bold">
-                <span>PROVABLY FAIR HMAC-SHA256 (52-BIT)</span>
+                <span>LUCKYDROP • POST-DRAW VERIFIER (52-BIT)</span>
               </div>
               <h1 className="text-base font-black text-white">
-                راستی‌آزمای رمزنگاری Provably Fair و مرکز شفافیت ریاضی
+                مرکز راستی‌آزمایی پس از قرعه‌کشی و بازی‌ها (LuckyDrop)
               </h1>
             </div>
           </div>
 
           <p className="text-[11px] text-slate-300 leading-relaxed">
-            تبدیل ۵۲ بیت اول خروجی <code className="text-[#fbbf24]">HMAC-SHA256(serverSeed, clientSeed:nonce:round:cursor)</code> به عدد اعشاری یکنواخت <code className="text-[#00e701]">X = parseInt(hex.slice(0,13), 16) / 2^52</code> در بازه <code className="text-[#00e701]">[0, 1)</code> برای استخراج ۱۰۰٪ قطعی نتایج.
+            جهت جلوگیری از هرگونه پیش‌بینی قبل از قرعه‌کشی، بذر سرور و کد هش (<code className="text-[#fbbf24]">hash</code>) بلافاصله <strong>پس از پایان هر دور قرعه‌کشی یا بازی</strong> منتشر می‌شوند تا هر بازیکن بتواند نتیجه را با فرمول <code className="text-[#00e701]">HMAC-SHA256</code> بازمحاسبه کند.
           </p>
         </div>
       </div>
 
-      {/* 0. STEP-BY-STEP VISUAL PIPELINE: ACTIVE SEEDS & INTERACTIVE HMAC-SHA256 VERIFIER */}
+      {/* 0. STEP-BY-STEP VISUAL PIPELINE: CLIENT SEED & INTERACTIVE POST-DRAW HMAC-SHA256 VERIFIER */}
       <section
         data-testid="provably-fair-verifier-section"
         className="studio-arena-frame rounded-2xl p-4 space-y-4"
@@ -114,16 +114,16 @@ export const TransparencyView: React.FC = () => {
         <div className="flex flex-col gap-2 border-b border-white/[0.07] pb-3">
           <div>
             <span className="text-[10px] font-mono font-bold text-[#00e701]">
-              STEP-BY-STEP HMAC-SHA256 &amp; 52-BIT UNIFORM FLOAT [0, 1) PIPELINE
+              POST-DRAW HMAC-SHA256 &amp; 52-BIT UNIFORM FLOAT [0, 1) VERIFIER
             </span>
             <h2 className="text-sm font-black text-white mt-0.5">
-              ماشین‌حساب راستی‌آزمایی مستقل قرعه‌کشی‌ها (Rotate Seed Pair)
+              ماشین‌حساب راستی‌آزمایی دورهای انجام‌شده (LuckyDrop)
             </h2>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="px-2.5 py-1 rounded-xl bg-[#1a2c38] border border-[#fbbf24]/40 text-[11px] font-mono font-bold text-[#fbbf24] tabular-nums" dir="ltr">
-              Active Nonce: #{provablyFairSeeds.nonce}
+              Completed Nonce: #{verifyNonce}
             </span>
             <button
               type="button"
@@ -134,12 +134,12 @@ export const TransparencyView: React.FC = () => {
                   setVerifyServerSeed(rotated.previousServerSeed);
                   setVerifyNonce(rotated.previousNonce || 1);
                 }
-                setSeedSavedMsg('✅ بذر سرور چرخش یافت و بذر قبلی در فرم راستی‌آزمایی زیر بارگذاری شد.');
+                setSeedSavedMsg('✅ دور قبلی بسته شد و بذر افشاشده در فرم راستی‌آزمایی زیر بارگذاری گردید.');
                 setTimeout(() => setSeedSavedMsg(null), 4000);
               }}
               className="px-3 py-1.5 rounded-xl stake-emerald-cta font-black text-[11px] cursor-pointer whitespace-nowrap"
             >
-              چرخش Server Seed و افشای بذر فعلی ↻
+              دریافت بذر دور پایان‌یافته ↻
             </button>
           </div>
         </div>
@@ -150,20 +150,10 @@ export const TransparencyView: React.FC = () => {
           </div>
         )}
 
-        {/* Step 1 & Step 2: Active Pre-Commitment Bar + Client Seed Editor */}
-        <div className="space-y-3 bg-[#1a2c38] border border-white/[0.07] rounded-2xl p-3.5">
-          <div className="space-y-1.5" dir="ltr">
-            <div className="flex items-start gap-2">
-              <span className="text-[10px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-[#a855f7] shrink-0">
-                hash
-              </span>
-              <code
-                data-testid="active-commitment-hash"
-                className="text-[10px] font-mono text-[#00e701] break-all block select-all leading-relaxed"
-              >
-                {provablyFairSeeds.serverSeedHash}
-              </code>
-            </div>
+        {/* Client Seed Editor (No pre-draw active server hash exposed) */}
+        <div className="space-y-2.5 bg-[#1a2c38] border border-white/[0.07] rounded-2xl p-3.5">
+          <div className="text-[11px] text-slate-300 leading-relaxed">
+            🔒 کد هش (<code className="font-mono text-[#fbbf24]">hash</code>) دور فعال تا زمان اتمام قرعه‌کشی مخفی می‌ماند و بلافاصله پس از پایان دور در جدول تاریخچه زیر منتشر می‌شود.
           </div>
           <div className="flex items-end gap-2">
             <div className="flex-1">
@@ -224,7 +214,7 @@ export const TransparencyView: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-[11px] text-slate-300 block mb-1">Client Seed:</label>
                 <input
@@ -233,7 +223,7 @@ export const TransparencyView: React.FC = () => {
                   data-testid="verifier-client-seed-input"
                   value={verifyClientSeed}
                   onChange={(e) => setVerifyClientSeed(e.target.value)}
-                  className="w-full studio-input-well rounded-xl px-3 py-2 text-xs font-mono text-white"
+                  className="w-full min-w-0 studio-input-well rounded-xl px-3 py-2 text-xs font-mono text-white"
                 />
               </div>
               <div>
@@ -246,14 +236,14 @@ export const TransparencyView: React.FC = () => {
                     data-testid="verifier-nonce-input"
                     value={verifyNonce}
                     onChange={(e) => setVerifyNonce(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-20 studio-input-well rounded-xl px-2.5 py-2 text-xs font-mono text-[#fbbf24] tabular-nums"
+                    className="w-20 shrink-0 studio-input-well rounded-xl px-2.5 py-2 text-xs font-mono text-[#fbbf24] tabular-nums"
                   />
                   <input
                     type="text"
                     dir="ltr"
                     value={verifyRoundCode}
                     onChange={(e) => setVerifyRoundCode(e.target.value)}
-                    className="flex-1 studio-input-well rounded-xl px-2.5 py-2 text-xs font-mono text-white"
+                    className="flex-1 min-w-0 studio-input-well rounded-xl px-2.5 py-2 text-xs font-mono text-white"
                   />
                 </div>
               </div>
@@ -462,16 +452,16 @@ export const TransparencyView: React.FC = () => {
           <div className="space-y-2.5">
             {[
               {
-                title: 'خزانه اصلی جوایز شبکه تون (TON Smart Multi-Sig Vault)',
+                title: 'خزانه اصلی جوایز شبکه تون (LuckyDrop TON Multi-Sig Vault)',
                 balance: '50,000.00 TON',
-                address: 'UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
-                explorer: 'https://tonviewer.com/UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
+                address: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
+                explorer: 'https://tonviewer.com/UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
               },
               {
-                title: 'خزانه پشتیبان ستاره‌های تلگرام (Telegram Stars Reserve)',
+                title: 'خزانه پشتیبان ستاره‌های تلگرام (LuckyDrop Stars Reserve)',
                 balance: '12,500,000 ⭐',
                 address: 'UQB9xV7kM2nPqR8tW4yZ1cF5hJ6kL0mN3pQ_StarsPool',
-                explorer: 'https://tonviewer.com/UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
+                explorer: 'https://tonviewer.com/UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
               },
             ].map((vault) => (
               <div

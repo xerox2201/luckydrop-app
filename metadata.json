@@ -1,6 +1,6 @@
 {
-  "name": "LuckyDrop — زرین لاتاری VIP",
-  "description": "سامانه قرعه‌کشی‌های میلیاردی و لاتاری غیرمتمرکز Web3 با الگوریتم اثبات‌پذیر منصفانه (Provably Fair SHA-256) و تسویه آنی کریپتو.",
+  "name": "Lucky D ROP",
+  "description": "Lucky D ROP — پلتفرم رسمی لاتاری و بازی‌های آرکید Web3 روی شبکه TON و Telegram Stars با تسویه آنی.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

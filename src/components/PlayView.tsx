@@ -133,12 +133,7 @@ export const PlayView: React.FC = () => {
     navigateTo('my-tickets');
   };
 
-  const currentSlipSeed = bulkSlips[activeSlipIndex]?.clientSeed || 'zarrin_vip_seed';
-  const liveCommitHash = computeDeterministicHash(
-    activeLotterySpec.serverSeedHash,
-    currentSlipSeed,
-    activeLotterySpec.roundCode
-  );
+  const currentSlipSeed = bulkSlips[activeSlipIndex]?.clientSeed || 'luckydrop_vip_seed';
 
   const countdownSec = lotteryTimers[activeLotteryId] || activeLotterySpec.initialCountdownSec;
   const hrs = Math.floor(countdownSec / 3600);
@@ -151,7 +146,7 @@ export const PlayView: React.FC = () => {
       <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex items-center justify-between gap-2">
         <div className="min-w-0">
           <span className="text-[10px] font-mono font-bold text-[#a855f7] tracking-wider block truncate">
-            VIP TICKET TERMINAL • ترمینال صدور بلیت
+            LUCKYDROP TERMINAL • ترمینال صدور بلیت
           </span>
           <h1 className="text-sm font-black text-white mt-0.5 truncate">
             خرید تکی و دسته‌ای بلیت با تخفیف پلکانی
@@ -396,13 +391,13 @@ export const PlayView: React.FC = () => {
         </div>
       )}
 
-      {/* 6. CLIENT SEED & FULL CRYPTOGRAPHIC COMMITMENT HASH */}
+      {/* 6. CLIENT SEED (Pre-draw hash is hidden and revealed strictly AFTER the lottery draw completes) */}
       <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 space-y-2.5">
         <div className="flex items-center justify-between text-[11px]">
           <span className="font-bold text-[#00f59b]">
             🔒 بذر اختصاصی کوپن #{toPersianDigits(activeSlipIndex + 1)} (Client Seed)
           </span>
-          <span className="font-mono text-[10px] text-purple-300/60">HMAC-SHA256</span>
+          <span className="font-mono text-[10px] text-purple-300/60">POST-DRAW VERIFIED</span>
         </div>
         <input
           type="text"
@@ -411,24 +406,9 @@ export const PlayView: React.FC = () => {
           className="w-full bg-[#070510] border border-purple-500/25 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono"
           dir="ltr"
         />
-        <div className="rounded-xl bg-[#070510]/90 border border-purple-500/20 px-2.5 py-2 space-y-1.5" dir="ltr">
-          <div className="flex items-start gap-2">
-            <span className="text-[10px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-[#a855f7] shrink-0">
-              hash
-            </span>
-            <code className="text-[10px] font-mono text-purple-200/90 break-all leading-relaxed select-all">
-              {provablyFairSeeds.serverSeedHash}
-            </code>
-          </div>
-          <div className="flex items-start gap-2 pt-1 border-t border-purple-500/15">
-            <span className="text-[10px] font-mono font-black uppercase px-1.5 py-0.5 rounded bg-emerald-500/15 text-[#00f59b] shrink-0">
-              hash
-            </span>
-            <code className="text-[10px] font-mono text-emerald-300/90 break-all leading-relaxed select-all">
-              {liveCommitHash}
-            </code>
-          </div>
-        </div>
+        <p className="text-[10px] text-purple-200/75 leading-relaxed">
+          جهت امنیت کامل و غیرقابل پیش‌بینی بودن قرعه‌کشی، کد هش (<code className="font-mono text-[#fbbf24]">hash</code>) پس از انجام قرعه‌کشی روی کوپن و در تاریخچه منتشر می‌شود.
+        </p>
       </div>
 
       {/* 7. MULTI-CHANCE CART SUMMARY & CHECKOUT */}

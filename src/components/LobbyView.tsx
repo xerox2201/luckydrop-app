@@ -10,6 +10,15 @@ import {
   toPersianDigits,
 } from '../utils/lotteryEngine.ts';
 import { ThreeGoldenSphere } from './ThreeGoldenSphere.tsx';
+import {
+  LuckyDropLogo,
+  downloadOfficialLuckyDropLogoPng,
+  downloadOfficialLuckyDropSplash3dPng,
+  downloadOfficialLuckyDropJackpot3dPng,
+  downloadOfficialLuckyDropLogoSvg,
+} from './LuckyDropLogo.tsx';
+import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
+import { SplashScreen } from './SplashScreen.tsx';
 import { HapticEngine } from '../utils/telegramTma.ts';
 
 export const LobbyView: React.FC = () => {
@@ -44,9 +53,11 @@ export const LobbyView: React.FC = () => {
   const [bundleQty, setBundleQty] = useState<1 | 5 | 10>(1);
   const [instantMintBanner, setInstantMintBanner] = useState<string | null>(null);
   const [showVerifier, setShowVerifier] = useState<boolean>(false);
+  const [showSplashPreview, setShowSplashPreview] = useState<boolean>(false);
+  const [logoDownloadFeedback, setLogoDownloadFeedback] = useState<string | null>(null);
 
-  // Provably Fair interactive verification box state
-  const [verifyServerSeed, setVerifyServerSeed] = useState<string>('zarrin_server_secret_v4_round_482');
+  // Provably Fair interactive verification box state (for completed past draws)
+  const [verifyServerSeed, setVerifyServerSeed] = useState<string>('luckydrop_server_secret_v4_round_482');
   const [verifyClientSeed, setVerifyClientSeed] = useState<string>(
     '0x7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069'
   );
@@ -167,7 +178,7 @@ export const LobbyView: React.FC = () => {
     const res = await mintTicket('TON Network');
     if (res.ok && res.ticket) {
       HapticEngine.notificationOccurred('success');
-      setInstantMintBanner(`✅ کوپن #${res.ticket.ticketCode} به استخر ${activeSpec.roundCode} اضافه شد!`);
+      setInstantMintBanner(`✅ کوپن #${res.ticket.ticketCode} در دور ${activeSpec.roundCode} ثبت شد!`);
       setTimeout(() => setInstantMintBanner(null), 4000);
     } else {
       navigateTo('play');
@@ -206,11 +217,6 @@ export const LobbyView: React.FC = () => {
     Number(matchingRound?.ticketPriceUsdt) || activeSpec.ticketPriceUsdt || 5;
   const bundleDiscount = bundleQty === 10 ? 0.9 : bundleQty === 5 ? 0.95 : 1;
   const totalBuyCostUsdt = Number((unitTicketPriceUsdt * bundleQty * bundleDiscount).toFixed(2));
-  const activeFullSeedHash = (
-    matchingRound?.serverSeedHash ||
-    activeSpec.serverSeedHash ||
-    provablyFairSeeds.serverSeedHash
-  ).replace(/^0x/, '');
 
   const jackpotWinners = transactions.filter(
     (t) =>
@@ -236,14 +242,31 @@ export const LobbyView: React.FC = () => {
       )}
 
       {/* =====================================================================
-          a) COMPACT HERO JACKPOT CARD
-          Dynamic Pool Switcher (synced with Admin Rounds), 85% Distributable Pool
-          readout in 💎 TON or ⭐ Stars, 15% Site Share badge, and 3D Glass Machine.
+          a) COMPACT HERO JACKPOT CARD WITH REAL 3D VAULT BACKGROUND
+          Dynamic Pool Switcher, Jackpot Pool readout in 💎 TON or ⭐ Stars,
+          and 3D Glass Machine (No site share or pre-draw hash exposed).
           ===================================================================== */}
-      <section className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex flex-col items-center text-center gap-3">
-        {/* Dynamic Pool Pill Switcher (Renders all active rounds managed by Admin) */}
+      <section className="relative rounded-2xl overflow-hidden bg-[#130d24]/95 border border-amber-400/30 p-4 shadow-[0_12px_36px_rgb(0,0,0,0.65)] backdrop-blur-md flex flex-col items-center text-center gap-3">
+        {/* Dynamic 3D Background Image matching the active Lottery Pool */}
+        <img
+          src={
+            activeLotteryId === 'DAILY_BLITZ'
+              ? LUXURY_IMAGES.poolDailyBlitz
+              : activeLotteryId === 'HOURLY_FLASH'
+              ? LUXURY_IMAGES.poolHourlyFlash
+              : activeLotteryId === 'TON_SPECIAL'
+              ? LUXURY_IMAGES.poolTonSpecial
+              : LUXURY_IMAGES.jackpotHero3d
+          }
+          alt="LuckyDrop 3D Jackpot Vault Background"
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 w-full h-full object-cover opacity-35 scale-105 pointer-events-none transition-all duration-500"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#080512]/78 via-[#0d071c]/82 to-[#090514]/94 pointer-events-none" />
+
+        {/* Dynamic Pool Pill Switcher */}
         <div
-          className="w-full flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5"
+          className="relative z-10 w-full flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5"
           dir="rtl"
         >
           {rounds.map((r) => {
@@ -274,8 +297,8 @@ export const LobbyView: React.FC = () => {
           })}
         </div>
 
-        {/* Centered Dynamic 85% Pool Readout & Sleek HH:MM:SS Countdown Pill */}
-        <div className="flex flex-col items-center gap-1.5 pt-0.5 w-full">
+        {/* Centered Jackpot Pool Readout & Sleek HH:MM:SS Countdown Pill */}
+        <div className="relative z-10 flex flex-col items-center gap-1.5 pt-0.5 w-full">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#070510]/90 border border-purple-500/25">
             <span className="text-[11px] font-semibold text-purple-200">
               {matchingRound?.titleFa || activeSpec.titleFa}
@@ -290,7 +313,7 @@ export const LobbyView: React.FC = () => {
           </div>
 
           <div className="text-[10px] font-bold text-[#00f59b]">
-            جایزه خالص قابل تقسیم راس تایم (۸۵٪ استخر جمع‌شده):
+            جایزه بزرگ قرعه‌کشی زنده LuckyDrop:
           </div>
 
           <div
@@ -302,32 +325,17 @@ export const LobbyView: React.FC = () => {
             {formatAmount(megaJackpotUsdt)}
           </div>
 
-          {/* Dynamic Pool Transparency Pill: Gross Collected vs 15% Site Reserved */}
-          <div className="flex items-center justify-center gap-2 flex-wrap text-[10px] text-purple-200/85 bg-[#070510]/80 border border-purple-500/20 rounded-xl px-2.5 py-1">
+          <div className="flex items-center justify-center gap-2 flex-wrap text-[10px] text-purple-200/85 bg-[#070510]/85 border border-purple-500/25 rounded-xl px-2.5 py-1">
             <span>
-              کل استخر جمع‌شده: <strong className="text-white" dir="ltr">{formatAmount(poolBreakdown.grossCollectedUsdt)}</strong>
+              ورودی هر بلیت: <strong className="text-white" dir="ltr">{formatAmount(unitTicketPriceUsdt)}</strong>
             </span>
             <span className="text-purple-500/50">•</span>
-            <span className="text-[#fbbf24]">۱۵٪ سهم محفوظ سایت</span>
-          </div>
-
-          {/* Full Real Network Seed Hash ("hash" + complete 64-char hex code) */}
-          <div
-            className="w-full rounded-xl bg-[#070510]/80 border border-purple-500/20 px-2.5 py-1.5 flex items-baseline gap-1.5 text-left"
-            dir="ltr"
-          >
-            <span className="text-[10px] font-mono font-bold text-[#fbbf24] shrink-0">hash</span>
-            <code
-              data-testid="lobby-hero-full-seed-hash"
-              className="text-[9.5px] font-mono text-purple-200/85 break-all select-all leading-tight"
-            >
-              {activeFullSeedHash}
-            </code>
+            <span className="text-[#00f59b]">انتشار هش تایید بلافاصله پس از قرعه‌کشی</span>
           </div>
         </div>
 
         {/* Seamlessly Embedded 3D Glass Air-Mix Machine (Zero Double Borders) */}
-        <div className="w-full">
+        <div className="relative z-10 w-full">
           <ThreeGoldenSphere />
         </div>
       </section>
@@ -336,9 +344,16 @@ export const LobbyView: React.FC = () => {
           b) CLEAN NUMBER PICKER CARD (ALL 50 / 35 / 25 / 40 BALLS + 15 GOLDEN BALLS)
           Every number button is a compact, symmetrical perfect circle.
           ===================================================================== */}
-      <section className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-3">
+      <section className="relative rounded-2xl overflow-hidden bg-[#130d24]/92 border border-purple-500/25 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.45)] backdrop-blur-md space-y-3">
+        <img
+          src={LUXURY_IMAGES.playTicketsBanner}
+          alt="LuckyDrop 3D VIP Tickets Background"
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 w-full h-full object-cover opacity-15 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#130d24]/85 via-[#0c0718]/90 to-[#090514]/95 pointer-events-none" />
         {/* Single Aligned Header Row: ⚡ Quick Pick + Ticket Quantity (1x, 5x, 10x) */}
-        <div className="flex items-center justify-between gap-2" dir="ltr">
+        <div className="relative z-10 flex items-center justify-between gap-2" dir="ltr">
           <motion.button
             whileTap={{ scale: 0.96 }}
             type="button"
@@ -377,7 +392,7 @@ export const LobbyView: React.FC = () => {
 
         {/* Selected Balls Summary Strip */}
         <div
-          className="flex items-center justify-between rounded-xl bg-[#070510]/90 border border-purple-500/20 px-3 py-2"
+          className="relative z-10 flex items-center justify-between rounded-xl bg-[#070510]/90 border border-purple-500/20 px-3 py-2"
           dir="ltr"
         >
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -404,7 +419,7 @@ export const LobbyView: React.FC = () => {
         </div>
 
         {/* Symmetrical 10-Column Grid (Shows ALL 50 / 35 / 25 / 40 Main Balls as Compact Perfect Circles) */}
-        <div className="space-y-1.5">
+        <div className="relative z-10 space-y-1.5">
           <div className="flex items-center justify-between text-[11px] font-medium text-purple-300/70 gap-2">
             <span className="truncate">
               انتخاب {toPersianDigits(mainCount)} گوی اصلی (۱ تا {toPersianDigits(mainMax)}):
@@ -443,7 +458,7 @@ export const LobbyView: React.FC = () => {
 
         {/* Symmetrical 8-Column Golden Star Ball Grid (★1 to ★15 / ★10 / ★12) */}
         {goldenMax > 0 && (
-          <div className="pt-2 border-t border-purple-500/15 space-y-1.5">
+          <div className="relative z-10 pt-2 border-t border-purple-500/15 space-y-1.5">
             <div className="flex items-center justify-between text-[11px] font-medium text-purple-300/70">
               <span>انتخاب ۱ گوی طلایی شانس (۱ تا {toPersianDigits(goldenMax)}):</span>
               <span className="font-mono font-bold tabular-nums text-[#fbbf24]" dir="ltr">
@@ -483,7 +498,7 @@ export const LobbyView: React.FC = () => {
         )}
 
         {/* Full-Width Tactile Buy Ticket CTA */}
-        <div className="pt-1 flex gap-2">
+        <div className="relative z-10 pt-1 flex gap-2">
           <motion.button
             whileTap={{ scale: 0.96 }}
             type="button"
@@ -516,7 +531,7 @@ export const LobbyView: React.FC = () => {
           c) 3-TAB SEGMENTED SWITCHER:
           1) بلیت‌های من (My Tickets)
           2) قوانین و جدول جوایز (Rules & Prize Tiers)
-          3) تاریخچه و اثبات عدالت (Past Draws & Provably Fair)
+          3) تاریخچه و بررسی هش پس از قرعه‌کشی (Past Draws & Post-Draw Hash)
           ===================================================================== */}
       <section className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-3">
         <div className="grid grid-cols-3 gap-1 bg-[#070510] p-1 rounded-xl border border-purple-500/20">
@@ -581,6 +596,11 @@ export const LobbyView: React.FC = () => {
               {tickets.slice(0, 4).map((t) => {
                 const prize = parseFloat(t.prizeWonUsdt) || 0;
                 const isWinner = prize > 0 || t.status.toUpperCase() === 'WON';
+                const ticketRound = rounds.find((r) => r.roundCode === t.roundCode);
+                const isRoundStillActive = ticketRound
+                  ? ticketRound.status.toUpperCase() === 'ACTIVE'
+                  : t.status.toUpperCase() === 'ACTIVE';
+                const isDrawCompleted = !isRoundStillActive && (isWinner || ['WON', 'LOST', 'DRAWN', 'COMPLETED'].includes(t.status.toUpperCase()));
                 let parsedNums: number[] = [7, 14, 23, 38, 49];
                 try {
                   parsedNums = JSON.parse(t.mainNumbers);
@@ -629,6 +649,10 @@ export const LobbyView: React.FC = () => {
                           <span className="px-2.5 py-0.5 rounded-lg bg-[#00f59b]/20 border border-[#00f59b]/50 text-[#00f59b] text-[11px] font-semibold tabular-nums">
                             +{formatAmount(prize)}
                           </span>
+                        ) : isDrawCompleted ? (
+                          <span className="px-2.5 py-0.5 rounded-lg bg-slate-800 border border-slate-600/40 text-slate-300 text-[11px] font-medium">
+                            Drawn
+                          </span>
                         ) : (
                           <span className="px-2.5 py-0.5 rounded-lg bg-purple-500/15 border border-purple-500/25 text-purple-200/80 text-[11px] font-medium">
                             Active
@@ -644,14 +668,20 @@ export const LobbyView: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="pt-1.5 border-t border-purple-500/15 flex items-baseline gap-1.5">
-                      <span className="text-[10px] font-mono font-bold text-[#fbbf24] shrink-0">
-                        hash
-                      </span>
-                      <code className="text-[9.5px] font-mono text-purple-300/80 break-all select-all">
-                        {fullTicketHash}
-                      </code>
-                    </div>
+                    {isDrawCompleted ? (
+                      <div className="pt-1.5 border-t border-purple-500/15 flex items-baseline gap-1.5">
+                        <span className="text-[10px] font-mono font-bold text-[#fbbf24] shrink-0">
+                          hash
+                        </span>
+                        <code className="text-[9.5px] font-mono text-purple-300/80 break-all select-all">
+                          {fullTicketHash}
+                        </code>
+                      </div>
+                    ) : (
+                      <div className="pt-1.5 border-t border-purple-500/15 text-[10px] text-purple-300/65 text-right" dir="rtl">
+                        🔒 کد هش پس از انجام قرعه‌کشی منتشر می‌شود
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -662,7 +692,7 @@ export const LobbyView: React.FC = () => {
                   onClick={() => navigateTo('terms')}
                   className="text-[11px] font-semibold text-purple-300/70 hover:text-white underline cursor-pointer"
                 >
-                  📜 مشاهده قوانین کامل و ضرایب
+                  📜 مشاهده قوانین و امنیت LuckyDrop
                 </button>
                 <motion.button
                   whileTap={{ scale: 0.96 }}
@@ -690,7 +720,7 @@ export const LobbyView: React.FC = () => {
                 <div className="flex items-center justify-between text-xs font-bold text-white">
                   <span>🏆 جدول ضرایب و رده‌های جوایز ({activeSpec.titleFa})</span>
                   <span className="text-[11px] font-mono text-[#00f59b]" dir="ltr">
-                    85% RTP Pool
+                    LuckyDrop
                   </span>
                 </div>
 
@@ -729,26 +759,23 @@ export const LobbyView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Financial Waterfall & Fair Play Rules */}
+              {/* Clean Player-Facing Rules & Security */}
               <div className="rounded-xl bg-[#070510]/90 border border-purple-500/20 p-3 space-y-2 text-xs">
                 <div className="font-bold text-[#fbbf24]">
-                  ⚖️ قوانین مالی و مکانیزم اثبات‌پذیری (Provably Fair HMAC-SHA256)
+                  ⚖️ قوانین قرعه‌کشی و امنیت نتایج (LuckyDrop)
                 </div>
                 <ul className="space-y-1 text-[11px] text-purple-200/85 leading-relaxed list-disc list-inside">
                   <li>
-                    <strong>۸۵٪ کل فروش بلیت‌ها</strong> مستقیماً در استخر جوایز همان دور قفل می‌شود.
-                  </li>
-                  <li>
-                    <strong>۳٪ ذخیره Rollover</strong> به استخر دور بعد و صندوق وفاداری VIP منتقل می‌گردد و ۲٪ صرف گس شبکه می‌شود.
+                    جوایز هر دور به صورت خودکار و آنی به موجودی TON یا Telegram Stars برندگان واریز می‌گردد.
                   </li>
                   <li>
                     تخفیف خرید دسته‌ای: خرید <strong>5x بلیت شامل ۵٪ تخفیف</strong> و خرید{' '}
                     <strong>10x بلیت شامل ۱۰٪ تخفیف</strong> آنی است.
                   </li>
                   <li>
-                    تمامی گوی‌های خروجی با فرمول رمزنگاری{' '}
-                    <code className="font-mono text-[#00f59b]">HMAC_SHA256(serverSeed, clientSeed:nonce)</code>{' '}
-                    استخراج شده و کد کامل <code className="font-mono text-[#fbbf24]">hash</code> قبل از قرعه‌کشی منتشر می‌شود.
+                    جهت جلوگیری از هرگونه پیش‌بینی، بذر سرور و کد کامل{' '}
+                    <code className="font-mono text-[#fbbf24]">hash</code> صرفاً{' '}
+                    <strong>پس از پایان قرعه‌کشی</strong> در تب تاریخچه منتشر می‌شوند تا بازیکنان بتوانند اصالت خروجی را بازبینی نمایند.
                   </li>
                 </ul>
 
@@ -759,7 +786,7 @@ export const LobbyView: React.FC = () => {
                     onClick={() => navigateTo('terms')}
                     className="h-9 rounded-xl bg-purple-600/25 hover:bg-purple-600/35 border border-purple-400/40 text-[11px] font-bold text-white flex items-center justify-center gap-1 cursor-pointer"
                   >
-                    <span>📜 قوانین و مقررات جامع</span>
+                    <span>📜 قوانین و حریم امنیتی</span>
                   </button>
                   <button
                     type="button"
@@ -767,7 +794,7 @@ export const LobbyView: React.FC = () => {
                     onClick={() => navigateTo('transparency')}
                     className="h-9 rounded-xl bg-[#090612] hover:bg-purple-950/70 border border-purple-500/30 text-[11px] font-bold text-[#00f59b] flex items-center justify-center gap-1 cursor-pointer"
                   >
-                    <span>🛡️ مرکز شفافیت و حسابرسی</span>
+                    <span>🛡️ راستی‌آزمایی دورهای قبل</span>
                   </button>
                 </div>
               </div>
@@ -850,7 +877,7 @@ export const LobbyView: React.FC = () => {
                 ))}
               </div>
 
-              {/* Compact Provably Fair Verifier Toggle */}
+              {/* Compact Provably Fair Verifier Toggle for Past Completed Draws */}
               <div className="pt-1 border-t border-purple-500/15 space-y-2">
                 <div className="flex items-center justify-between">
                   <button
@@ -858,7 +885,7 @@ export const LobbyView: React.FC = () => {
                     onClick={() => setShowVerifier((prev) => !prev)}
                     className="text-[11px] font-semibold text-purple-200/80 hover:text-white underline cursor-pointer"
                   >
-                    {showVerifier ? 'بستن ماشین‌حساب SHA-256' : '🔍 بازبینی هش قرعه‌کشی (SHA-256)'}
+                    {showVerifier ? 'بستن ماشین‌حساب SHA-256' : '🔍 بازبینی هش دورهای پایان‌یافته (SHA-256)'}
                   </button>
                   <button
                     type="button"
@@ -877,7 +904,7 @@ export const LobbyView: React.FC = () => {
                       value={verifyServerSeed}
                       onChange={(e) => setVerifyServerSeed(e.target.value)}
                       className="h-8 rounded-lg bg-[#070510] border border-purple-500/25 px-2 text-[10px] font-mono text-white"
-                      placeholder="Server Seed"
+                      placeholder="Revealed Seed"
                     />
                     <input
                       type="text"
@@ -917,6 +944,162 @@ export const LobbyView: React.FC = () => {
           )}
         </AnimatePresence>
       </section>
+
+      {/* =====================================================================
+          d) OFFICIAL LUCKYDROP 3D BRAND STUDIO, 3D ASSETS & SPLASH PREVIEW
+          ===================================================================== */}
+      <section
+        data-testid="luckydrop-brand-studio-card"
+        className="relative rounded-2xl overflow-hidden bg-[#130d24]/92 border border-amber-400/35 p-3.5 shadow-[0_12px_36px_rgb(0,0,0,0.55)] space-y-3"
+      >
+        <div className="flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <LuckyDropLogo size={48} variant="3d" />
+            <div className="space-y-0.5 min-w-0">
+              <div className="text-xs font-extrabold text-amber-300 leading-snug">
+                استودیو هویت بصری سه‌بعدی LuckyDrop
+              </div>
+              <div className="text-[10px] text-purple-200/80 leading-relaxed">
+                لوگوی 3D، بک‌گراند 3D لودینگ و بنرهای 3D اختصاصی رندر شده
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="open-splash-preview-btn"
+            onClick={() => {
+              HapticEngine.impactOccurred('light');
+              setShowSplashPreview(true);
+            }}
+            className="h-8 px-2.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/50 text-[11px] font-bold text-amber-300 shrink-0 cursor-pointer whitespace-nowrap"
+          >
+            🎬 پیش‌نمایش لودینگ 3D
+          </button>
+        </div>
+
+        {/* 4-Card 3D Asset Preview Grid */}
+        <div className="grid grid-cols-4 gap-2" dir="rtl">
+          <div className="rounded-xl bg-[#070510]/90 border border-amber-400/30 p-1.5 flex flex-col items-center gap-1">
+            <img
+              src={LUXURY_IMAGES.logo3d}
+              alt="LuckyDrop 3D Logo"
+              referrerPolicy="no-referrer"
+              className="w-full aspect-square rounded-lg object-cover border border-amber-400/30"
+            />
+            <span className="text-[9.5px] font-bold text-amber-200 truncate w-full text-center">
+              لوگوی 3D
+            </span>
+          </div>
+          <div className="rounded-xl bg-[#070510]/90 border border-purple-500/30 p-1.5 flex flex-col items-center gap-1">
+            <img
+              src={LUXURY_IMAGES.splashBg3d}
+              alt="LuckyDrop 3D Splash Background"
+              referrerPolicy="no-referrer"
+              className="w-full aspect-square rounded-lg object-cover border border-purple-400/30"
+            />
+            <span className="text-[9.5px] font-bold text-purple-200 truncate w-full text-center">
+              لودینگ 3D
+            </span>
+          </div>
+          <div className="rounded-xl bg-[#070510]/90 border border-purple-500/30 p-1.5 flex flex-col items-center gap-1">
+            <img
+              src={LUXURY_IMAGES.jackpotHero3d}
+              alt="LuckyDrop 3D Jackpot Background"
+              referrerPolicy="no-referrer"
+              className="w-full aspect-square rounded-lg object-cover border border-purple-400/30"
+            />
+            <span className="text-[9.5px] font-bold text-purple-200 truncate w-full text-center">
+              بک‌گراند جک‌پات
+            </span>
+          </div>
+          <div className="rounded-xl bg-[#070510]/90 border border-purple-500/30 p-1.5 flex flex-col items-center gap-1">
+            <img
+              src={LUXURY_IMAGES.gamesBanner3d}
+              alt="LuckyDrop 3D Games Background"
+              referrerPolicy="no-referrer"
+              className="w-full aspect-square rounded-lg object-cover border border-purple-400/30"
+            />
+            <span className="text-[9.5px] font-bold text-purple-200 truncate w-full text-center">
+              بک‌گراند آرنا
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            data-testid="download-logo-png-btn"
+            onClick={async () => {
+              HapticEngine.impactOccurred('medium');
+              await downloadOfficialLuckyDropLogoPng();
+              setLogoDownloadFeedback('✅ لوگوی 3D رسمی (1024×1024 PNG) دانلود شد.');
+              setTimeout(() => setLogoDownloadFeedback(null), 3500);
+            }}
+            className="h-9 rounded-xl bg-[#070510]/90 hover:bg-purple-950/60 border border-amber-400/35 text-[11px] font-bold text-amber-300 flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <span>📥 دانلود لوگوی 3D (PNG)</span>
+          </button>
+          <button
+            type="button"
+            data-testid="download-splash-3d-btn"
+            onClick={() => {
+              HapticEngine.impactOccurred('light');
+              downloadOfficialLuckyDropSplash3dPng();
+              setLogoDownloadFeedback('✅ بک‌گراند 3D لودینگ (1080×1920 PNG) دانلود شد.');
+              setTimeout(() => setLogoDownloadFeedback(null), 3500);
+            }}
+            className="h-9 rounded-xl bg-[#070510]/90 hover:bg-purple-950/60 border border-purple-500/30 text-[11px] font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <span>🖼️ دانلود بک‌گراند 3D لودینگ</span>
+          </button>
+          <button
+            type="button"
+            data-testid="download-jackpot-3d-btn"
+            onClick={() => {
+              HapticEngine.impactOccurred('light');
+              downloadOfficialLuckyDropJackpot3dPng();
+              setLogoDownloadFeedback('✅ بک‌گراند 3D جک‌پات (1600×900 PNG) دانلود شد.');
+              setTimeout(() => setLogoDownloadFeedback(null), 3500);
+            }}
+            className="h-9 rounded-xl bg-[#070510]/90 hover:bg-purple-950/60 border border-purple-500/30 text-[11px] font-bold text-purple-200 flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <span>💎 دانلود بک‌گراند 3D جک‌پات</span>
+          </button>
+          <button
+            type="button"
+            data-testid="download-logo-svg-btn"
+            onClick={() => {
+              HapticEngine.impactOccurred('light');
+              downloadOfficialLuckyDropLogoSvg();
+              setLogoDownloadFeedback('✅ فایل وکتور لوگوی رسمی (SVG) دانلود شد.');
+              setTimeout(() => setLogoDownloadFeedback(null), 3500);
+            }}
+            className="h-9 rounded-xl bg-[#070510]/90 hover:bg-purple-950/60 border border-purple-500/30 text-[11px] font-bold text-[#00f59b] flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <span>📐 دانلود وکتور (SVG)</span>
+          </button>
+        </div>
+
+        {logoDownloadFeedback && (
+          <div className="rounded-xl bg-[#00f59b]/10 border border-[#00f59b]/35 px-3 py-1.5 text-[11px] font-bold text-[#00f59b] text-center">
+            {logoDownloadFeedback}
+          </div>
+        )}
+      </section>
+
+      {showSplashPreview && (
+        <SplashScreen
+          state={{
+            ready: false,
+            progress: 60,
+            stepTitleFa: 'همگام‌سازی استخرهای قرعه‌کشی و کیف پول',
+            stepSubtitleEn: 'Syncing Prize Pools & Wallet',
+            errorStatus: null,
+          }}
+          onRetry={() => setShowSplashPreview(false)}
+          onClosePreview={() => setShowSplashPreview(false)}
+        />
+      )}
     </div>
   );
 };

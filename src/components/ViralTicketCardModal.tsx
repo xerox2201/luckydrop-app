@@ -57,7 +57,7 @@ export const ViralTicketCardModal: React.FC = () => {
     ctx.fillStyle = '#fbbf24';
     ctx.font = '900 32px Inter, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('👑 LUCKYDROP • ZARRIN LOTTERY VIP 👑', width / 2, 145);
+    ctx.fillText('👑 LUCKYDROP • OFFICIAL WEB3 LOTTERY 👑', width / 2, 145);
 
     ctx.fillStyle = '#e2e8f0';
     ctx.font = 'bold 46px Vazirmatn, sans-serif';
@@ -65,7 +65,7 @@ export const ViralTicketCardModal: React.FC = () => {
     ctx.fillText(
       prize > 0
         ? `🎉 گواهی رسمی برنده جایزه ${(prize / 5).toFixed(2)} TON 🎉`
-        : '✨ کوپن رسمی شرکت در مگا جک‌پات زرین لاتاری ✨',
+        : '✨ کوپن رسمی شرکت در قرعه‌کشی بزرگ LuckyDrop ✨',
       width / 2,
       215
     );
@@ -207,7 +207,7 @@ export const ViralTicketCardModal: React.FC = () => {
     setTimeout(() => setDownloadedToast(false), 3000);
   };
 
-  const shareText = `👑 کوپن رسمی من (${viralCardTicket.ticketCode}) در مگا جک‌پات زرین لاتاری VIP!\n✨ با کد معرف من وارد شوید: ${referralCode}\n🔗 ${referralUrl}`;
+  const shareText = `👑 کوپن رسمی من (${viralCardTicket.ticketCode}) در قرعه‌کشی بزرگ LuckyDrop!\n✨ با کد معرف من وارد شوید: ${referralCode}\n🔗 ${referralUrl}`;
 
   const handleCopyShareCaption = () => {
     navigator.clipboard?.writeText(shareText);

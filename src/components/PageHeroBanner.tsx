@@ -1,6 +1,12 @@
 import React from 'react';
 
 export const LUXURY_IMAGES = {
+  // Custom Rendered 3D LuckyDrop Brand & Background Suite
+  logo3d: '/assets/3d/luckydrop-3d-logo.png',
+  splashBg3d: '/assets/3d/luckydrop-3d-splash-bg.png',
+  jackpotHero3d: '/assets/3d/luckydrop-3d-jackpot-hero.png',
+  gamesBanner3d: '/assets/3d/luckydrop-3d-games-banner.png',
+
   // 1. Hero Centerpiece (#7 Gold Sphere with Royal Crown)
   heroSphere7: '/assets/aistudio/Gemini_Generated_Image__e0626b6e.jpg',
   // 2. Hero Wide Casino Vault Background
@@ -21,7 +27,7 @@ export const LUXURY_IMAGES = {
   cockpitCommandVault: '/assets/aistudio/Gemini_Generated_Image___12__7f974f44.jpg',
   telegramBot: '/assets/aistudio/Gemini_Generated_Image___13__cf879f0e.jpg',
   // 15-20. 3D Square Icons & Emblems
-  brandCrownLogo: '/assets/aistudio/Gemini_Generated_Image___14__0f1aa8f7.jpg',
+  brandCrownLogo: '/assets/3d/luckydrop-3d-logo.png',
   vipAvatar: '/assets/aistudio/Gemini_Generated_Image___15__f5bd1004.jpg',
   trophyIcon3d: '/assets/aistudio/Gemini_Generated_Image___16__d7467a9f.jpg',
   ticketIcon3d: '/assets/aistudio/Gemini_Generated_Image___17__711d1459.jpg',
@@ -47,8 +53,8 @@ export const PageHeroBanner: React.FC<PageHeroBannerProps> = ({
   badgeFa,
   titleFa,
   subtitleFa,
-  imageUrl = LUXURY_IMAGES.vaultHero,
-  iconUrl = LUXURY_IMAGES.brandCrownLogo,
+  imageUrl = LUXURY_IMAGES.jackpotHero3d,
+  iconUrl = LUXURY_IMAGES.logo3d,
   rightContent,
 }) => {
   return (
@@ -57,6 +63,7 @@ export const PageHeroBanner: React.FC<PageHeroBannerProps> = ({
       <img
         src={imageUrl}
         alt={titleFa}
+        referrerPolicy="no-referrer"
         className="absolute inset-0 w-full h-full object-cover opacity-45 scale-105 transition-transform duration-700 pointer-events-none"
       />
       <div className="absolute inset-0 bg-gradient-to-l from-[#07090e]/92 via-[#0b0f18]/80 to-[#140f05]/75 pointer-events-none" />
@@ -66,7 +73,8 @@ export const PageHeroBanner: React.FC<PageHeroBannerProps> = ({
         <div className="flex items-start sm:items-center gap-4 max-w-2xl">
           <img
             src={iconUrl}
-            alt="Icon"
+            alt="LuckyDrop 3D Emblem"
+            referrerPolicy="no-referrer"
             className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-amber-400/70 shadow-[0_0_28px_rgba(245,158,11,0.45)] shrink-0"
           />
           <div className="space-y-2">

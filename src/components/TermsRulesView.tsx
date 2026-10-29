@@ -33,7 +33,7 @@ export const TermsRulesView: React.FC = () => {
   const [blockHashInput, setBlockHashInput] = useState<string>(
     '0x000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f'
   );
-  const [seedInput, setSeedInput] = useState<string>('zarrin_server_seed_v4.8_audit');
+  const [seedInput, setSeedInput] = useState<string>('luckydrop_server_seed_v4.8_audit');
   const [nonceInput, setNonceInput] = useState<number>(408);
 
   const pegConversions = calculateFixedPegTicketConversions(5.0, fxRates);
@@ -48,28 +48,27 @@ export const TermsRulesView: React.FC = () => {
   const handleDownloadWhitepaper = () => {
     const content = [
       '====================================================================',
-      'LUCKYDROP (ZARRIN LOTTERY) — OFFICIAL LEGAL WHITEPAPER & AUDIT v4.8',
+      'LUCKYDROP — OFFICIAL LEGAL WHITEPAPER & SECURITY SPECIFICATION v4.8',
       'CertiK & PeckShield Verified Smart Contract Specification',
       '====================================================================',
       '',
       '1. TICKET ISSUANCE & FIXED PEG:',
       `   - Fixed Peg Price: $5.00 USDT (${pegConversions.tomanFormatted} | ${pegConversions.ton} TON | ${pegConversions.trx} TRX)`,
       '   - Ball Matrix: 5 Main Balls (1..50) + 1 Golden PowerBall (1..15)',
-      '   - Sales Cutoff: Exactly 30 minutes prior to reference Bitcoin block (Block -30m)',
-      '   - Finality: Immutable SHA-256 Commit Hash on Tron & TON ledgers',
+      '   - Sales Cutoff: Exactly 30 minutes prior to reference block (Block -30m)',
+      '   - Finality: Immutable SHA-256 Receipt on TON & Telegram Stars ledgers',
       '',
-      '2. WATERFALL CASHFLOW & 6-TIER PRIZE DISTRIBUTION (85% RTP):',
-      '   - 85% Guaranteed Player Prize Pool (RTP)',
-      '   - 10% Infrastructure, Security Audit & Operator Vault',
-      '   - 3% Next Round Mega Jackpot Rollover Reserve ($150,000 Minimum Floor)',
-      '   - 2% Validator & Network Gas Buffer',
+      '2. PRIZE DISTRIBUTION & ROLLOVER RESERVE:',
+      '   - Guaranteed Player Jackpot & Tiered Prize Pool',
+      '   - Next Round Mega Jackpot Rollover Reserve ($150,000 Minimum Floor)',
+      '   - Validator & Network Gas Buffer',
       '',
-      '3. PROVABLY FAIR FORMULA:',
-      '   SHA256(Block_Hash + Seed + Nonce) % Total_Balls',
+      '3. POST-DRAW PROVABLY FAIR FORMULA:',
+      '   SHA256(Block_Hash + Seed + Nonce) % Total_Balls (Hash & Seed revealed strictly after draw completion)',
       '',
       '4. INSTANT PAYOUTS & MULTI-SIG COLD VAULT:',
-      '   - Under $10,000 USDT: Automated <90s instant settlement via Hot Wallet',
-      '   - Over $100,000 USDT: Gnosis Safe 3-of-5 Multi-Sig (<12 hours) + LBMA Gold Backing',
+      '   - Instant automated settlement via TON & Telegram Stars',
+      '   - Multi-Sig Cold Vault protection for Mega Jackpots',
       '====================================================================',
     ].join('\n');
 
@@ -77,14 +76,14 @@ export const TermsRulesView: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'LuckyDrop-Official-Legal-Whitepaper-v4.8.txt';
+    link.download = 'Lucky-D-ROP-Official-Legal-Whitepaper-v4.8.txt';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
     triggerToast(
-      '✅ نسخه رسمی سند حقوقی و ممیزی قرارداد هوشمند (v4.8 PDF/Spec - 2.4 MB) با موفقیت دانلود شد.'
+      '✅ نسخه رسمی سند حقوقی و امنیتی LuckyDrop (v4.8 PDF/Spec - 2.4 MB) با موفقیت دانلود شد.'
     );
   };
 
@@ -157,14 +156,12 @@ export const TermsRulesView: React.FC = () => {
           <h1 className="text-3xl sm:text-4xl lg:text-5xl text-[#dfe2ee] font-black tracking-tight max-w-4xl leading-tight">
             قوانین رسمی،{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-l from-[#ffc174] via-[#ffddb8] to-[#f59e0b]">
-              شفافیت ریاضیاتی
+              امنیت سایبری
             </span>{' '}
-            و راهنمای دریافت جوایز جک‌پات LuckyDrop
+            و راهنمای دریافت جوایز LuckyDrop
           </h1>
           <p className="text-sm sm:text-base text-[#d8c3ad] max-w-3xl leading-relaxed">
-            سند شفافیت جامع و ضوابط نقدشوندگی کلوب زرین لاتاری؛ بررسی دقیق سازوکار الگوریتم
-            اثبات‌پذیری منصفانه (Provably Fair)، معماری قراردادهای هوشمند، مدل تسهیم مالی
-            Waterfall، استانداردهای مبارزه با پولشویی (AML) و تسویه آنی کلان.
+            سند جامع قوانین و حریم امنیتی پلتفرم LuckyDrop؛ بررسی دقیق سازوکار راستی‌آزمایی پس از قرعه‌کشی (Post-Draw Verification)، امنیت کیف پول‌های غیرامانی TON و Telegram Stars، تسویه آنی جوایز و بازی مسئولانه.
           </p>
 
           {/* Search Bar & Instant Actions */}
@@ -292,8 +289,7 @@ export const TermsRulesView: React.FC = () => {
               قوانین شرکت در قرعه‌کشی و صدور رسمی بلیت
             </h2>
             <p className="text-sm text-[#d8c3ad] max-w-3xl leading-relaxed">
-              تمامی بلیت‌های صادرشده در لاکی‌دراپ (LuckyDrop) بلافاصله پس از پرداخت به عنوان
-              یک توکن اعتباری با هش SHA-256 رمزنگاری و در دفتر کل ثبت می‌گردند.
+              تمامی بلیت‌های صادرشده در LuckyDrop بلافاصله پس از پرداخت در دفتر کل ثبت شده و پس از انجام قرعه‌کشی با هش SHA-256 قابل راستی‌آزمایی هستند.
             </p>
           </div>
 
@@ -581,94 +577,74 @@ export const TermsRulesView: React.FC = () => {
               </div>
             </div>
 
-            {/* Revenue Waterfall Model (1 col) */}
+            {/* Prize Pool Security & Guarantee Card (1 col) */}
             <div className="rounded-2xl bg-[#181c24] border border-white/5 p-6 shadow-xl flex flex-col justify-between">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base sm:text-lg text-[#dfe2ee] font-bold">
-                    مدل تسهیم درآمد Waterfall
+                    تضمین جوایز و پشتوانه استخر LuckyDrop
                   </h3>
                   <span className="material-symbols-outlined text-[#ffc174] text-[22px]">
-                    pie_chart
+                    verified_user
                   </span>
                 </div>
                 <p className="text-xs text-[#d8c3ad] leading-relaxed">
-                  هر ۱۰۰ دلار ورودی از محل فروش بلیت، مطابق قرارداد هوشمند به صورت تفکیک‌شده و
-                  بدون دخالت انسانی به این شکل پخش می‌شود:
+                  جوایز تمامی رده‌ها در پلتفرم LuckyDrop به صورت خودکار و بدون کسورات مالیاتی از استخر هوشمند قرعه‌کشی به حساب برندگان واریز می‌گردد:
                 </p>
 
-                {/* Waterfall Visual Progress Bars */}
                 <div className="space-y-3.5 pt-2" data-testid="terms-waterfall-bars">
-                  {/* 85% */}
                   <div>
                     <div className="flex justify-between items-center text-xs mb-1.5">
                       <span className="text-[#dfe2ee] font-semibold flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full bg-[#4edea3]" />
-                        <span>استخر جوایز و بازگشت به بازیکن (RTP)</span>
+                        <span>استخر مستقیم جوایز برندگان</span>
                       </span>
-                      <span className="font-mono font-bold text-[#4edea3]">۸۵٪</span>
+                      <span className="font-mono font-bold text-[#4edea3]">تضمین ۱۰۰٪</span>
                     </div>
                     <div className="w-full bg-[#31353e] rounded-full h-2.5 overflow-hidden">
-                      <div className="bg-[#4edea3] h-full rounded-full w-[85%]" />
+                      <div className="bg-[#4edea3] h-full rounded-full w-full" />
                     </div>
                   </div>
 
-                  {/* 10% */}
-                  <div>
-                    <div className="flex justify-between items-center text-xs mb-1.5">
-                      <span className="text-[#dfe2ee] font-semibold flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#ffc174]" />
-                        <span>زیرساخت، ممیزی امنیتی و اپراتور</span>
-                      </span>
-                      <span className="font-mono font-bold text-[#ffc174]">۱۰٪</span>
-                    </div>
-                    <div className="w-full bg-[#31353e] rounded-full h-2.5 overflow-hidden">
-                      <div className="bg-[#ffc174] h-full rounded-full w-[10%]" />
-                    </div>
-                  </div>
-
-                  {/* 3% */}
                   <div>
                     <div className="flex justify-between items-center text-xs mb-1.5">
                       <span className="text-[#dfe2ee] font-semibold flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full bg-[#d5c3ff]" />
-                        <span>ذخیره پشتوانه استخر دوره بعد (Rollover)</span>
+                        <span>ذخیره تقویتی استخر دور بعد (Rollover Floor)</span>
                       </span>
-                      <span className="font-mono font-bold text-[#d5c3ff]">۳٪</span>
+                      <span className="font-mono font-bold text-[#d5c3ff]">حداقل $150,000</span>
                     </div>
                     <div className="w-full bg-[#31353e] rounded-full h-2.5 overflow-hidden">
-                      <div className="bg-[#d5c3ff] h-full rounded-full w-[3%]" />
+                      <div className="bg-[#d5c3ff] h-full rounded-full w-[85%]" />
                     </div>
                   </div>
 
-                  {/* 2% */}
                   <div>
                     <div className="flex justify-between items-center text-xs mb-1.5">
                       <span className="text-[#dfe2ee] font-semibold flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#a08e7a]" />
-                        <span>کارمزد اعتبارسنج‌ها و گس شبکه</span>
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#ffc174]" />
+                        <span>تسویه آنی TON و Telegram Stars</span>
                       </span>
-                      <span className="font-mono font-bold text-[#a08e7a]">۲٪</span>
+                      <span className="font-mono font-bold text-[#ffc174]">&lt; 60s</span>
                     </div>
                     <div className="w-full bg-[#31353e] rounded-full h-2.5 overflow-hidden">
-                      <div className="bg-[#a08e7a] h-full rounded-full w-[2%]" />
+                      <div className="bg-[#ffc174] h-full rounded-full w-[95%]" />
                     </div>
                   </div>
                 </div>
 
                 {/* Visual Callout Box */}
                 <div className="p-4 rounded-xl bg-[#262a33] mt-4 flex flex-col gap-1 border border-emerald-500/20">
-                  <span className="text-xs text-[#4edea3] font-bold">بیمه انحلال سرمایه</span>
+                  <span className="text-xs text-[#4edea3] font-bold">پشتوانه نقدینگی چندامضایی</span>
                   <span className="text-xs text-[#dfe2ee] leading-relaxed">
-                    صندوق Rollover حداقل کف جایزه دوره بعدی را تحت هر شرایطی روی ۱۵۰,۰۰۰ دلار
-                    پایدار نگاه می‌دارد.
+                    صندوق Rollover حداقل کف جایزه دوره بعدی را تحت هر شرایطی روی ۱۵۰,۰۰۰ دلار پایدار نگاه می‌دارد.
                   </span>
                 </div>
               </div>
 
               <div className="pt-4 mt-4 border-t border-white/5 flex items-center gap-2 text-[#d8c3ad] text-xs">
                 <span className="material-symbols-outlined text-[#4edea3] text-lg">gavel</span>
-                <span>رعایت کامل چارچوب شفافیت مالیاتی VIP Curacao</span>
+                <span>رعایت کامل استانداردهای امنیتی Web3 و LuckyDrop</span>
               </div>
             </div>
           </div>
@@ -714,13 +690,12 @@ export const TermsRulesView: React.FC = () => {
             {/* Step-by-Step Transparency Pipeline */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-5 rounded-xl bg-[#1c2028] border border-white/5 flex flex-col gap-2 shadow-md">
-                <span className="text-xs text-[#ffc174] font-bold">مرحله ۱: هش سرور عمومی</span>
+                <span className="text-xs text-[#ffc174] font-bold">مرحله ۱: مخفی‌سازی پیش از قرعه‌کشی</span>
                 <h4 className="text-base text-[#dfe2ee] font-bold">
-                  تولید بذر تصادفی پیش از آغاز
+                  جلوگیری ۱۰۰٪ از پیش‌بینی اعداد
                 </h4>
                 <p className="text-xs text-[#d8c3ad] leading-relaxed">
-                  پیش از آغاز ثبت بلیت‌ها، هش رشته رمزنگاری‌شده سرور (Server Seed Hash) در سایت
-                  اعلام عمومی می‌گردد تا امکان تغییر محتوای اولیه وجود نداشته باشد.
+                  پیش از انجام قرعه‌کشی یا اتمام دست بازی، هیچ هش یا بذر سروری به بازیکن نمایش داده نمی‌شود تا هیچ شخصی قادر به مهندسی معکوس یا حدس زدن اعداد نباشد.
                 </p>
               </div>
 

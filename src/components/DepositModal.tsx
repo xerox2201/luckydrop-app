@@ -20,16 +20,23 @@ export const DepositModal: React.FC = () => {
     navigateTo,
   } = useLottery();
 
-  const [tonAmount, setTonAmount] = useState<number>(5);
-  const [starsAmount, setStarsAmount] = useState<number>(500);
+  const [tonInput, setTonInput] = useState<string>('5');
+  const [starsInput, setStarsInput] = useState<string>('500');
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   if (!depositModalOpen) return null;
 
+  const tonAmount = Number(tonInput);
+  const starsAmount = Math.floor(Number(starsInput));
+
   const handleConfirm = async () => {
     HapticEngine.impactOccurred('medium');
     if (activeTmaCurrency === 'TON') {
+      if (!Number.isFinite(tonAmount) || tonAmount < 0.05) {
+        setStatusMessage('⚠️ حداقل مقدار واریز 0.05 TON است.');
+        return;
+      }
       if (!connectedTonWallet) {
         await connectTonWalletOneTap();
         return;
@@ -48,6 +55,10 @@ export const DepositModal: React.FC = () => {
       return;
     }
 
+    if (!Number.isFinite(starsAmount) || starsAmount < 10) {
+      setStatusMessage('⚠️ حداقل مقدار شارژ ۱۰ ستاره تلگرام (10 ⭐) است.');
+      return;
+    }
     setSubmitting(true);
     const res = await depositTelegramStarsInstant(starsAmount);
     setSubmitting(false);
@@ -74,7 +85,7 @@ export const DepositModal: React.FC = () => {
       >
         <div className="flex items-center justify-between">
           <h3 className="text-base font-bold tracking-wide text-white">
-            شارژ کیف پول (TON &amp; Stars)
+            شارژ کیف پول LuckyDrop (TON &amp; Stars)
           </h3>
           <button
             type="button"
@@ -127,7 +138,7 @@ export const DepositModal: React.FC = () => {
                 <button
                   key={preset}
                   type="button"
-                  onClick={() => setTonAmount(preset)}
+                  onClick={() => setTonInput(String(preset))}
                   className={`h-9 rounded-xl border text-xs font-semibold tabular-nums cursor-pointer ${
                     tonAmount === preset
                       ? 'bg-purple-600/35 border-purple-400/50 text-white'
@@ -138,23 +149,48 @@ export const DepositModal: React.FC = () => {
                 </button>
               ))}
             </div>
+
+            <input
+              type="text"
+              inputMode="decimal"
+              dir="ltr"
+              value={tonInput}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^0-9.]/g, '');
+                if ((v.match(/\./g) || []).length <= 1) setTonInput(v);
+              }}
+              placeholder="مقدار TON دلخواه (مثلاً 2.5)"
+              className="w-full h-10 bg-[#070510] border border-purple-500/25 rounded-xl px-3 text-xs font-mono font-bold text-[#00f59b]"
+            />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2" dir="ltr">
-            {[250, 500, 1000, 2500].map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => setStarsAmount(preset)}
-                className={`h-10 rounded-xl border text-xs font-semibold tabular-nums cursor-pointer ${
-                  starsAmount === preset
-                    ? 'bg-purple-600/35 border-purple-400/50 text-white'
-                    : 'bg-[#070510] border-purple-500/20 text-purple-200/80'
-                }`}
-              >
-                {formatCurrency(preset, 'STARS')}
-              </button>
-            ))}
+          <div className="flex flex-col gap-3" dir="ltr">
+            <div className="grid grid-cols-2 gap-2">
+              {[250, 500, 1000, 2500].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setStarsInput(String(preset))}
+                  className={`h-10 rounded-xl border text-xs font-semibold tabular-nums cursor-pointer ${
+                    starsAmount === preset
+                      ? 'bg-purple-600/35 border-purple-400/50 text-white'
+                      : 'bg-[#070510] border-purple-500/20 text-purple-200/80'
+                  }`}
+                >
+                  {formatCurrency(preset, 'STARS')}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="text"
+              inputMode="numeric"
+              dir="ltr"
+              value={starsInput}
+              onChange={(e) => setStarsInput(e.target.value.replace(/[^0-9]/g, ''))}
+              placeholder="تعداد ستاره دلخواه (مثلاً 350)"
+              className="w-full h-10 bg-[#070510] border border-purple-500/25 rounded-xl px-3 text-xs font-mono font-bold text-[#fbbf24]"
+            />
           </div>
         )}
 
@@ -175,9 +211,9 @@ export const DepositModal: React.FC = () => {
             ? 'در حال پردازش...'
             : activeTmaCurrency === 'TON'
             ? connectedTonWallet
-              ? `💎 واریز +${formatCurrency(tonAmount, 'TON')}`
+              ? `💎 واریز +${formatCurrency(Number.isFinite(tonAmount) ? tonAmount : 0, 'TON')}`
               : '💎 اتصال کیف پول TON (One-Tap Connect)'
-            : `⭐ پرداخت +${formatCurrency(starsAmount, 'STARS')}`}
+            : `⭐ پرداخت +${formatCurrency(Number.isFinite(starsAmount) ? starsAmount : 0, 'STARS')}`}
         </button>
       </div>
     </div>

@@ -56,10 +56,20 @@ const MainRouter: React.FC = () => {
   return (
     <div
       data-testid="tma-mobile-shell"
-      className="tma-mobile-portrait-shell w-full max-w-[440px] min-h-[100dvh] mx-auto bg-[#070510] text-white antialiased flex flex-col selection:bg-purple-500 selection:text-white"
+      className="tma-mobile-portrait-shell relative w-full max-w-[440px] min-h-[100dvh] mx-auto bg-[#070510] text-white antialiased flex flex-col selection:bg-purple-500 selection:text-white overflow-x-hidden"
     >
+      {/* Fixed 3D Obsidian & Gold Vault Ambient Background */}
+      <div className="fixed inset-0 max-w-[440px] mx-auto pointer-events-none z-0 overflow-hidden">
+        <img
+          src="/assets/3d/luckydrop-3d-splash-bg.png"
+          alt="LuckyDrop 3D Vault Ambient Background"
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover opacity-25 scale-105"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#070510]/82 via-[#090514]/88 to-[#070510]/95" />
+      </div>
       <Navbar />
-      <main className="flex-1 w-full overflow-x-hidden">
+      <main className="relative z-10 flex-1 w-full overflow-x-hidden">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeRoute}
