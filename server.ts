@@ -41,9 +41,33 @@ import {
   buildTonConnectManifest,
 } from './src/services/telegramBotSecurity.ts';
 import { INITIAL_TMA_QUESTS } from './src/utils/telegramTma.ts';
+import {
+  globalUserLocks,
+  globalMutationRateLimiter,
+  validateStrictFinancialAmount,
+  verifyAndRecordDepositIdempotency,
+  createCleanZeroUserProfile,
+  bindUserReferralAntiSybil,
+  computeServerAuthoritativeGameOutcome,
+  computeServerAuthoritativeLotteryDraw,
+  roundTonClean,
+  roundStarsClean,
+  type IsolatedUserAccountRecord,
+} from './src/services/securityGuard.ts';
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
+
+// Production Web3 Security Headers
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
 const serverSecurityConfig = loadServerSecurityConfig(process.env);
 
 // Dynamic TON Connect 2.0 Manifest Endpoint (Supports Tonkeeper, MyTonWallet, Tonhub, Bitget)
@@ -217,6 +241,10 @@ interface TelegramAlertLogItem {
 }
 
 interface PersistentDatabaseSchema {
+  schemaVersion?: number;
+  users?: Record<string, IsolatedUserAccountRecord>;
+  processedTxHashes?: string[];
+  processedStarsChargeIds?: string[];
   pamState: PAMPlayerState;
   rounds: PersistentRoundRecord[];
   deletedRoundCodes: string[];
@@ -248,15 +276,7 @@ function buildInitialRounds(): PersistentRoundRecord[] {
         : spec.id === 'TON_SPECIAL'
         ? 360
         : 10080;
-    // Start with a realistic collected pool so 85% distributable / 15% site share is immediately visible
-    const initialCollectedSalesUsdt =
-      spec.id === 'HOURLY_FLASH'
-        ? 80
-        : spec.id === 'DAILY_BLITZ'
-        ? 240
-        : spec.id === 'TON_SPECIAL'
-        ? 400
-        : 800;
+    const initialCollectedSalesUsdt = 0;
     const poolBreakdown = calculateDynamicPariMutuelPool(initialCollectedSalesUsdt, 15);
     return {
       id: idx + 1,
@@ -274,23 +294,23 @@ function buildInitialRounds(): PersistentRoundRecord[] {
       jackpotUsdt: poolBreakdown.distributablePool85Usdt.toFixed(2),
       ticketPriceUsdt: spec.ticketPriceUsdt.toFixed(2),
       rtpPercent: '85.00',
-      soldPercent: spec.soldPercent,
+      soldPercent: 0,
       remainingLabel: 'قرعه‌کشی خودکار راس تایم',
       drawTimeLabel: 'تقسیم خودکار راس تایم',
       durationMinutes,
       drawTargetTimestampMs: Date.now() + spec.initialCountdownSec * 1000,
       initialSeedUsdt: '0.00',
-      ticketsSoldCount: Math.max(1, Math.round(initialCollectedSalesUsdt / spec.ticketPriceUsdt)),
+      ticketsSoldCount: 0,
       serverSeed: initialServerSeed,
       serverSeedHash: initialServerSeedHash,
       clientSeed: spec.clientSeed,
       nonce: 1,
       winningNumbers: JSON.stringify(spec.winningNumbers),
       winningGoldenBall: spec.winningGoldenBall,
-      totalSalesUsdt: poolBreakdown.grossCollectedUsdt.toFixed(2),
-      totalPayoutUsdt: poolBreakdown.distributablePool85Usdt.toFixed(2),
-      operatorProfitUsdt: poolBreakdown.siteShare15Usdt.toFixed(2),
-      rolloverReserveUsdt: (poolBreakdown.grossCollectedUsdt * 0.03).toFixed(2),
+      totalSalesUsdt: '0.00',
+      totalPayoutUsdt: '0.00',
+      operatorProfitUsdt: '0.00',
+      rolloverReserveUsdt: '0.00',
       status: 'ACTIVE',
     };
   });
@@ -298,195 +318,38 @@ function buildInitialRounds(): PersistentRoundRecord[] {
 
 function buildDefaultDatabase(): PersistentDatabaseSchema {
   const pamEngine = new PAMSeamlessWalletEngine({
-    playerId: 'vip-demo-user',
-    displayName: 'کامران سهرابی (VIP)',
-    vipTier: 'DIAMOND VIP',
+    playerId: 'tg_system_genesis',
+    displayName: 'کاربر تلگرام',
+    vipTier: 'MEMBER',
     currency: 'TON',
-    genesisTonBalance: 600.0,
-    tonBalance: 600.0,
-    genesisStarsBalance: 2500,
-    starsBalance: 2500,
-    referralEarningsTon: 3.68,
+    genesisTonBalance: 0,
+    tonBalance: 0,
+    genesisStarsBalance: 0,
+    starsBalance: 0,
+    referralEarningsTon: 0,
     referralEarningsStars: 0,
-    bonusTokensTon: 5.0,
+    bonusTokensTon: 0,
+    ledger: [],
+    tombstones: {},
   });
-
-  // Record a genesis bonus & sample ticket purchase in the PAM Ledger in TON (💎 TON)
-  const bonusRes = pamEngine.bonus({
-    transactionUuid: 'tx_genesis_vip_welcome_bonus_001',
-    roundId: '#VIP-WELCOME',
-    vertical: 'VIP_LOYALTY_BONUS',
-    currency: 'TON',
-    amountTon: 7.06,
-    creditToRealBalance: true,
-    note: 'پاداش خوش‌آمدگویی عضویت الماس VIP (+7.06 TON)',
-  });
-
-  const debitRes = pamEngine.debit({
-    transactionUuid: 'tx_genesis_ticket_ld884920',
-    roundId: '#LDR-8493',
-    vertical: 'LUCKYDROP_LOTTERY',
-    currency: 'TON',
-    amountTon: 1.0,
-    note: 'خرید کوپن بلیت #LDR-8493 (LD-884920 • 1.00 TON)',
-  });
-
-  void bonusRes;
-  void debitRes;
 
   const initialRounds = buildInitialRounds();
-  const sampleRound = initialRounds[0];
-  const sampleDraw = deriveProvablyFairLotteryDraw({
-    serverSeed: sha256Hex('luckydrop_genesis_verified_draw_8492'),
-    clientSeed: 'luckydrop_genesis_client_seed',
-    nonce: 1,
-    roundCode: '#LDR-8492',
-    mainCount: 5,
-    mainMax: 50,
-    goldenMax: 15,
-  });
-
-  const initialTickets: PersistentTicketRecord[] = [
-    {
-      id: 701,
-      ticketCode: 'LD-884920',
-      userUid: 'vip-demo-user',
-      roundCode: sampleRound.roundCode,
-      mainNumbers: '[7,14,23,38,49]',
-      goldenBall: 8,
-      costUsdt: '5.00',
-      currencyNetwork: 'TON Network',
-      txHash: '0x7a4b8f1920c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c739c0',
-      transactionUuid: 'tx_genesis_ticket_ld884920',
-      payoutTransactionUuid: null,
-      clientSeed: sampleRound.clientSeed,
-      serverSeedHash: sampleRound.serverSeedHash,
-      nonce: 1,
-      commitHash: sampleRound.serverSeedHash.slice(0, 32),
-      status: 'ACTIVE',
-      confirmations: 19,
-      prizeWonUsdt: '0.00',
-      claimed: false,
-      createdAt: '۱۰ دقیقه پیش',
-    },
-  ];
-
-  const initialDrawHistory: VerifiableDrawHistoryRecord[] = [
-    {
-      drawId: 'DRAW-LDR-8492',
-      roundCode: '#LDR-8492',
-      roundTitleFa: 'جک‌پات بزرگ هفتگی LuckyDrop (دور قبل)',
-      drawnMain: sampleDraw.drawnMain,
-      drawnGolden: sampleDraw.drawnGolden,
-      serverSeed: sampleDraw.serverSeed,
-      serverSeedHash: sampleDraw.serverSeedHash,
-      clientSeed: sampleDraw.clientSeed,
-      nonce: sampleDraw.nonce,
-      primaryHmacHex: sampleDraw.primaryHmacHex,
-      first52BitHex: sampleDraw.first52BitHex,
-      uniformFloatX: sampleDraw.uniformFloatX,
-      ticketsEvaluatedCount: 14,
-      winnersCount: 3,
-      totalPayoutUsdt: 175.0,
-      createdAt: '۱ ساعت پیش',
-    },
-  ];
 
   return {
+    schemaVersion: 3,
+    users: {},
+    processedTxHashes: [],
+    processedStarsChargeIds: [],
     pamState: pamEngine.getState(),
     rounds: initialRounds,
     deletedRoundCodes: [],
-    tickets: initialTickets,
-    drawHistory: initialDrawHistory,
-    transactions: [
-      {
-        id: 901,
-        txHash: '0x7a4b8f1920c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c739c0',
-        userUid: 'vip-demo-user',
-        type: 'PAYOUT',
-        network: 'TON Network',
-        amountUsdt: '680.00',
-        amountCrypto: '425.00 TON',
-        winnerName: 'کامران س. (VIP)',
-        winnerLocation: 'تلگرام مینی‌اپ',
-        lotteryTitle: 'مگا جک‌پات هفتگی LuckyDrop',
-        winningCombo: '[07, 14, 23, 38, 49] + ★08',
-        timeAgoLabel: '۱۲ دقیقه پیش',
-        status: 'CONFIRMED',
-        blockNumber: 62194812,
-        confirmations: 19,
-      },
-    ],
-    supportMessages: [
-      {
-        id: 301,
-        sessionCode: 'VIP-KAMRAN',
-        senderName: 'کامران سهرابی (VIP)',
-        senderRole: 'USER',
-        vipLevel: 'DIAMOND VIP',
-        subject: 'تایید اتوماتیک کیف پول TON Connect',
-        message: 'سلام، واریز و برداشت اتوماتیک TON و Stars در LuckyDrop عالی کار می‌کنه.',
-        walletBalanceLabel: '606.06 TON',
-        historySummary: '۱۴ بلیت فعال',
-        createdAt: '۱۰ دقیقه پیش',
-      },
-    ],
-    deposits: [
-      {
-        id: 202,
-        depositCode: 'DEP-910442',
-        userUid: 'vip-demo-user',
-        userDisplayName: 'کامران سهرابی (VIP)',
-        network: 'TON Network (TON Connect 2.0)',
-        senderWallet: 'UQCV8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_TON',
-        officialRecipientWallet: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
-        amountUsdt: 80,
-        amountCrypto: '50.00 TON',
-        txHash: '4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a',
-        explorerUrl:
-          'https://tonviewer.com/transaction/4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a',
-        explorerNote: 'شارژ اتوماتیک از طریق TON Connect 2.0 BOC',
-        verificationMethod: 'ONCHAIN_AUTO',
-        verificationMode: 'ONCHAIN_AUTO',
-        status: 'CREDITED',
-        confirmations: 19,
-        createdAt: '۱۵ دقیقه پیش',
-      },
-    ],
-    withdrawals: [
-      {
-        id: 101,
-        withdrawalCode: 'WD-740192',
-        userUid: 'vip-demo-user',
-        userDisplayName: 'کامران سهرابی (VIP)',
-        network: 'TON Network',
-        destinationAddress: 'UQCV8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_TONVIP',
-        grossAmountUsdt: 192,
-        networkFeeUsdt: 0.08,
-        netAmountUsdt: 191.92,
-        netAmountCrypto: '120.00 TON',
-        twoFactorVerified: true,
-        status: 'pending_review',
-        txHash: '0x94a8b1c7d3e2f0a1b2c3d4e5f6a7b8c9d0e1f2a3',
-        createdAt: '۲۰ دقیقه پیش',
-      },
-    ],
-    referralEvents: [
-      {
-        id: 401,
-        referrerCode: 'VIP-KAMRAN777',
-        buyerDisplayName: 'سهند جاوید (VIP)',
-        roundCode: '#LDR-8493',
-        ticketAmountUsdt: 16,
-        prizePool85Usdt: 13.6,
-        grossLotteryProfit10Usdt: 1.6,
-        referralCommission2Usdt: 0.32,
-        commissionUsdt: 0.32,
-        netHouseProfit8Usdt: 1.28,
-        netHouseProfitUsdt: 1.28,
-        createdAt: '۱۵ دقیقه پیش',
-      },
-    ],
+    tickets: [],
+    drawHistory: [],
+    transactions: [],
+    supportMessages: [],
+    deposits: [],
+    withdrawals: [],
+    referralEvents: [],
     telegramBotConfig: {
       botToken: '',
       adminChatId: '',
@@ -495,19 +358,8 @@ function buildDefaultDatabase(): PersistentDatabaseSchema {
       notifyOnWithdrawal: true,
       notifyOnTicketPurchase: true,
     },
-    telegramAlertsLog: [
-      {
-        id: 601,
-        eventType: 'DEPOSIT',
-        titleFa: 'شارژ اتوماتیک 50.00 TON (TON Connect 2.0)',
-        summaryFa: 'کاربر: کامران سهرابی (VIP) • شبکه: TON Network',
-        amountUsdt: 80,
-        message: '🔔 [LuckyDrop Admin Alert] شارژ اتوماتیک 50.00 TON تایید شد.',
-        deliveredToTelegramApi: false,
-        createdAt: '۱۵ دقیقه پیش',
-      },
-    ],
-    rolloverReservePoolUsdt: 48.5,
+    telegramAlertsLog: [],
+    rolloverReservePoolUsdt: 0,
     chestsClaimedCount: 0,
     claimedTicketCodes: [],
     killSwitchActive: false,
@@ -523,17 +375,26 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
     if (fs.existsSync(PERSISTENT_DB_PATH)) {
       const raw = fs.readFileSync(PERSISTENT_DB_PATH, 'utf-8');
       const parsed = JSON.parse(raw) as PersistentDatabaseSchema;
-      if (parsed && parsed.pamState && Array.isArray(parsed.rounds)) {
-        const deletedSet = new Set(Array.isArray(parsed.deletedRoundCodes) ? parsed.deletedRoundCodes : []);
+      // Only load if already migrated to schemaVersion 3 (zero pre-populated demo data)
+      if (parsed && parsed.schemaVersion === 3 && Array.isArray(parsed.rounds)) {
+        if (!parsed.users || typeof parsed.users !== 'object') {
+          parsed.users = {};
+        }
+        if (!Array.isArray(parsed.processedTxHashes)) {
+          parsed.processedTxHashes = [];
+        }
+        if (!Array.isArray(parsed.processedStarsChargeIds)) {
+          parsed.processedStarsChargeIds = [];
+        }
+        const deletedSet = new Set(
+          Array.isArray(parsed.deletedRoundCodes) ? parsed.deletedRoundCodes : []
+        );
         parsed.rounds = parsed.rounds
           .filter((r) => !deletedSet.has(r.roundCode))
           .map((r) => {
-            // Preserve custom titles, prices, and dynamic sales; ensure 85% distributable / 15% site split
             const rawSales = parseFloat(r.totalSalesUsdt);
-            const fallbackSales = Number.isFinite(rawSales) && rawSales >= 0 ? rawSales : 160;
-            // If legacy static 250000 jackpot was saved, normalize to realistic dynamic pool
-            const normalizedSales = fallbackSales > 50000 ? 640 : fallbackSales;
-            const split = calculateDynamicPariMutuelPool(normalizedSales, 15);
+            const safeSales = Number.isFinite(rawSales) && rawSales >= 0 ? rawSales : 0;
+            const split = calculateDynamicPariMutuelPool(safeSales, 15);
             const durMin = Number(r.durationMinutes) || 60;
             const targetMs =
               Number(r.drawTargetTimestampMs) && Number(r.drawTargetTimestampMs) > Date.now()
@@ -556,44 +417,6 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
               drawTargetTimestampMs: targetMs,
             };
           });
-        if (Array.isArray(parsed.tickets)) {
-          parsed.tickets = parsed.tickets.map((t) => ({
-            ...t,
-            ticketCode: String(t.ticketCode || '').replace(/^ZR-/i, 'LD-'),
-            roundCode: String(t.roundCode || '').replace(/^#ZRN-/i, '#LDR-'),
-            status:
-              String(t.status || '').toUpperCase() === 'WON' ||
-              String(t.status || '').toUpperCase() === 'LOST'
-                ? t.status
-                : 'ACTIVE',
-          }));
-        }
-        // Filter out legacy TRC-20 deposits/alerts & ensure all deposits are CREDITED (since deposits are 100% auto)
-        if (Array.isArray(parsed.deposits)) {
-          parsed.deposits = parsed.deposits
-            .filter((d) => !String(d.network || '').includes('TRC-20'))
-            .map((d) => ({
-              ...d,
-              verificationMethod: 'ONCHAIN_AUTO' as const,
-              verificationMode: 'ONCHAIN_AUTO' as const,
-              status: 'CREDITED' as const,
-            }));
-        }
-        if (Array.isArray(parsed.telegramAlertsLog)) {
-          parsed.telegramAlertsLog = parsed.telegramAlertsLog.filter(
-            (a) => !String(a.titleFa || '').includes('TRC-20') && !String(a.titleFa || '').includes('تتر')
-          );
-        }
-        if (Array.isArray(parsed.withdrawals)) {
-          parsed.withdrawals = parsed.withdrawals.map((w) => ({
-            ...w,
-            network: 'TON Network',
-            destinationAddress:
-              String(w.destinationAddress || '').startsWith('T')
-                ? 'UQCV8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_TONVIP'
-                : w.destinationAddress,
-          }));
-        }
         if (typeof parsed.autoWithdrawLimitTon !== 'number' || parsed.autoWithdrawLimitTon <= 0) {
           parsed.autoWithdrawLimitTon = 50;
         }
@@ -622,16 +445,22 @@ function savePersistentDatabase(dbState: PersistentDatabaseSchema): void {
 }
 
 const dbState = loadPersistentDatabase();
+if (!dbState.users) dbState.users = {};
+if (!Array.isArray(dbState.processedTxHashes)) dbState.processedTxHashes = [];
+if (!Array.isArray(dbState.processedStarsChargeIds)) dbState.processedStarsChargeIds = [];
+
 const pamEngine = new PAMSeamlessWalletEngine(dbState.pamState);
 
+const processedWebhookKeys = new Set<string>();
+const processedDepositTxHashes = new Set<string>(dbState.processedTxHashes);
+const processedStarsChargeIds = new Set<string>(dbState.processedStarsChargeIds);
+let baseIdempotentCount = 128;
+
 function persistAll(): void {
-  dbState.pamState = pamEngine.getState();
+  dbState.processedTxHashes = Array.from(processedDepositTxHashes);
+  dbState.processedStarsChargeIds = Array.from(processedStarsChargeIds);
   savePersistentDatabase(dbState);
 }
-
-const processedWebhookKeys = new Set<string>();
-const processedDepositTxHashes = new Set<string>();
-let baseIdempotentCount = 128;
 
 // Helper to normalize Telegram Chat / Channel ID so users don't get stuck on missing '@' or '-100'
 function normalizeTelegramChatId(rawChatId: string): string {
@@ -694,6 +523,200 @@ function requireTelegramWebAppAuth(
   }
 
   (req as any).telegramVerifiedUser = verification.user;
+  next();
+}
+
+function resolveVerifiedTelegramSession(req: express.Request): {
+  isAdmin: boolean;
+  verifiedUserId: number | null;
+  userKey: string;
+  firstName: string;
+  lastName: string;
+  username: string;
+  startParam: string;
+  verificationReason: string;
+} {
+  const liveSecurityCfg = loadServerSecurityConfig(process.env);
+  const initDataRaw =
+    (req.headers['x-telegram-init-data'] as string | undefined) ||
+    (req.body?.initData as string | undefined) ||
+    '';
+
+  const verification = verifyTelegramWebAppInitData({
+    initDataRaw,
+    botToken: getEffectiveBotToken(),
+    strictMode: liveSecurityCfg.strictTelegramInitDataAuth,
+  });
+
+  let candidateUserId: number | null = verification.user?.id ?? null;
+  let firstName = verification.user?.first_name || '';
+  let lastName = verification.user?.last_name || '';
+  let username = verification.user?.username || '';
+  let startParam = verification.startParam || '';
+
+  if (initDataRaw) {
+    try {
+      const sp = new URLSearchParams(initDataRaw);
+      if (!startParam) {
+        startParam = sp.get('start_param') || '';
+      }
+      const uRaw = sp.get('user');
+      if (uRaw) {
+        const parsed = JSON.parse(uRaw);
+        if (parsed && typeof parsed.id === 'number' && !candidateUserId) {
+          candidateUserId = parsed.id;
+        }
+        if (parsed?.first_name && !firstName) firstName = String(parsed.first_name);
+        if (parsed?.last_name && !lastName) lastName = String(parsed.last_name);
+        if (parsed?.username && !username) username = String(parsed.username);
+      }
+    } catch {
+      // ignore malformed user param
+    }
+  }
+
+  if (!candidateUserId) {
+    const headerOrBodyId = Number(
+      req.headers['x-telegram-user-id'] ||
+        req.body?.telegramUser?.id ||
+        req.body?.telegramUserId ||
+        req.query?.tg_uid ||
+        0
+    );
+    if (Number.isFinite(headerOrBodyId) && headerOrBodyId > 0) {
+      candidateUserId = Math.floor(headerOrBodyId);
+    }
+  }
+
+  if (!firstName && req.body?.telegramUser?.first_name) {
+    firstName = String(req.body.telegramUser.first_name);
+  }
+  if (!lastName && req.body?.telegramUser?.last_name) {
+    lastName = String(req.body.telegramUser.last_name);
+  }
+  if (!username && req.body?.telegramUser?.username) {
+    username = String(req.body.telegramUser.username);
+  }
+  if (!startParam) {
+    startParam = String(
+      req.headers['x-telegram-start-param'] ||
+        req.body?.startParam ||
+        req.body?.referredByCode ||
+        req.query?.startapp ||
+        req.query?.ref ||
+        ''
+    ).trim();
+  }
+
+  const isAdmin =
+    verification.valid &&
+    evaluateServerAdminAuthorization(candidateUserId, liveSecurityCfg.adminTelegramUserIds);
+
+  const userKey = candidateUserId ? String(candidateUserId) : 'guest_isolated';
+
+  return {
+    isAdmin,
+    verifiedUserId: candidateUserId,
+    userKey,
+    firstName,
+    lastName,
+    username,
+    startParam,
+    verificationReason: verification.reason,
+  };
+}
+
+function getOrCreateIsolatedUserContext(req: express.Request): {
+  session: ReturnType<typeof resolveVerifiedTelegramSession>;
+  userKey: string;
+  userAccount: IsolatedUserAccountRecord;
+  userPam: PAMSeamlessWalletEngine;
+  commitUserAccount: () => void;
+} {
+  const session = resolveVerifiedTelegramSession(req);
+  const userKey = session.userKey;
+  if (!dbState.users) {
+    dbState.users = {};
+  }
+
+  const displayName = session.firstName
+    ? `${session.firstName}${session.lastName ? ' ' + session.lastName : ''}`.trim()
+    : `کاربر #${userKey.slice(-4)}`;
+
+  let isNewlyCreated = false;
+  if (!dbState.users[userKey]) {
+    dbState.users[userKey] = createCleanZeroUserProfile(userKey, displayName, session.username);
+    isNewlyCreated = true;
+  }
+
+  const userAccount = dbState.users[userKey];
+  if (session.firstName && userAccount.displayName.startsWith('کاربر')) {
+    userAccount.displayName = displayName;
+    userAccount.pamState.displayName = displayName;
+  }
+  if (session.username && !userAccount.username) {
+    userAccount.username = session.username;
+  }
+
+  // Anti-Sybil Referral Binding on initial account creation
+  if (isNewlyCreated && session.startParam && req.path !== '/api/referral/bind') {
+    bindUserReferralAntiSybil({
+      userId: userKey,
+      startParam: session.startParam,
+      usersMap: dbState.users,
+    });
+  }
+
+  const userPam = new PAMSeamlessWalletEngine(userAccount.pamState);
+  const commitUserAccount = () => {
+    const nextPam = userPam.getState();
+    userAccount.pamState = nextPam;
+    userAccount.tonBalance = roundTonClean(nextPam.tonBalance);
+    userAccount.starsBalance = roundStarsClean(nextPam.starsBalance);
+    userAccount.bonusTokens = roundTonClean(nextPam.bonusTokensTon);
+    userAccount.ledger = nextPam.ledger;
+    userAccount.updatedAt = new Date().toISOString();
+    persistAll();
+  };
+
+  return {
+    session,
+    userKey,
+    userAccount,
+    userPam,
+    commitUserAccount,
+  };
+}
+
+// Per-IP & Per-TelegramUserId Sliding Window Rate Limiter Middleware for Mutation Endpoints
+function enforceMutationRateLimit(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const clientIp =
+    String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1')
+      .split(',')[0]
+      .trim() || '127.0.0.1';
+  const session = resolveVerifiedTelegramSession(req);
+  const ipCheck = globalMutationRateLimiter.check(`ip:${clientIp}`);
+  const userCheck = globalMutationRateLimiter.check(`uid:${session.userKey}`);
+
+  res.setHeader(
+    'X-RateLimit-Remaining',
+    String(Math.min(ipCheck.remaining, userCheck.remaining))
+  );
+
+  if (!ipCheck.allowed || !userCheck.allowed) {
+    const retryAfterMs = Math.max(ipCheck.retryAfterMs, userCheck.retryAfterMs);
+    res.setHeader('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+    return res.status(429).json({
+      ok: false,
+      error:
+        '429 Too Many Requests — تعداد درخواست‌های همزمان بیش از حد مجاز است. لطفاً چند ثانیه صبر کنید.',
+      retryAfterMs,
+    });
+  }
   next();
 }
 
@@ -801,236 +824,334 @@ async function dispatchAdminTelegramAlert(params: {
 }
 
 // ============================================================================
-// CORE PAM & SEAMLESS SINGLE WALLET ENDPOINTS (7 STANDARD OPERATIONS)
+// CORE PAM & SEAMLESS SINGLE WALLET ENDPOINTS (STRICT PER-USER ISOLATION & MUTEX)
 // ============================================================================
 
 // 1. PAM Authenticate
-app.post('/api/pam/authenticate', optionalAuth, (req: AuthRequest, res) => {
-  const { playerId, displayName, vipTier } = req.body || {};
-  const result = pamEngine.authenticate({ playerId, displayName, vipTier });
-  persistAll();
-  res.json(result);
+app.post('/api/pam/authenticate', optionalAuth, async (req: AuthRequest, res) => {
+  const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+  await globalUserLocks.runExclusive(userKey, async () => {
+    const { playerId, displayName, vipTier } = req.body || {};
+    const result = userPam.authenticate({
+      playerId: `tg_${userKey}`,
+      displayName: displayName || userPam.getState().displayName,
+      vipTier: vipTier || userPam.getState().vipTier,
+    });
+    commitUserAccount();
+    res.json(result);
+  });
 });
 
 // 2. PAM Balance
-app.get('/api/pam/balance', optionalAuth, (_req: AuthRequest, res) => {
-  const result = pamEngine.balance();
+app.get('/api/pam/balance', optionalAuth, (req: AuthRequest, res) => {
+  const { userPam } = getOrCreateIsolatedUserContext(req);
+  const result = userPam.balance();
   res.json({
     ...result,
-    ledger: pamEngine.getState().ledger,
-    tombstones: pamEngine.getState().tombstones,
-    reconciliation: pamEngine.reconcile().reconciliation,
+    ledger: userPam.getState().ledger,
+    tombstones: userPam.getState().tombstones,
+    reconciliation: userPam.reconcile().reconciliation,
   });
 });
 
 // 3. PAM Debit (Bet / Ticket Purchase in TON or STARS)
-app.post('/api/pam/debit', optionalAuth, requireTelegramWebAppAuth, (req: AuthRequest, res) => {
-  const {
-    transaction_uuid,
-    transactionUuid,
-    round_id,
-    roundId = '#ROUND',
-    vertical = 'LUCKYDROP_LOTTERY',
-    currency = 'TON',
-    amountTon,
-    amountStars,
-    amountUsdt = 0,
-    note,
-    incrementNonce = true,
-  } = req.body || {};
-  const uuid = String(transaction_uuid || transactionUuid || '').trim();
-  const result = pamEngine.debit({
-    transactionUuid: uuid,
-    roundId: String(round_id || roundId),
-    vertical,
-    currency: currency === 'STARS' ? 'STARS' : 'TON',
-    amountTon: typeof amountTon === 'number' ? Number(amountTon) : undefined,
-    amountStars: typeof amountStars === 'number' ? Number(amountStars) : undefined,
-    amountUsdt: Number(amountUsdt),
-    note,
-    incrementNonce: Boolean(incrementNonce),
-  });
-  persistAll();
-  if (!result.ok) {
-    return res.status(result.tombstoneBlocked ? 409 : 400).json(result);
+app.post(
+  '/api/pam/debit',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const {
+        transaction_uuid,
+        transactionUuid,
+        round_id,
+        roundId = '#ROUND',
+        vertical = 'LUCKYDROP_LOTTERY',
+        currency = 'TON',
+        amountTon,
+        amountStars,
+        amountUsdt,
+        note,
+        incrementNonce = true,
+      } = req.body || {};
+
+      const activeCurrency = currency === 'STARS' ? 'STARS' : 'TON';
+      const rawAmount =
+        activeCurrency === 'STARS'
+          ? amountStars ?? (typeof amountUsdt === 'number' ? Math.round(amountUsdt / 0.02) : NaN)
+          : amountTon ?? (typeof amountUsdt === 'number' ? amountUsdt / DEFAULT_FX_RATES.TON : NaN);
+
+      const validation = validateStrictFinancialAmount({
+        rawAmount,
+        currency: activeCurrency,
+        minAmount: activeCurrency === 'STARS' ? 1 : 0.001,
+        maxAvailableBalance:
+          activeCurrency === 'STARS'
+            ? userPam.getState().starsBalance
+            : userPam.getState().tonBalance,
+      });
+
+      if (!validation.valid) {
+        return res.status(400).json({
+          ok: false,
+          error: validation.error,
+          tonBalance: userPam.getState().tonBalance,
+          starsBalance: userPam.getState().starsBalance,
+        });
+      }
+
+      const uuid = String(transaction_uuid || transactionUuid || '').trim();
+      const result = userPam.debit({
+        transactionUuid: uuid,
+        roundId: String(round_id || roundId),
+        vertical,
+        currency: activeCurrency,
+        amountTon: activeCurrency === 'TON' ? validation.cleanAmount : undefined,
+        amountStars: activeCurrency === 'STARS' ? validation.cleanAmount : undefined,
+        amountUsdt: Number(amountUsdt) || 0,
+        note,
+        incrementNonce: Boolean(incrementNonce),
+      });
+      commitUserAccount();
+      if (!result.ok) {
+        return res.status(result.tombstoneBlocked ? 409 : 400).json(result);
+      }
+      return res.json(result);
+    });
   }
-  res.json(result);
-});
+);
 
-// 4. PAM Credit (Win Payout / Deposit Settlement + Optional Crash >=5.00x Lucky Airdrop Ticket)
-app.post('/api/pam/credit', optionalAuth, requireTelegramWebAppAuth, (req: AuthRequest, res) => {
-  const {
-    transaction_uuid,
-    transactionUuid,
-    reference_transaction_uuid,
-    referenceTransactionUuid,
-    round_id,
-    roundId = '#ROUND',
-    vertical = 'LUCKYDROP_LOTTERY',
-    currency = 'TON',
-    amountTon,
-    amountStars,
-    amountUsdt = 0,
-    note,
-    awardLuckyAirdropTicket = false,
-  } = req.body || {};
-  const uuid = String(transaction_uuid || transactionUuid || '').trim();
-  const refUuid = reference_transaction_uuid || referenceTransactionUuid || null;
-  const result = pamEngine.credit({
-    transactionUuid: uuid,
-    referenceTransactionUuid: refUuid ? String(refUuid) : null,
-    roundId: String(round_id || roundId),
-    vertical,
-    currency: currency === 'STARS' ? 'STARS' : 'TON',
-    amountTon: typeof amountTon === 'number' ? Number(amountTon) : undefined,
-    amountStars: typeof amountStars === 'number' ? Number(amountStars) : undefined,
-    amountUsdt: Number(amountUsdt),
-    note,
-  });
+// 4. PAM Credit (Internal / Verified Win Payout)
+app.post(
+  '/api/pam/credit',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    const { session, userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+    // Block arbitrary unreferenced client-side credit spoofing unless admin or valid referenceTransactionUuid exists in user's ledger
+    const refUuidRaw =
+      req.body?.reference_transaction_uuid || req.body?.referenceTransactionUuid || null;
+    const hasVerifiedReference =
+      Boolean(refUuidRaw) &&
+      userPam
+        .getState()
+        .ledger.some(
+          (e) => e.transactionUuid === String(refUuidRaw) && e.type === 'DEBIT'
+        );
 
-  let bonusTicketAwarded = null;
-  if (result.ok && awardLuckyAirdropTicket) {
-    const activeRound = dbState.rounds.find((r) => r.status === 'ACTIVE') || dbState.rounds[0];
-    const targetRoundCode = activeRound?.roundCode || '#ZRN-8493';
-    const mainMax = activeRound?.mainMax || 50;
-    const mainCount = activeRound?.mainCount || 5;
-    const goldenMax = activeRound?.goldenMax || 15;
-    const seedsNow = pamEngine.getState().seeds;
-
-    const pickedMain: number[] = [];
-    let cursor = 0;
-    while (pickedMain.length < mainCount) {
-      const candidate = ((seedsNow.nonce * 11 + cursor * 17) % mainMax) + 1;
-      if (!pickedMain.includes(candidate)) pickedMain.push(candidate);
-      cursor++;
+    if (!session.isAdmin && !hasVerifiedReference) {
+      return res.status(403).json({
+        ok: false,
+        error:
+          '403 Forbidden — CLIENT_OUTCOME_SPOOFING_BLOCKED: شارژ مستقیم موجودی از سمت کلاینت مسدود است. تمام نتایج بازی‌ها باید در سرور محاسبه شوند.',
+      });
     }
-    pickedMain.sort((a, b) => a - b);
-    const pickedGolden = goldenMax > 0 ? (seedsNow.nonce % goldenMax) + 1 : 0;
-    const ticketCode = `AIR-${Math.floor(100000 + Math.random() * 900000)}`;
-    const txHash = `0x${sha256Hex(`${uuid}:${ticketCode}`)}`;
 
-    bonusTicketAwarded = {
-      id: Date.now(),
-      ticketCode,
-      userUid: pamEngine.getState().playerId,
-      roundCode: targetRoundCode,
-      mainNumbers: JSON.stringify(pickedMain),
-      goldenBall: pickedGolden,
-      costUsdt: '0.00',
-      currencyNetwork: 'CRASH LUCKY AIRDROP (>=5x)',
-      txHash,
-      transactionUuid: `${uuid}_airdrop_ticket`,
-      clientSeed: seedsNow.clientSeed,
-      serverSeedHash: seedsNow.serverSeedHash,
-      nonce: seedsNow.nonce,
-      commitHash: txHash.slice(2, 34),
-      status: 'ACTIVE',
-      confirmations: 19,
-      prizeWonUsdt: '0.00',
-      claimed: false,
-      createdAt: 'همین الان (ایردراپ چتر طلایی Crash >= 5.00x)',
-    };
-    dbState.tickets.unshift(bonusTicketAwarded);
-  }
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const {
+        transaction_uuid,
+        transactionUuid,
+        round_id,
+        roundId = '#ROUND',
+        vertical = 'LUCKYDROP_LOTTERY',
+        currency = 'TON',
+        amountTon,
+        amountStars,
+        amountUsdt = 0,
+        note,
+      } = req.body || {};
+      const uuid = String(transaction_uuid || transactionUuid || '').trim();
+      const result = userPam.credit({
+        transactionUuid: uuid,
+        referenceTransactionUuid: refUuidRaw ? String(refUuidRaw) : null,
+        roundId: String(round_id || roundId),
+        vertical,
+        currency: currency === 'STARS' ? 'STARS' : 'TON',
+        amountTon: typeof amountTon === 'number' ? Number(amountTon) : undefined,
+        amountStars: typeof amountStars === 'number' ? Number(amountStars) : undefined,
+        amountUsdt: Number(amountUsdt),
+        note,
+      });
 
-  persistAll();
-  if (!result.ok) {
-    return res.status(400).json(result);
+      commitUserAccount();
+      if (!result.ok) {
+        return res.status(400).json(result);
+      }
+      return res.json({
+        ...result,
+        bonusTicketAwarded: null,
+      });
+    });
   }
-  res.json({
-    ...result,
-    bonusTicketAwarded,
-  });
-});
+);
 
 // 5. PAM Rollback (Refund Voided/Failed Round + Tombstone Protection)
-app.post('/api/pam/rollback', optionalAuth, (req: AuthRequest, res) => {
-  const {
-    transaction_uuid,
-    transactionUuid,
-    reference_transaction_uuid,
-    referenceTransactionUuid,
-    round_id,
-    roundId = '#VOID-ROUND',
-    vertical = 'LUCKYDROP_LOTTERY',
-    note,
-  } = req.body || {};
-  const uuid = String(transaction_uuid || transactionUuid || generateDeterministicUuid('rb')).trim();
-  const refUuid = String(reference_transaction_uuid || referenceTransactionUuid || '').trim();
-  const result = pamEngine.rollback({
-    transactionUuid: uuid,
-    referenceTransactionUuid: refUuid,
-    roundId: String(round_id || roundId),
-    vertical,
-    note,
-  });
-  persistAll();
-  if (!result.ok) {
-    return res.status(400).json(result);
+app.post(
+  '/api/pam/rollback',
+  optionalAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const {
+        transaction_uuid,
+        transactionUuid,
+        reference_transaction_uuid,
+        referenceTransactionUuid,
+        round_id,
+        roundId = '#VOID-ROUND',
+        vertical = 'LUCKYDROP_LOTTERY',
+        note,
+      } = req.body || {};
+      const uuid = String(
+        transaction_uuid || transactionUuid || generateDeterministicUuid('rb')
+      ).trim();
+      const refUuid = String(reference_transaction_uuid || referenceTransactionUuid || '').trim();
+      const result = userPam.rollback({
+        transactionUuid: uuid,
+        referenceTransactionUuid: refUuid,
+        roundId: String(round_id || roundId),
+        vertical,
+        note,
+      });
+      commitUserAccount();
+      if (!result.ok) {
+        return res.status(400).json(result);
+      }
+      return res.json(result);
+    });
   }
-  res.json(result);
-});
+);
 
-// 6. PAM Bonus (Free Bet / Ticket Tokens / Promotional Credit in TON or STARS)
-app.post('/api/pam/bonus', optionalAuth, (req: AuthRequest, res) => {
-  const {
-    transaction_uuid,
-    transactionUuid,
-    round_id,
-    roundId = '#VIP-BONUS',
-    vertical = 'VIP_LOYALTY_BONUS',
-    currency = 'TON',
-    amountTon,
-    amountStars,
-    amountUsdt = 10,
-    creditToRealBalance = true,
-    note,
-  } = req.body || {};
-  const uuid = String(transaction_uuid || transactionUuid || generateDeterministicUuid('bon')).trim();
-  const result = pamEngine.bonus({
-    transactionUuid: uuid,
-    roundId: String(round_id || roundId),
-    vertical,
-    currency: currency === 'STARS' ? 'STARS' : 'TON',
-    amountTon: typeof amountTon === 'number' ? Number(amountTon) : undefined,
-    amountStars: typeof amountStars === 'number' ? Number(amountStars) : undefined,
-    amountUsdt: Number(amountUsdt),
-    creditToRealBalance: Boolean(creditToRealBalance),
-    note,
-  });
-  persistAll();
-  if (!result.ok) {
-    return res.status(400).json(result);
+// 6. PAM Bonus (Server-Verified Bonus Credit)
+app.post(
+  '/api/pam/bonus',
+  optionalAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    const { session, userKey, userAccount, userPam, commitUserAccount } =
+      getOrCreateIsolatedUserContext(req);
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const {
+        transaction_uuid,
+        transactionUuid,
+        round_id,
+        roundId = '#VIP-BONUS',
+        vertical = 'VIP_LOYALTY_BONUS',
+        currency = 'TON',
+        amountTon,
+        amountStars,
+        amountUsdt = 0,
+        creditToRealBalance = true,
+        note,
+      } = req.body || {};
+
+      // Only allow affiliate referral claim if user actually has accumulated referralEarningsTon
+      if (vertical === 'AFFILIATE_REFERRAL') {
+        const claimableTon = roundTonClean(userPam.getState().referralEarningsTon);
+        if (claimableTon <= 0) {
+          return res.status(400).json({
+            ok: false,
+            error: 'NO_REFERRAL_EARNINGS — موجودی پورسانت زیرمجموعه‌گیری شما صفر است.',
+          });
+        }
+        const uuid = String(
+          transaction_uuid || transactionUuid || generateDeterministicUuid('ref_claim')
+        ).trim();
+        const result = userPam.bonus({
+          transactionUuid: uuid,
+          roundId: String(round_id || roundId),
+          vertical,
+          currency: 'TON',
+          amountTon: claimableTon,
+          amountUsdt: Number((claimableTon * DEFAULT_FX_RATES.TON).toFixed(2)),
+          creditToRealBalance: true,
+          note: note || `انتقال پورسانت زیرمجموعه‌گیری (${claimableTon} TON)`,
+        });
+        userPam.getState().referralEarningsTon = 0;
+        commitUserAccount();
+        return res.json(result);
+      }
+
+      if (!session.isAdmin) {
+        return res.status(403).json({
+          ok: false,
+          error: '403 Forbidden — BONUS_REQUIRES_SERVER_AUTHORIZATION',
+        });
+      }
+
+      const uuid = String(
+        transaction_uuid || transactionUuid || generateDeterministicUuid('bon')
+      ).trim();
+      const result = userPam.bonus({
+        transactionUuid: uuid,
+        roundId: String(round_id || roundId),
+        vertical,
+        currency: currency === 'STARS' ? 'STARS' : 'TON',
+        amountTon: typeof amountTon === 'number' ? Number(amountTon) : undefined,
+        amountStars: typeof amountStars === 'number' ? Number(amountStars) : undefined,
+        amountUsdt: Number(amountUsdt),
+        creditToRealBalance: Boolean(creditToRealBalance),
+        note,
+      });
+      userAccount.bonusTokens = userPam.getState().bonusTokensTon;
+      commitUserAccount();
+      if (!result.ok) {
+        return res.status(400).json(result);
+      }
+      return res.json(result);
+    });
   }
-  res.json(result);
-});
+);
 
 // 7. PAM Reconcile (Audit all ledger transactions from genesis)
-app.post('/api/pam/reconcile', optionalAuth, (_req: AuthRequest, res) => {
-  const result = pamEngine.reconcile();
+app.post('/api/pam/reconcile', optionalAuth, (req: AuthRequest, res) => {
+  const { userPam } = getOrCreateIsolatedUserContext(req);
+  const result = userPam.reconcile();
   res.json(result);
 });
 
 // 8. Provably Fair Seed Management (Update Client Seed & Rotate Server Seed)
-app.post('/api/pam/seeds/client', optionalAuth, (req: AuthRequest, res) => {
-  const { clientSeed } = req.body || {};
-  const seeds = pamEngine.updateClientSeed(String(clientSeed || ''));
-  // Also sync clientSeed to active rounds
-  for (const r of dbState.rounds) {
-    r.clientSeed = seeds.clientSeed;
-  }
-  persistAll();
-  res.json({ ok: true, seeds });
+app.post('/api/pam/seeds/client', optionalAuth, async (req: AuthRequest, res) => {
+  const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+  await globalUserLocks.runExclusive(userKey, async () => {
+    const { clientSeed } = req.body || {};
+    const seeds = userPam.updateClientSeed(String(clientSeed || ''));
+    commitUserAccount();
+    res.json({
+      ok: true,
+      seeds: {
+        ...seeds,
+        serverSeed: '', // Never expose active unrevealed serverSeed before rotation
+      },
+    });
+  });
 });
 
-app.post('/api/pam/seeds/rotate', optionalAuth, (_req: AuthRequest, res) => {
-  const seeds = pamEngine.rotateServerSeed();
-  persistAll();
-  res.json({ ok: true, seeds });
+app.post('/api/pam/seeds/rotate', optionalAuth, async (req: AuthRequest, res) => {
+  const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+  await globalUserLocks.runExclusive(userKey, async () => {
+    const previousServerSeed = userPam.getState().seeds.serverSeed;
+    const previousServerSeedHash = userPam.getState().seeds.serverSeedHash;
+    const seeds = userPam.rotateServerSeed();
+    commitUserAccount();
+    res.json({
+      ok: true,
+      revealedPreviousServerSeed: previousServerSeed,
+      revealedPreviousServerSeedHash: previousServerSeedHash,
+      seeds: {
+        ...seeds,
+        serverSeed: '', // Redact new active serverSeed
+      },
+    });
+  });
 });
 
-// 9. Real-Money Instant Mini-Games Execution via PAM Seamless Wallet + 52-Bit HMAC-SHA256
-app.post('/api/pam/mini-game/play', optionalAuth, requireTelegramWebAppAuth, (req: AuthRequest, res) => {
+// 9. 100% Server-Authoritative Instant Mini-Games Execution (Mutex-Locked + Strict Balance Check)
+const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
   if (dbState.killSwitchActive) {
     return res.status(503).json({
       ok: false,
@@ -1038,198 +1159,273 @@ app.post('/api/pam/mini-game/play', optionalAuth, requireTelegramWebAppAuth, (re
     });
   }
 
-  const {
-    gameId = 'PLINKO',
-    currency = 'TON',
-    betAmountUsdt = 5,
-    diceRollUnder = 50,
-    diceTarget,
-    diceMode = 'UNDER',
-    coinSide = 'HEADS',
-    crashAutoCashoutX = 2.0,
-    plinkoRows = 16,
-    plinkoRisk = 'MEDIUM',
-    minesCount = 3,
-    minesRevealedSafeCount = 1,
-    minesHitBomb = false,
-    towerDifficulty = 'MEDIUM',
-    towerFloorsCleared = 1,
-    towerHitTrap = false,
-    wheelRisk = 'MEDIUM',
-    hiloMultiplier = 1.96,
-    hiloWon,
-    hiloSummaryLabel,
-    transaction_uuid,
-  } = req.body || {};
+  const { userKey, userAccount, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
 
-  const activeCurrency = currency === 'STARS' ? 'STARS' : 'TON';
-  // Support bets from 0.01 TON (0.05 USDT) or 1 Star (0.02 USDT) up to ∞ (user's full balance)
-  const safeBet = Math.max(0.01, Number(Number(betAmountUsdt || 0.05).toFixed(4)));
-  const debitUuid = String(transaction_uuid || generateDeterministicUuid('mg_debit')).trim();
-  const seedsBefore = { ...pamEngine.getState().seeds };
-  const roundId = `MG-${gameId}-${seedsBefore.nonce}`;
+  await globalUserLocks.runExclusive(userKey, async () => {
+    const {
+      gameId = 'PLINKO',
+      currency = 'TON',
+      betAmountUsdt,
+      bet,
+      amount,
+      usedFreeBonusToken = false,
+      diceRollUnder = 50,
+      diceTarget,
+      diceMode = 'UNDER',
+      coinSide = 'HEADS',
+      crashAutoCashoutX = 2.0,
+      plinkoRows = 16,
+      plinkoRisk = 'MEDIUM',
+      minesCount = 3,
+      minesRevealedSafeCount = 1,
+      towerDifficulty = 'MEDIUM',
+      towerFloorsCleared = 1,
+      wheelRisk = 'MEDIUM',
+      hiloSummaryLabel,
+      transaction_uuid,
+    } = req.body || {};
 
-  const verticalName = `INSTANT_${gameId}`;
+    const activeCurrency = currency === 'STARS' ? 'STARS' : 'TON';
+    const isFreeDrop =
+      Boolean(usedFreeBonusToken) &&
+      ((gameId === 'PLINKO' && userAccount.freePlinkoDrops > 0) ||
+        (gameId === 'SCRATCH' && userAccount.freeScratchCards > 0));
 
-  // Step 1: Atomic PAM Debit in Active Currency (TON or STARS)
-  const debitRes = pamEngine.debit({
-    transactionUuid: debitUuid,
-    roundId,
-    vertical: verticalName,
-    currency: activeCurrency,
-    amountUsdt: safeBet,
-    note: `شرط بازی آنی ${gameId} (${roundId} • ${activeCurrency})`,
-    incrementNonce: true,
-  });
+    // Resolve raw bet amount in USDT or native currency
+    const rawBetUsdt =
+      betAmountUsdt !== undefined
+        ? Number(betAmountUsdt)
+        : bet !== undefined
+        ? Number(bet)
+        : amount !== undefined
+        ? Number(amount)
+        : NaN;
 
-  if (!debitRes.ok) {
-    return res.status(400).json({
-      ok: false,
-      error: debitRes.error || 'INSUFFICIENT_BALANCE',
-      tonBalance: debitRes.tonBalance,
-      starsBalance: debitRes.starsBalance,
-    });
-  }
+    let safeBetUsdt = 0;
+    if (isFreeDrop) {
+      if (gameId === 'PLINKO') {
+        userAccount.freePlinkoDrops = Math.max(0, userAccount.freePlinkoDrops - 1);
+      } else if (gameId === 'SCRATCH') {
+        userAccount.freeScratchCards = Math.max(0, userAccount.freeScratchCards - 1);
+      }
+      safeBetUsdt = 0.25; // Play-only nominal value for free drop
+    } else {
+      const currentBalanceUsdt =
+        activeCurrency === 'STARS'
+          ? Number((userPam.getState().starsBalance * 0.02).toFixed(4))
+          : Number((userPam.getState().tonBalance * DEFAULT_FX_RATES.TON).toFixed(4));
 
-  // Accrue 0.5% of every real mini-game wager into the 3% Promotional / Rollover Reserve Pool (Zero-Loss Backing)
-  dbState.rolloverReservePoolUsdt = Number(
-    (dbState.rolloverReservePoolUsdt + safeBet * 0.005).toFixed(4)
-  );
+      const betValidation = validateStrictFinancialAmount({
+        rawAmount: rawBetUsdt,
+        currency: 'USDT',
+        minAmount: 0.01,
+        maxAvailableBalance: currentBalanceUsdt,
+      });
 
-  // Step 2: Evaluate outcome deterministically using 52-bit HMAC-SHA256 float X in [0, 1)
-  const evaluation = evaluateProvablyFairMiniGame({
-    gameId: gameId as InstantMiniGameId,
-    serverSeed: seedsBefore.serverSeed,
-    clientSeed: seedsBefore.clientSeed,
-    nonce: seedsBefore.nonce,
-    betAmountUsdt: safeBet,
-    diceRollUnder: Number(diceRollUnder),
-    diceTarget: typeof diceTarget === 'number' ? Number(diceTarget) : Number(diceRollUnder),
-    diceMode: diceMode === 'OVER' ? 'OVER' : 'UNDER',
-    coinSide: coinSide === 'TAILS' ? 'TAILS' : 'HEADS',
-    crashAutoCashoutX: Number(crashAutoCashoutX),
-    plinkoRows: Number(plinkoRows) === 8 ? 8 : Number(plinkoRows) === 12 ? 12 : 16,
-    plinkoRisk:
-      plinkoRisk === 'LOW' || plinkoRisk === 'MEDIUM' || plinkoRisk === 'HIGH'
-        ? plinkoRisk
-        : 'MEDIUM',
-    minesCount: Number(minesCount) || 3,
-    minesRevealedSafeCount: Number(minesRevealedSafeCount) || 1,
-    minesHitBomb: Boolean(minesHitBomb),
-    towerDifficulty:
-      towerDifficulty === 'EASY' || towerDifficulty === 'HARD' ? towerDifficulty : 'MEDIUM',
-    towerFloorsCleared: Number(towerFloorsCleared) || 1,
-    towerHitTrap: Boolean(towerHitTrap),
-    wheelRisk: wheelRisk === 'LOW' || wheelRisk === 'HIGH' ? wheelRisk : 'MEDIUM',
-    hiloMultiplier: Number(hiloMultiplier) || 1.96,
-    hiloWon: typeof hiloWon === 'boolean' ? hiloWon : undefined,
-    hiloSummaryLabel: typeof hiloSummaryLabel === 'string' ? hiloSummaryLabel : undefined,
-  });
-
-  // Step 3: Dynamic Zero-Loss Treasury Solvency Cap:
-  // Even if a user bets 10,000 TON, payout can never exceed the liquid prize reserve cap
-  let creditEntry = null;
-  if (evaluation.payoutUsdt > 0) {
-    const creditUuid = generateDeterministicUuid('mg_credit');
-    const creditRes = pamEngine.credit({
-      transactionUuid: creditUuid,
-      referenceTransactionUuid: debitUuid,
-      roundId,
-      vertical: verticalName,
-      currency: activeCurrency,
-      amountUsdt: evaluation.payoutUsdt,
-      note: `تسویه ضریب ${gameId} (${evaluation.multiplier}x • ${activeCurrency}) — مرجع: ${debitUuid.slice(0, 14)}`,
-    });
-    creditEntry = creditRes.ledgerEntry || null;
-  }
-
-  // Step 4: Zero-Loss Free Lottery Ticket Minting Rule
-  // To guarantee 0% house loss, an instant $5 (1.00 TON) Lottery Ticket is minted ONLY when:
-  // (a) The round hit a designated Golden Bonus Trigger (Plinko slot #1/#N-1, Dice 77.77, Crash >=5x, Wheel >=10x), AND
-  // (b) The player's bet is >= 5.00 USDT (1.00 TON) and the Promotional Reserve Pool covers the ticket cost!
-  // For micro bets (0.01 TON - 0.99 TON), the player receives proportional Turnover XP toward their 100 XP Free Ticket bar.
-  let bonusTicketAwarded = null;
-  const hitBonusTrigger = Boolean(evaluation.plinkoBonusTicket || evaluation.diceLucky7777Ticket);
-  if (hitBonusTrigger && safeBet >= 5.0 && dbState.rolloverReservePoolUsdt >= 5.0) {
-    dbState.rolloverReservePoolUsdt = Number(
-      Math.max(0, dbState.rolloverReservePoolUsdt - 5.0).toFixed(2)
-    );
-    const activeRound = dbState.rounds.find((r) => r.status === 'ACTIVE') || dbState.rounds[0];
-    const targetRoundCode = activeRound?.roundCode || '#ZRN-8493';
-    const mainMax = activeRound?.mainMax || 50;
-    const mainCount = activeRound?.mainCount || 5;
-    const goldenMax = activeRound?.goldenMax || 15;
-
-    const pickedMain: number[] = [];
-    let cursor = 0;
-    while (pickedMain.length < mainCount) {
-      const candidate = ((seedsBefore.nonce * 7 + cursor * 13) % mainMax) + 1;
-      if (!pickedMain.includes(candidate)) pickedMain.push(candidate);
-      cursor++;
+      if (!betValidation.valid) {
+        return res.status(400).json({
+          ok: false,
+          error: betValidation.error,
+          tonBalance: userPam.getState().tonBalance,
+          starsBalance: userPam.getState().starsBalance,
+        });
+      }
+      safeBetUsdt = betValidation.cleanAmount;
     }
-    pickedMain.sort((a, b) => a - b);
-    const pickedGolden = goldenMax > 0 ? (seedsBefore.nonce % goldenMax) + 1 : 0;
-    const prefix = evaluation.diceLucky7777Ticket ? 'D77' : 'PLK';
-    const ticketCode = `${prefix}-${Math.floor(100000 + Math.random() * 900000)}`;
-    const txHash = `0x${sha256Hex(`${debitUuid}:${ticketCode}`)}`;
 
-    bonusTicketAwarded = {
-      id: Date.now(),
-      ticketCode,
-      userUid: pamEngine.getState().playerId,
-      roundCode: targetRoundCode,
-      mainNumbers: JSON.stringify(pickedMain),
-      goldenBall: pickedGolden,
-      costUsdt: '0.00',
-      currencyNetwork: evaluation.diceLucky7777Ticket
-        ? 'LUCKY 77.77 DICE TICKET (RESERVE-BACKED)'
-        : 'GOLDEN SLOT BONUS TICKET (RESERVE-BACKED)',
-      txHash,
-      transactionUuid: `${debitUuid}_bonus_ticket`,
+    const debitUuid = String(transaction_uuid || generateDeterministicUuid('mg_debit')).trim();
+    const seedsBefore = { ...userPam.getState().seeds };
+    const roundId = `MG-${gameId}-${seedsBefore.nonce}`;
+    const verticalName = `INSTANT_${gameId}`;
+
+    let debitEntry = null;
+    if (!isFreeDrop) {
+      const debitRes = userPam.debit({
+        transactionUuid: debitUuid,
+        roundId,
+        vertical: verticalName,
+        currency: activeCurrency,
+        amountUsdt: safeBetUsdt,
+        note: `شرط بازی آنی ${gameId} (${roundId} • ${activeCurrency})`,
+        incrementNonce: true,
+      });
+
+      if (!debitRes.ok) {
+        return res.status(400).json({
+          ok: false,
+          error: debitRes.error || 'INSUFFICIENT_BALANCE',
+          tonBalance: debitRes.tonBalance,
+          starsBalance: debitRes.starsBalance,
+        });
+      }
+      debitEntry = debitRes.ledgerEntry || null;
+      dbState.rolloverReservePoolUsdt = Number(
+        (dbState.rolloverReservePoolUsdt + safeBetUsdt * 0.005).toFixed(4)
+      );
+    } else {
+      userPam.getState().seeds.nonce += 1;
+    }
+
+    // Step 2: 100% Server-Authoritative RNG Outcome via Node crypto.createHmac('sha256', serverSeed) & crypto.randomInt
+    // Client-supplied win flags or multipliers are NEVER trusted!
+    const evaluation = computeServerAuthoritativeGameOutcome({
+      gameId: gameId as InstantMiniGameId,
+      serverSeed: seedsBefore.serverSeed,
       clientSeed: seedsBefore.clientSeed,
-      serverSeedHash: seedsBefore.serverSeedHash,
       nonce: seedsBefore.nonce,
-      commitHash: txHash.slice(2, 34),
-      status: 'ACTIVE',
-      confirmations: 19,
-      prizeWonUsdt: '0.00',
-      claimed: false,
-      createdAt: evaluation.diceLucky7777Ticket
-        ? 'همین الان (جایزه ویژه رول 77.77 • تامین از ذخیره ۳٪)'
-        : 'همین الان (جایزه اسلات طلایی • تامین از ذخیره ۳٪)',
-    };
-    dbState.tickets.unshift(bonusTicketAwarded);
-  }
-
-  persistAll();
-
-  // Live Channel Broadcaster for Big Mini-Game Multiplier Wins (>= 10x)
-  if (evaluation.won && evaluation.multiplier >= 10) {
-    void dispatchAdminTelegramAlert({
-      eventType: 'BIG_MULTIPLIER_WIN',
-      userDisplayName: pamEngine.getState().displayName,
-      amountUsdt: evaluation.payoutUsdt,
-      network: 'TON Mini-Games Arena',
-      multiplierX: evaluation.multiplier,
-      gameTitle: String(gameId),
-      seedHash: seedsBefore.serverSeedHash,
-      details: `برد ضریب انفجاری ${evaluation.multiplier.toFixed(2)}x در بازی ${gameId}`,
+      betAmountUsdt: safeBetUsdt,
+      diceRollUnder: Number(diceRollUnder),
+      diceTarget: typeof diceTarget === 'number' ? Number(diceTarget) : Number(diceRollUnder),
+      diceMode: diceMode === 'OVER' ? 'OVER' : 'UNDER',
+      coinSide: coinSide === 'TAILS' ? 'TAILS' : 'HEADS',
+      crashAutoCashoutX: Number(crashAutoCashoutX),
+      plinkoRows: Number(plinkoRows) === 8 ? 8 : Number(plinkoRows) === 12 ? 12 : 16,
+      plinkoRisk:
+        plinkoRisk === 'LOW' || plinkoRisk === 'MEDIUM' || plinkoRisk === 'HIGH'
+          ? plinkoRisk
+          : 'MEDIUM',
+      minesCount: Number(minesCount) || 3,
+      minesRevealedSafeCount: Number(minesRevealedSafeCount) || 1,
+      towerDifficulty:
+        towerDifficulty === 'EASY' || towerDifficulty === 'HARD' ? towerDifficulty : 'MEDIUM',
+      towerFloorsCleared: Number(towerFloorsCleared) || 1,
+      wheelRisk: wheelRisk === 'LOW' || wheelRisk === 'HIGH' ? wheelRisk : 'MEDIUM',
+      hiloSummaryLabel: typeof hiloSummaryLabel === 'string' ? hiloSummaryLabel : undefined,
     });
-  }
 
-  return res.json({
-    ok: true,
-    evaluation,
-    bonusTicketAwarded,
-    debitTransactionUuid: debitUuid,
-    debitEntry: debitRes.ledgerEntry,
-    creditEntry,
-    tonBalance: pamEngine.getState().tonBalance,
-    starsBalance: pamEngine.getState().starsBalance,
-    seeds: pamEngine.getState().seeds,
-    pamState: pamEngine.getState(),
+    // Step 3: Credit payout on the server
+    let creditEntry = null;
+    if (evaluation.payoutUsdt > 0) {
+      const creditUuid = generateDeterministicUuid('mg_credit');
+      const creditRes = userPam.credit({
+        transactionUuid: creditUuid,
+        referenceTransactionUuid: isFreeDrop ? null : debitUuid,
+        roundId,
+        vertical: verticalName,
+        currency: activeCurrency,
+        amountUsdt: evaluation.payoutUsdt,
+        note: `تسویه ضریب ${gameId} (${evaluation.multiplier}x • ${activeCurrency}) — مرجع: ${debitUuid.slice(0, 14)}`,
+      });
+      creditEntry = creditRes.ledgerEntry || null;
+    }
+
+    // Update user XP on verified real wager
+    if (!isFreeDrop && safeBetUsdt > 0) {
+      userAccount.xp = Number((userAccount.xp + Math.max(1, Math.round(safeBetUsdt))).toFixed(0));
+    }
+
+    // Step 4: Zero-Loss Free Lottery Ticket Minting Rule
+    let bonusTicketAwarded: PersistentTicketRecord | null = null;
+    const hitBonusTrigger = Boolean(evaluation.plinkoBonusTicket || evaluation.diceLucky7777Ticket);
+    if (!isFreeDrop && hitBonusTrigger && safeBetUsdt >= 5.0 && dbState.rolloverReservePoolUsdt >= 5.0) {
+      dbState.rolloverReservePoolUsdt = Number(
+        Math.max(0, dbState.rolloverReservePoolUsdt - 5.0).toFixed(2)
+      );
+      const activeRound = dbState.rounds.find((r) => r.status === 'ACTIVE') || dbState.rounds[0];
+      const targetRoundCode = activeRound?.roundCode || '#LDR-8493';
+      const mainMax = activeRound?.mainMax || 50;
+      const mainCount = activeRound?.mainCount || 5;
+      const goldenMax = activeRound?.goldenMax || 15;
+
+      const pickedMain: number[] = [];
+      let cursor = 0;
+      while (pickedMain.length < mainCount) {
+        const candidate = ((seedsBefore.nonce * 7 + cursor * 13) % mainMax) + 1;
+        if (!pickedMain.includes(candidate)) pickedMain.push(candidate);
+        cursor++;
+      }
+      pickedMain.sort((a, b) => a - b);
+      const pickedGolden = goldenMax > 0 ? (seedsBefore.nonce % goldenMax) + 1 : 0;
+      const prefix = evaluation.diceLucky7777Ticket ? 'D77' : 'PLK';
+      const ticketCode = `${prefix}-${Math.floor(100000 + Math.random() * 900000)}`;
+      const txHash = `0x${sha256Hex(`${debitUuid}:${ticketCode}`)}`;
+
+      bonusTicketAwarded = {
+        id: Date.now(),
+        ticketCode,
+        userUid: userPam.getState().playerId,
+        roundCode: targetRoundCode,
+        mainNumbers: JSON.stringify(pickedMain),
+        goldenBall: pickedGolden,
+        costUsdt: '0.00',
+        currencyNetwork: evaluation.diceLucky7777Ticket
+          ? 'LUCKY 77.77 DICE TICKET (RESERVE-BACKED)'
+          : 'GOLDEN SLOT BONUS TICKET (RESERVE-BACKED)',
+        txHash,
+        transactionUuid: `${debitUuid}_bonus_ticket`,
+        clientSeed: seedsBefore.clientSeed,
+        serverSeedHash: seedsBefore.serverSeedHash,
+        nonce: seedsBefore.nonce,
+        commitHash: txHash.slice(2, 34),
+        status: 'ACTIVE',
+        confirmations: 19,
+        prizeWonUsdt: '0.00',
+        claimed: false,
+        createdAt: evaluation.diceLucky7777Ticket
+          ? 'همین الان (جایزه ویژه رول 77.77 • تامین از ذخیره ۳٪)'
+          : 'همین الان (جایزه اسلات طلایی • تامین از ذخیره ۳٪)',
+      };
+      dbState.tickets.unshift(bonusTicketAwarded);
+      userAccount.myTickets.unshift(bonusTicketAwarded.ticketCode);
+    }
+
+    commitUserAccount();
+
+    if (evaluation.won && evaluation.multiplier >= 10) {
+      void dispatchAdminTelegramAlert({
+        eventType: 'BIG_MULTIPLIER_WIN',
+        userDisplayName: userPam.getState().displayName,
+        amountUsdt: evaluation.payoutUsdt,
+        network: 'TON Mini-Games Arena',
+        multiplierX: evaluation.multiplier,
+        gameTitle: String(gameId),
+        seedHash: seedsBefore.serverSeedHash,
+        details: `برد ضریب انفجاری ${evaluation.multiplier.toFixed(2)}x در بازی ${gameId}`,
+      });
+    }
+
+    const latestPam = userPam.getState();
+    return res.json({
+      ok: true,
+      evaluation,
+      bonusTicketAwarded,
+      debitTransactionUuid: debitUuid,
+      debitEntry,
+      creditEntry,
+      tonBalance: latestPam.tonBalance,
+      starsBalance: latestPam.starsBalance,
+      freePlinkoDrops: userAccount.freePlinkoDrops,
+      freeScratchCards: userAccount.freeScratchCards,
+      xp: userAccount.xp,
+      seeds: {
+        ...latestPam.seeds,
+        serverSeed: '', // Redact active unrevealed server seed
+      },
+      pamState: {
+        ...latestPam,
+        seeds: {
+          ...latestPam.seeds,
+          serverSeed: '',
+        },
+      },
+    });
   });
-});
+};
+
+app.post(
+  '/api/pam/mini-game/play',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleMiniGamePlay
+);
+app.post(
+  '/api/games/play',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleMiniGamePlay
+);
 
 // ============================================================================
 // LIVE PRICE ORACLE & PLATFORM SNAPSHOT (WITH TONAPI + COINGECKO + BINANCE)
@@ -1290,19 +1486,22 @@ app.get('/api/oracle/live', async (_req, res) => {
     fetchJsonWithTimeout('https://api.kucoin.com/api/v1/prices?base=CNY&currencies=USDT'),
   ]);
 
-  // 1. Native TON Blockchain Oracle (TonAPI -> CoinGecko -> KuCoin -> Binance)
   const tonApiUsd = Number(tonApiData?.rates?.TON?.prices?.USD);
-  const tonApiDiff24h = String(tonApiData?.rates?.TON?.diff_24h?.USD || '').replace('%', '').replace('+', '');
+  const tonApiDiff24h = String(tonApiData?.rates?.TON?.diff_24h?.USD || '')
+    .replace('%', '')
+    .replace('+', '');
   if (Number.isFinite(tonApiUsd) && tonApiUsd > 0.1) {
     ton = Number(tonApiUsd.toFixed(4));
-    if (Number.isFinite( parseFloat(tonApiDiff24h) )) {
+    if (Number.isFinite(parseFloat(tonApiDiff24h))) {
       changes24h.TON = Number(parseFloat(tonApiDiff24h).toFixed(2));
     }
     activeSources.push('TonAPI');
   } else if (Number.isFinite(Number(coingeckoTonData?.['the-open-network']?.usd))) {
     ton = Number(Number(coingeckoTonData['the-open-network'].usd).toFixed(4));
     if (Number.isFinite(Number(coingeckoTonData['the-open-network'].usd_24h_change))) {
-      changes24h.TON = Number(Number(coingeckoTonData['the-open-network'].usd_24h_change).toFixed(2));
+      changes24h.TON = Number(
+        Number(coingeckoTonData['the-open-network'].usd_24h_change).toFixed(2)
+      );
     }
     activeSources.push('CoinGecko');
   } else if (Number.isFinite(Number(kucoinTonData?.data?.price))) {
@@ -1312,7 +1511,8 @@ app.get('/api/oracle/live', async (_req, res) => {
 
   if (coingeckoTonData?.bitcoin?.usd) btc = Number(Number(coingeckoTonData.bitcoin.usd).toFixed(2));
   if (coingeckoTonData?.tron?.usd) trx = Number(Number(coingeckoTonData.tron.usd).toFixed(4));
-  if (coingeckoTonData?.binancecoin?.usd) bnb = Number(Number(coingeckoTonData.binancecoin.usd).toFixed(2));
+  if (coingeckoTonData?.binancecoin?.usd)
+    bnb = Number(Number(coingeckoTonData.binancecoin.usd).toFixed(2));
 
   const tlPrice = Number(tetherlandData?.data?.currencies?.USDT?.price);
   if (Number.isFinite(tlPrice) && tlPrice > 50000) {
@@ -1384,68 +1584,14 @@ app.get('/api/oracle/live', async (_req, res) => {
   });
 });
 
-function resolveVerifiedTelegramSession(req: express.Request): {
-  isAdmin: boolean;
-  verifiedUserId: number | null;
-  verificationReason: string;
-} {
-  const liveSecurityCfg = loadServerSecurityConfig(process.env);
-  const initDataRaw =
-    (req.headers['x-telegram-init-data'] as string | undefined) ||
-    (req.body?.initData as string | undefined) ||
-    '';
-
-  const verification = verifyTelegramWebAppInitData({
-    initDataRaw,
-    botToken: getEffectiveBotToken(),
-    strictMode: liveSecurityCfg.strictTelegramInitDataAuth,
-  });
-
-  // Extract user ID strictly from verified initData when available, or from unsigned initData / header if botToken is not set yet
-  let candidateUserId: number | null = verification.user?.id ?? null;
-  if (!candidateUserId && initDataRaw) {
-    try {
-      const sp = new URLSearchParams(initDataRaw);
-      const uRaw = sp.get('user');
-      if (uRaw) {
-        const parsed = JSON.parse(uRaw);
-        if (parsed && typeof parsed.id === 'number') {
-          candidateUserId = parsed.id;
-        }
-      }
-    } catch {
-      // ignore malformed user param
-    }
-  }
-  if (!candidateUserId) {
-    const headerOrBodyId = Number(
-      req.headers['x-telegram-user-id'] ||
-        req.body?.telegramUser?.id ||
-        req.body?.telegramUserId ||
-        0
-    );
-    if (Number.isFinite(headerOrBodyId) && headerOrBodyId > 0) {
-      candidateUserId = headerOrBodyId;
-    }
-  }
-
-  // Admin status MUST default to false and can ONLY become true if candidateUserId matches server's process.env.ADMIN_TELEGRAM_USER_IDS
-  const isAdmin =
-    verification.valid &&
-    evaluateServerAdminAuthorization(candidateUserId, liveSecurityCfg.adminTelegramUserIds);
-
-  return {
-    isAdmin,
-    verifiedUserId: candidateUserId,
-    verificationReason: verification.reason,
-  };
-}
-
 function buildSnapshotPayload(req: express.Request) {
-  const pamState = pamEngine.getState();
-  const reconciliation = pamEngine.reconcile().reconciliation;
-  const sessionInfo = resolveVerifiedTelegramSession(req);
+  const { session, userAccount, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+  commitUserAccount();
+
+  const pamState = userPam.getState();
+  const reconciliation = userPam.reconcile().reconciliation;
   const liveSecurityCfg = loadServerSecurityConfig(process.env);
+  const playerId = pamState.playerId;
 
   // Never expose active unrevealed serverSeed in public round list (only serverSeedHash!)
   const publicRounds = dbState.rounds.map((r) => ({
@@ -1453,16 +1599,49 @@ function buildSnapshotPayload(req: express.Request) {
     serverSeed: undefined,
   }));
 
+  // Partition tickets, deposits, and withdrawals strictly by user unless user is verified Admin
+  const userTickets = session.isAdmin
+    ? dbState.tickets
+    : dbState.tickets.filter(
+        (t) => t.userUid === playerId || t.userUid === session.userKey
+      );
+  const userDeposits = session.isAdmin
+    ? dbState.deposits
+    : dbState.deposits.filter(
+        (d) => d.userUid === playerId || d.userUid === session.userKey
+      );
+  const userWithdrawals = session.isAdmin
+    ? dbState.withdrawals
+    : dbState.withdrawals.filter(
+        (w) => w.userUid === playerId || w.userUid === session.userKey
+      );
+
+  const userQuests = INITIAL_TMA_QUESTS.map((q) => ({
+    ...q,
+    progress: userAccount.completedQuests.includes(q.id) ? q.target : 0,
+    claimed: userAccount.completedQuests.includes(q.id),
+  }));
+
   return {
     ok: true,
-    isAdmin: sessionInfo.isAdmin,
-    verifiedTelegramUserId: sessionInfo.verifiedUserId,
-    authVerificationReason: sessionInfo.verificationReason,
+    isAdmin: session.isAdmin,
+    verifiedTelegramUserId: session.verifiedUserId,
+    authVerificationReason: session.verificationReason,
     tonBalance: pamState.tonBalance,
     starsBalance: pamState.starsBalance,
-    quests: INITIAL_TMA_QUESTS,
+    bonusTokens: pamState.bonusTokensTon,
+    xp: userAccount.xp,
+    freePlinkoDrops: userAccount.freePlinkoDrops,
+    freeScratchCards: userAccount.freeScratchCards,
+    freeLotteryTickets: userAccount.freeLotteryTickets,
+    completedQuests: userAccount.completedQuests,
+    referrals: userAccount.referrals,
+    referredByUserId: userAccount.referredByUserId,
+    referralCode: userAccount.referralCode,
+    quests: userQuests,
     user: {
       uid: pamState.playerId,
+      telegramUserId: session.userKey,
       displayName: pamState.displayName,
       vipTier: pamState.vipTier,
       tonBalance: pamState.tonBalance,
@@ -1470,7 +1649,15 @@ function buildSnapshotPayload(req: express.Request) {
       referralEarningsTon: pamState.referralEarningsTon,
       referralEarningsStars: pamState.referralEarningsStars,
       bonusTokensTon: pamState.bonusTokensTon,
-      isAdmin: sessionInfo.isAdmin,
+      xp: userAccount.xp,
+      freePlinkoDrops: userAccount.freePlinkoDrops,
+      freeScratchCards: userAccount.freeScratchCards,
+      freeLotteryTickets: userAccount.freeLotteryTickets,
+      completedQuests: userAccount.completedQuests,
+      referrals: userAccount.referrals,
+      referralCode: userAccount.referralCode,
+      referredByUserId: userAccount.referredByUserId,
+      isAdmin: session.isAdmin,
     },
     pamState: {
       ...pamState,
@@ -1483,20 +1670,19 @@ function buildSnapshotPayload(req: express.Request) {
     reconciliation,
     rounds: publicRounds,
     deletedRoundCodes: dbState.deletedRoundCodes,
-    tickets: dbState.tickets,
+    tickets: userTickets,
     drawHistory: dbState.drawHistory,
     transactions: dbState.transactions,
     supportMessages: dbState.supportMessages,
-    deposits: dbState.deposits,
-    withdrawals: dbState.withdrawals,
+    deposits: userDeposits,
+    withdrawals: userWithdrawals,
     referralEvents: dbState.referralEvents,
     telegramBotConfig: {
       ...dbState.telegramBotConfig,
-      // ZERO HARDCODED SECRETS: Never expose raw TELEGRAM_BOT_TOKEN to client snapshot!
       botToken: getEffectiveBotToken() ? '•••••••••••• (CONFIGURED_IN_ENV)' : '',
       adminChatId: getEffectiveNotificationChatId() || dbState.telegramBotConfig.adminChatId,
     },
-    telegramAlertsLog: dbState.telegramAlertsLog,
+    telegramAlertsLog: session.isAdmin ? dbState.telegramAlertsLog : [],
     rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
     chestsClaimedCount: dbState.chestsClaimedCount,
     claimedTicketCodes: dbState.claimedTicketCodes,
@@ -1511,16 +1697,6 @@ function buildSnapshotPayload(req: express.Request) {
 
 // Real Handshake Initialization & Session Endpoints
 app.post('/api/auth/init', optionalAuth, (req: AuthRequest, res) => {
-  const incomingUser = req.body?.telegramUser;
-  if (incomingUser && typeof incomingUser.first_name === 'string' && incomingUser.first_name.trim()) {
-    const fullName = `${incomingUser.first_name}${incomingUser.last_name ? ' ' + incomingUser.last_name : ''} (VIP)`;
-    pamEngine.authenticate({
-      playerId: incomingUser.id ? `tg_${incomingUser.id}` : pamEngine.getState().playerId,
-      displayName: fullName,
-      vipTier: pamEngine.getState().vipTier,
-    });
-    persistAll();
-  }
   res.json(buildSnapshotPayload(req));
 });
 
@@ -1528,33 +1704,13 @@ app.get('/api/auth/session', optionalAuth, (req: AuthRequest, res) => {
   res.json(buildSnapshotPayload(req));
 });
 
-// Unified Snapshot Endpoint (Returns Persistent PAM State, Rounds, Tickets, Draw History, Ledger, and Server-Verified isAdmin)
+// Unified Snapshot Endpoint (Returns Isolated Per-User PAM State, Zero Initial Balances for New Users)
 app.get('/api/snapshot', optionalAuth, (req: AuthRequest, res) => {
-  const initDataRaw = (req.headers['x-telegram-init-data'] as string | undefined) || '';
-  if (initDataRaw) {
-    try {
-      const sp = new URLSearchParams(initDataRaw);
-      const uRaw = sp.get('user');
-      if (uRaw) {
-        const parsedUser = JSON.parse(uRaw);
-        if (parsedUser && typeof parsedUser.first_name === 'string' && parsedUser.first_name.trim()) {
-          const fullName = `${parsedUser.first_name}${parsedUser.last_name ? ' ' + parsedUser.last_name : ''} (VIP)`;
-          pamEngine.authenticate({
-            playerId: parsedUser.id ? `tg_${parsedUser.id}` : pamEngine.getState().playerId,
-            displayName: fullName,
-            vipTier: pamEngine.getState().vipTier,
-          });
-        }
-      }
-    } catch {
-      // ignore malformed user param
-    }
-  }
   res.json(buildSnapshotPayload(req));
 });
 
 // ============================================================================
-// MAIN "LUCKYDROP" LOTTERY TICKET PURCHASING (CONNECTED TO PAM DEBIT)
+// MAIN "LUCKYDROP" LOTTERY TICKET PURCHASING (ISOLATED PER USER + MUTEX LOCK)
 // ============================================================================
 
 const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => {
@@ -1567,196 +1723,248 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
       });
     }
 
-    const {
-      roundCode = '#ZRN-8493',
-      mainNumbers = [7, 14, 21, 33, 49],
-      goldenBall = 9,
-      costUsdt = 5,
-      currencyNetwork = 'TON Network',
-      clientSeed = '',
-      referredByCode = '',
-      slips,
-      transaction_uuid,
-    } = req.body || {};
+    const { userKey, userAccount, userPam, commitUserAccount } =
+      getOrCreateIsolatedUserContext(req);
 
-    // Check if the round exists and is ACTIVE
-    const roundObj = dbState.rounds.find((r) => r.roundCode === roundCode) || dbState.rounds[0];
-    if (roundObj && roundObj.status && roundObj.status.toUpperCase() === 'PAUSED') {
-      return res.status(400).json({
-        error: `فروش بلیت برای دور ${roundCode} موقتاً توسط اپراتور متوقف شده است.`,
-      });
-    }
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const {
+        roundCode = '#LDR-8493',
+        mainNumbers = [7, 14, 21, 33, 49],
+        goldenBall = 9,
+        costUsdt,
+        currencyNetwork = 'TON Network',
+        clientSeed = '',
+        referredByCode = '',
+        slips,
+        transaction_uuid,
+      } = req.body || {};
 
-    const slipArray =
-      Array.isArray(slips) && slips.length > 0
-        ? slips
-        : [
-            {
-              slipIndex: 1,
-              mainNumbers: Array.isArray(mainNumbers) ? mainNumbers : [7, 14, 21, 33, 49],
-              goldenBall: Number(goldenBall ?? 8),
-              clientSeed: clientSeed || pamEngine.getState().seeds.clientSeed,
-            },
-          ];
-
-    for (const s of slipArray) {
-      if (!Array.isArray(s.mainNumbers) || s.mainNumbers.length < 4) {
-        return res
-          .status(400)
-          .json({ error: 'لطفاً تمام گوی‌های اصلی مورد نیاز هر کوپن را انتخاب کنید.' });
+      // Check if the round exists and is ACTIVE
+      const roundObj =
+        dbState.rounds.find((r) => r.roundCode === roundCode) || dbState.rounds[0];
+      if (roundObj && roundObj.status && roundObj.status.toUpperCase() === 'PAUSED') {
+        return res.status(400).json({
+          error: `فروش بلیت برای دور ${roundCode} موقتاً توسط اپراتور متوقف شده است.`,
+        });
       }
-    }
 
-    const totalCostNum = Math.max(0.1, Number(costUsdt) || slipArray.length * 5);
-    const unitCostNum = Number((totalCostNum / slipArray.length).toFixed(2));
-    const batchTxUuid = String(
-      transaction_uuid || generateDeterministicUuid('tx_ticket_debit')
-    ).trim();
+      const slipArray =
+        Array.isArray(slips) && slips.length > 0
+          ? slips
+          : [
+              {
+                slipIndex: 1,
+                mainNumbers: Array.isArray(mainNumbers) ? mainNumbers : [7, 14, 21, 33, 49],
+                goldenBall: Number(goldenBall ?? 8),
+                clientSeed: clientSeed || userPam.getState().seeds.clientSeed,
+              },
+            ];
 
-    // 1. Execute PAM Seamless Wallet DEBIT with strict Idempotency
-    const debitRes = pamEngine.debit({
-      transactionUuid: batchTxUuid,
-      roundId: roundCode,
-      vertical: 'LUCKYDROP_LOTTERY',
-      amountUsdt: totalCostNum,
-      note: `خرید ${slipArray.length} بلیت لاتاری در دور ${roundCode} (${currencyNetwork})`,
-      incrementNonce: true,
-    });
+      for (const s of slipArray) {
+        if (!Array.isArray(s.mainNumbers) || s.mainNumbers.length < 4) {
+          return res
+            .status(400)
+            .json({ error: 'لطفاً تمام گوی‌های اصلی مورد نیاز هر کوپن را انتخاب کنید.' });
+        }
+      }
 
-    if (!debitRes.ok) {
-      return res.status(400).json({
-        error: debitRes.error || 'INSUFFICIENT_BALANCE',
-        tonBalance: debitRes.tonBalance,
-        starsBalance: debitRes.starsBalance,
+      const roundUnitPriceUsdt = Math.max(0.1, parseFloat(roundObj?.ticketPriceUsdt || '5') || 5);
+      const expectedTotalCostUsdt = Number((slipArray.length * roundUnitPriceUsdt).toFixed(2));
+      const requestedCostUsdt =
+        costUsdt !== undefined ? Number(costUsdt) : expectedTotalCostUsdt;
+
+      const userAvailableUsdt = Number(
+        (userPam.getState().tonBalance * DEFAULT_FX_RATES.TON).toFixed(4)
+      );
+      const amountCheck = validateStrictFinancialAmount({
+        rawAmount: requestedCostUsdt,
+        currency: 'USDT',
+        minAmount: 0.1,
+        maxAvailableBalance: userAvailableUsdt,
       });
-    }
 
-    // If this was an idempotent replay of an existing transaction_uuid, return existing tickets
-    if (debitRes.idempotentReplay) {
-      const existingTickets = dbState.tickets.filter((t) => t.transactionUuid === batchTxUuid);
+      if (!amountCheck.valid) {
+        return res.status(400).json({
+          ok: false,
+          error: amountCheck.error,
+          tonBalance: userPam.getState().tonBalance,
+          starsBalance: userPam.getState().starsBalance,
+        });
+      }
+
+      const totalCostNum = Math.max(expectedTotalCostUsdt, amountCheck.cleanAmount);
+      const unitCostNum = Number((totalCostNum / slipArray.length).toFixed(2));
+      const batchTxUuid = String(
+        transaction_uuid || generateDeterministicUuid('tx_ticket_debit')
+      ).trim();
+
+      // 1. Execute Per-User PAM Seamless Wallet DEBIT with strict Idempotency
+      const debitRes = userPam.debit({
+        transactionUuid: batchTxUuid,
+        roundId: roundCode,
+        vertical: 'LUCKYDROP_LOTTERY',
+        amountUsdt: totalCostNum,
+        note: `خرید ${slipArray.length} بلیت لاتاری در دور ${roundCode} (${currencyNetwork})`,
+        incrementNonce: true,
+      });
+
+      if (!debitRes.ok) {
+        return res.status(400).json({
+          ok: false,
+          error: debitRes.error || 'INSUFFICIENT_BALANCE',
+          tonBalance: debitRes.tonBalance,
+          starsBalance: debitRes.starsBalance,
+        });
+      }
+
+      if (debitRes.idempotentReplay) {
+        const existingTickets = dbState.tickets.filter((t) => t.transactionUuid === batchTxUuid);
+        return res.json({
+          ok: true,
+          idempotentReplay: true,
+          ticket: existingTickets[0],
+          tickets: existingTickets,
+          tonBalance: debitRes.tonBalance,
+          starsBalance: debitRes.starsBalance,
+          ledgerEntry: debitRes.ledgerEntry,
+        });
+      }
+
+      // 2. Anti-Sybil Referral Check & Commission Credit
+      if (!userAccount.referredByUserId && referredByCode) {
+        bindUserReferralAntiSybil({
+          userId: userKey,
+          startParam: String(referredByCode),
+          usersMap: dbState.users || {},
+        });
+      }
+      const inviterId = userAccount.referredByUserId;
+      const hasValidReferrer = Boolean(inviterId && inviterId !== userKey && dbState.users?.[inviterId]);
+      const zeroLossSplit = calculateZeroLossTicketSplit(totalCostNum, hasValidReferrer, 85, 2);
+
+      if (hasValidReferrer && inviterId && dbState.users?.[inviterId] && zeroLossSplit.referralCommissionUsdt > 0) {
+        const inviterAccount = dbState.users[inviterId];
+        const commTon = roundTonClean(zeroLossSplit.referralCommissionUsdt / DEFAULT_FX_RATES.TON);
+        inviterAccount.pamState.referralEarningsTon = roundTonClean(
+          (inviterAccount.pamState.referralEarningsTon || 0) + commTon
+        );
+      }
+
+      dbState.rolloverReservePoolUsdt = Number(
+        (dbState.rolloverReservePoolUsdt + zeroLossSplit.rolloverReserveUsdt).toFixed(2)
+      );
+
+      if (roundObj) {
+        const prevSales = parseFloat(roundObj.totalSalesUsdt) || 0;
+        const nextSales = prevSales + totalCostNum;
+        const poolSplit = calculateDynamicPariMutuelPool(nextSales, 15);
+        roundObj.totalSalesUsdt = poolSplit.grossCollectedUsdt.toFixed(2);
+        roundObj.jackpotUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
+        roundObj.totalPayoutUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
+        roundObj.operatorProfitUsdt = poolSplit.siteShare15Usdt.toFixed(2);
+        roundObj.rolloverReserveUsdt = (poolSplit.grossCollectedUsdt * 0.03).toFixed(2);
+        roundObj.ticketsSoldCount = (Number(roundObj.ticketsSoldCount) || 0) + slipArray.length;
+        roundObj.soldPercent = Math.min(99, (roundObj.soldPercent || 0) + slipArray.length);
+      }
+
+      // 3. Persist each purchased ticket scoped to userAccount
+      const currentSeeds = userPam.getState().seeds;
+      const roundSeedHash = roundObj?.serverSeedHash || currentSeeds.serverSeedHash;
+      const mintedTickets: PersistentTicketRecord[] = [];
+
+      for (let i = 0; i < slipArray.length; i++) {
+        const slip = slipArray[i];
+        const ticketNonce = (roundObj ? roundObj.nonce : currentSeeds.nonce) + i;
+        if (roundObj) {
+          roundObj.nonce += 1;
+        }
+        const serialRandom = Math.floor(100000 + Math.random() * 900000);
+        const prefix = roundCode.replace(/[^A-Z]/gi, '').slice(0, 3).toUpperCase() || 'LDR';
+        const ticketCode = `${prefix}-${serialRandom}`;
+        const effectiveClientSeed =
+          (slip.clientSeed || clientSeed || currentSeeds.clientSeed).trim() ||
+          'luckydrop_vip_client_seed';
+        const txHash = `0x${sha256Hex(`${batchTxUuid}:${ticketCode}:${effectiveClientSeed}:${ticketNonce}`)}`;
+
+        const ticketRecord: PersistentTicketRecord = {
+          id: Date.now() + i,
+          ticketCode,
+          userUid: userPam.getState().playerId,
+          roundCode,
+          mainNumbers: JSON.stringify(
+            slip.mainNumbers.map(Number).sort((a: number, b: number) => a - b)
+          ),
+          goldenBall: Number(slip.goldenBall ?? 0),
+          costUsdt: unitCostNum.toFixed(2),
+          currencyNetwork,
+          txHash,
+          transactionUuid: i === 0 ? batchTxUuid : `${batchTxUuid}_${i + 1}`,
+          payoutTransactionUuid: null,
+          clientSeed: effectiveClientSeed,
+          serverSeedHash: roundSeedHash,
+          nonce: ticketNonce,
+          commitHash: txHash.slice(2, 34),
+          status: 'ACTIVE',
+          confirmations: 19,
+          prizeWonUsdt: '0.00',
+          claimed: false,
+          createdAt: new Date().toLocaleTimeString('fa-IR'),
+        };
+
+        dbState.tickets.unshift(ticketRecord);
+        userAccount.myTickets.unshift(ticketCode);
+        mintedTickets.push(ticketRecord);
+      }
+
+      if (hasValidReferrer && zeroLossSplit.referralCommissionUsdt > 0) {
+        dbState.referralEvents.unshift({
+          id: Date.now(),
+          referrerCode: inviterId ? `ref_${inviterId}` : String(referredByCode),
+          buyerDisplayName: userPam.getState().displayName,
+          roundCode,
+          ticketAmountUsdt: totalCostNum,
+          prizePool85Usdt: zeroLossSplit.prizePoolUsdt,
+          grossLotteryProfit10Usdt: Number((totalCostNum * 0.1).toFixed(2)),
+          referralCommission2Usdt: zeroLossSplit.referralCommissionUsdt,
+          commissionUsdt: zeroLossSplit.referralCommissionUsdt,
+          netHouseProfit8Usdt: zeroLossSplit.netOperatorProfitUsdt,
+          netHouseProfitUsdt: zeroLossSplit.netOperatorProfitUsdt,
+          createdAt: 'همین الان',
+        });
+      }
+
+      commitUserAccount();
+
+      if (dbState.telegramBotConfig.notifyOnTicketPurchase) {
+        await dispatchAdminTelegramAlert({
+          eventType: 'TICKET_PURCHASE',
+          userDisplayName: userPam.getState().displayName,
+          amountUsdt: totalCostNum,
+          network: currencyNetwork,
+          roundCode,
+          roundTitleFa: roundObj?.titleFa || roundCode,
+          ticketCount: mintedTickets.length,
+          seedHash: roundSeedHash,
+          details: `صدور ${mintedTickets.length} بلیت (${mintedTickets[0].ticketCode}) در دور ${roundCode}`,
+        });
+      }
+
+      const latestPam = userPam.getState();
       return res.json({
         ok: true,
-        idempotentReplay: true,
-        ticket: existingTickets[0],
-        tickets: existingTickets,
-        tonBalance: debitRes.tonBalance,
-        starsBalance: debitRes.starsBalance,
+        ticket: mintedTickets[0],
+        tickets: mintedTickets,
+        rounds: dbState.rounds.map((r) => ({ ...r, serverSeed: undefined })),
+        tonBalance: latestPam.tonBalance,
+        starsBalance: latestPam.starsBalance,
         ledgerEntry: debitRes.ledgerEntry,
+        pamState: {
+          ...latestPam,
+          seeds: { ...latestPam.seeds, serverSeed: '' },
+        },
+        zeroLossSplit,
+        rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
       });
-    }
-
-    // 2. Dynamic Pari-Mutuel Pool Split (85% added to Distributable Pool, 15% Reserved for Site)
-    const cleanRefCode = String(referredByCode || '').trim().toUpperCase();
-    const hasValidReferrer = cleanRefCode.length >= 4 && cleanRefCode !== 'VIP-KAMRAN777-SELF';
-    const zeroLossSplit = calculateZeroLossTicketSplit(totalCostNum, hasValidReferrer, 85, 2);
-
-    dbState.rolloverReservePoolUsdt = Number(
-      (dbState.rolloverReservePoolUsdt + zeroLossSplit.rolloverReserveUsdt).toFixed(2)
-    );
-
-    if (roundObj) {
-      const prevSales = parseFloat(roundObj.totalSalesUsdt) || 0;
-      const nextSales = prevSales + totalCostNum;
-      const poolSplit = calculateDynamicPariMutuelPool(nextSales, 15);
-      roundObj.totalSalesUsdt = poolSplit.grossCollectedUsdt.toFixed(2);
-      roundObj.jackpotUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
-      roundObj.totalPayoutUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
-      roundObj.operatorProfitUsdt = poolSplit.siteShare15Usdt.toFixed(2);
-      roundObj.rolloverReserveUsdt = (poolSplit.grossCollectedUsdt * 0.03).toFixed(2);
-      roundObj.ticketsSoldCount = (Number(roundObj.ticketsSoldCount) || 0) + slipArray.length;
-      roundObj.soldPercent = Math.min(99, (roundObj.soldPercent || 20) + slipArray.length);
-    }
-
-    // 3. Persist each purchased ticket with status = 'ACTIVE' and round's serverSeedHash commitment
-    const currentSeeds = pamEngine.getState().seeds;
-    const roundSeedHash = roundObj?.serverSeedHash || currentSeeds.serverSeedHash;
-    const mintedTickets: PersistentTicketRecord[] = [];
-
-    for (let i = 0; i < slipArray.length; i++) {
-      const slip = slipArray[i];
-      const ticketNonce = (roundObj ? roundObj.nonce : currentSeeds.nonce) + i;
-      if (roundObj) {
-        roundObj.nonce += 1;
-      }
-      const serialRandom = Math.floor(100000 + Math.random() * 900000);
-      const prefix = roundCode.replace(/[^A-Z]/gi, '').slice(0, 3).toUpperCase() || 'TON';
-      const ticketCode = `${prefix}-${serialRandom}`;
-      const effectiveClientSeed =
-        (slip.clientSeed || clientSeed || currentSeeds.clientSeed).trim() ||
-        'luckydrop_vip_client_seed';
-      const txHash = `0x${sha256Hex(`${batchTxUuid}:${ticketCode}:${effectiveClientSeed}:${ticketNonce}`)}`;
-
-      const ticketRecord: PersistentTicketRecord = {
-        id: Date.now() + i,
-        ticketCode,
-        userUid: pamEngine.getState().playerId,
-        roundCode,
-        mainNumbers: JSON.stringify(slip.mainNumbers.map(Number).sort((a: number, b: number) => a - b)),
-        goldenBall: Number(slip.goldenBall ?? 0),
-        costUsdt: unitCostNum.toFixed(2),
-        currencyNetwork,
-        txHash,
-        transactionUuid: i === 0 ? batchTxUuid : `${batchTxUuid}_${i + 1}`,
-        payoutTransactionUuid: null,
-        clientSeed: effectiveClientSeed,
-        serverSeedHash: roundSeedHash,
-        nonce: ticketNonce,
-        commitHash: txHash.slice(2, 34),
-        status: 'ACTIVE',
-        confirmations: 19,
-        prizeWonUsdt: '0.00',
-        claimed: false,
-        createdAt: new Date().toLocaleTimeString('fa-IR'),
-      };
-
-      dbState.tickets.unshift(ticketRecord);
-      mintedTickets.push(ticketRecord);
-    }
-
-    if (hasValidReferrer && zeroLossSplit.referralCommissionUsdt > 0) {
-      dbState.referralEvents.unshift({
-        id: Date.now(),
-        referrerCode: cleanRefCode,
-        buyerDisplayName: pamEngine.getState().displayName,
-        roundCode,
-        ticketAmountUsdt: totalCostNum,
-        prizePool85Usdt: zeroLossSplit.prizePoolUsdt,
-        grossLotteryProfit10Usdt: Number((totalCostNum * 0.1).toFixed(2)),
-        referralCommission2Usdt: zeroLossSplit.referralCommissionUsdt,
-        commissionUsdt: zeroLossSplit.referralCommissionUsdt,
-        netHouseProfit8Usdt: zeroLossSplit.netOperatorProfitUsdt,
-        netHouseProfitUsdt: zeroLossSplit.netOperatorProfitUsdt,
-        createdAt: 'همین الان',
-      });
-    }
-
-    persistAll();
-
-    if (dbState.telegramBotConfig.notifyOnTicketPurchase) {
-      await dispatchAdminTelegramAlert({
-        eventType: 'TICKET_PURCHASE',
-        userDisplayName: pamEngine.getState().displayName,
-        amountUsdt: totalCostNum,
-        network: currencyNetwork,
-        roundCode,
-        roundTitleFa: roundObj?.titleFa || roundCode,
-        ticketCount: mintedTickets.length,
-        seedHash: roundSeedHash,
-        details: `صدور ${mintedTickets.length} بلیت (${mintedTickets[0].ticketCode}) در دور ${roundCode}`,
-      });
-    }
-
-    return res.json({
-      ok: true,
-      ticket: mintedTickets[0],
-      tickets: mintedTickets,
-      rounds: dbState.rounds.map((r) => ({ ...r, serverSeed: undefined })),
-      tonBalance: debitRes.tonBalance,
-      starsBalance: debitRes.starsBalance,
-      ledgerEntry: debitRes.ledgerEntry,
-      pamState: pamEngine.getState(),
-      zeroLossSplit,
-      rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
     });
   } catch (error: any) {
     console.error('Failed to purchase ticket:', error);
@@ -1764,8 +1972,27 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
   }
 };
 
-app.post('/api/tickets/purchase', optionalAuth, requireTelegramWebAppAuth, handleTicketPurchase);
-app.post('/api/tickets/buy', optionalAuth, requireTelegramWebAppAuth, handleTicketPurchase);
+app.post(
+  '/api/tickets/purchase',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleTicketPurchase
+);
+app.post(
+  '/api/tickets/buy',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleTicketPurchase
+);
+app.post(
+  '/api/lottery/buy',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleTicketPurchase
+);
 
 // ============================================================================
 // REAL PROVABLY FAIR LOTTERY DRAW EXECUTION ENGINE (PARI-MUTUEL 85% / 15%)
@@ -1777,11 +2004,13 @@ app.post('/api/tickets/buy', optionalAuth, requireTelegramWebAppAuth, handleTick
 app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const {
-      roundCode = '#ZRN-8493',
+      roundCode = '#LDR-8493',
       clientSeedOverride,
       forceWinningMain,
       forceWinningGolden,
     } = req.body || {};
+
+    const { session, userPam } = getOrCreateIsolatedUserContext(req);
 
     let roundObj = dbState.rounds.find((r) => r.roundCode === roundCode);
     if (!roundObj && dbState.rounds.length > 0) {
@@ -1794,12 +2023,16 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
     const activeServerSeed =
       roundObj.serverSeed || sha256Hex(`luckydrop_seed_${roundObj.roundCode}_${Date.now()}`);
     const activeClientSeed =
-      (clientSeedOverride || roundObj.clientSeed || pamEngine.getState().seeds.clientSeed || '').trim() ||
-      'luckydrop_vip_client_seed';
+      (
+        clientSeedOverride ||
+        roundObj.clientSeed ||
+        userPam.getState().seeds.clientSeed ||
+        ''
+      ).trim() || 'luckydrop_vip_client_seed';
     const drawNonce = Math.max(1, Number(roundObj.nonce) || 1);
 
-    // 1. Derive Winning Numbers using HMAC-SHA256 52-Bit Uniform Float X in [0, 1)
-    const drawProof = deriveProvablyFairLotteryDraw({
+    // 1. 100% Server-Authoritative Lottery Draw using Node's crypto.createHmac('sha256', serverSeed) & crypto.randomInt
+    const drawProof = computeServerAuthoritativeLotteryDraw({
       serverSeed: activeServerSeed,
       clientSeed: activeClientSeed,
       nonce: drawNonce,
@@ -1810,11 +2043,13 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
     });
 
     const drawnMain: number[] =
-      Array.isArray(forceWinningMain) && forceWinningMain.length >= 4
+      session.isAdmin && Array.isArray(forceWinningMain) && forceWinningMain.length >= 4
         ? forceWinningMain.map(Number).sort((a, b) => a - b)
         : drawProof.drawnMain;
     const drawnGolden: number =
-      typeof forceWinningGolden === 'number' ? forceWinningGolden : drawProof.drawnGolden;
+      session.isAdmin && typeof forceWinningGolden === 'number'
+        ? forceWinningGolden
+        : drawProof.drawnGolden;
 
     // 2. Dynamic Pari-Mutuel Pool Calculation: 15% Site Share Reserved, 85% Distributable Pool
     const grossCollectedUsdt = Math.max(0, parseFloat(roundObj.totalSalesUsdt) || 0);
@@ -1857,7 +2092,7 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
       }
     }
 
-    // Second pass: distribute the exact 85% collected pool among winning tickets proportionally!
+    // Second pass: distribute the exact 85% collected pool among winning tickets proportionally
     const rawWeights = candidateTickets.map((c) => (c.evalResult.won ? c.evalResult.prizeUsdt : 0));
     const distributedPrizes = distributePoolAmongWinners(distributablePool85Usdt, rawWeights);
 
@@ -1885,15 +2120,30 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
         totalPayoutUsdt = Number((totalPayoutUsdt + finalPrizeUsdt).toFixed(2));
 
         const payoutUuid = `tx_win_${ticket.ticketCode}_${drawNonce}`;
-        const creditRes = pamEngine.credit({
-          transactionUuid: payoutUuid,
-          referenceTransactionUuid: ticket.transactionUuid || null,
-          roundId: roundObj.roundCode,
-          vertical: 'LUCKYDROP_LOTTERY',
-          amountUsdt: finalPrizeUsdt,
-          note: `تسویه راس تایم استخر ۸۵٪ برای کوپن ${ticket.ticketCode} (${evalResult.tierLabelFa}) در دور ${roundObj.roundCode}`,
-        });
-        ticket.payoutTransactionUuid = creditRes.ledgerEntry?.transactionUuid || payoutUuid;
+        const ownerKey = String(ticket.userUid || '').replace(/^tg_/, '');
+        const ownerAccount = dbState.users?.[ownerKey];
+        let winnerDisplayName = 'کاربر برنده LuckyDrop';
+
+        if (ownerAccount) {
+          const ownerPam = new PAMSeamlessWalletEngine(ownerAccount.pamState);
+          const creditRes = ownerPam.credit({
+            transactionUuid: payoutUuid,
+            referenceTransactionUuid: ticket.transactionUuid || null,
+            roundId: roundObj.roundCode,
+            vertical: 'LUCKYDROP_LOTTERY',
+            amountUsdt: finalPrizeUsdt,
+            note: `تسویه راس تایم استخر ۸۵٪ برای کوپن ${ticket.ticketCode} (${evalResult.tierLabelFa}) در دور ${roundObj.roundCode}`,
+          });
+          ownerAccount.pamState = ownerPam.getState();
+          ownerAccount.tonBalance = roundTonClean(ownerAccount.pamState.tonBalance);
+          ownerAccount.starsBalance = roundStarsClean(ownerAccount.pamState.starsBalance);
+          ownerAccount.ledger = ownerAccount.pamState.ledger;
+          winnerDisplayName = ownerAccount.displayName;
+          ticket.payoutTransactionUuid = creditRes.ledgerEntry?.transactionUuid || payoutUuid;
+        } else {
+          ticket.payoutTransactionUuid = payoutUuid;
+        }
+
         if (!dbState.claimedTicketCodes.includes(ticket.ticketCode)) {
           dbState.claimedTicketCodes.push(ticket.ticketCode);
         }
@@ -1907,7 +2157,7 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
           network: 'TON Network',
           amountUsdt: finalPrizeUsdt.toFixed(2),
           amountCrypto: `${tonWon} TON`,
-          winnerName: pamEngine.getState().displayName,
+          winnerName: winnerDisplayName,
           winnerLocation: 'تسویه راس تایم (۸۵٪ استخر)',
           lotteryTitle: roundObj.titleFa,
           winningCombo: `[${drawnMain.join(', ')}] + ★${drawnGolden}`,
@@ -1941,7 +2191,6 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
     const durMin = Math.max(1, Number(roundObj.durationMinutes) || 60);
     roundObj.drawTargetTimestampMs = Date.now() + durMin * 60 * 1000;
 
-    // If winners took the 85% pool, reset pool to initialSeedUsdt for the new cycle
     if (winnersCount > 0) {
       const seedUsdt = Math.max(0, parseFloat(roundObj.initialSeedUsdt || '0') || 0);
       const nextSplit = calculateDynamicPariMutuelPool(seedUsdt, 15);
@@ -1952,9 +2201,7 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
       roundObj.ticketsSoldCount = 0;
     }
 
-    pamEngine.rotateServerSeed(nextServerSeed);
-
-    // 4. Record verifiable draw in Draw History
+    // 4. Record verifiable draw in Draw History (serverSeed is revealed ONLY after draw completion!)
     const drawRecord: VerifiableDrawHistoryRecord = {
       drawId: `DRAW-${roundObj.roundCode.replace('#', '')}-${drawNonce}`,
       roundCode: roundObj.roundCode,
@@ -1977,7 +2224,6 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
 
     persistAll();
 
-    // Broadcast Official Draw Result + 64-char SHA-256 Seed Hash to Telegram Channel
     void dispatchAdminTelegramAlert({
       eventType: 'DRAW_RESULT',
       userDisplayName: `${winnersCount} برنده راس تایم`,
@@ -1990,6 +2236,9 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
       seedHash: drawProof.serverSeedHash,
       details: `قرعه‌کشی دور ${roundObj.roundCode} انجام شد • استخر ۸۵٪ تقسیم‌شده: $${distributablePool85Usdt.toFixed(2)}`,
     });
+
+    const refreshedCaller = getOrCreateIsolatedUserContext(req);
+    const callerPam = refreshedCaller.userPam.getState();
 
     res.json({
       ok: true,
@@ -2007,9 +2256,12 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
       distributablePool85Usdt: poolSplit.distributablePool85Usdt,
       evaluatedTickets: evaluatedTicketsSummary,
       rounds: dbState.rounds.map((r) => ({ ...r, serverSeed: undefined })),
-      tonBalance: pamEngine.getState().tonBalance,
-      starsBalance: pamEngine.getState().starsBalance,
-      pamState: pamEngine.getState(),
+      tonBalance: callerPam.tonBalance,
+      starsBalance: callerPam.starsBalance,
+      pamState: {
+        ...callerPam,
+        seeds: { ...callerPam.seeds, serverSeed: '' },
+      },
       nextServerSeedHash: roundObj.serverSeedHash,
     });
   } catch (error: any) {
@@ -2044,14 +2296,13 @@ app.post('/api/admin/rounds', optionalAuth, async (req: AuthRequest, res) => {
         ? 'FLS'
         : category === 'TON_SPECIAL'
         ? 'TON'
-        : 'ZRN';
+        : 'LDR';
     const roundCode = `#${prefix}-${randomNum}`;
     const newServerSeed = generateCryptographicServerSeed();
     const newServerSeedHash = sha256Hex(newServerSeed);
 
     const safePrice = Math.max(0.1, Number(ticketPriceUsdt) || 1.6);
     const safeDurationMin = Math.max(1, Number(durationMinutes) || 60);
-    // Start pool from initialSeedUsdt (default 0) so it fills dynamically from ticket sales
     const rawStartingPool =
       typeof initialSeedUsdt === 'number'
         ? Math.max(0, Number(initialSeedUsdt))
@@ -2061,8 +2312,7 @@ app.post('/api/admin/rounds', optionalAuth, async (req: AuthRequest, res) => {
     const poolSplit = calculateDynamicPariMutuelPool(rawStartingPool, 15);
 
     const cleanTitle =
-      String(titleFa || '').trim() ||
-      `استخر قرعه‌کشی TON (${roundCode})`;
+      String(titleFa || '').trim() || `استخر قرعه‌کشی TON (${roundCode})`;
 
     const newRound: PersistentRoundRecord = {
       id: Date.now(),
@@ -2089,7 +2339,7 @@ app.post('/api/admin/rounds', optionalAuth, async (req: AuthRequest, res) => {
       ticketsSoldCount: 0,
       serverSeed: newServerSeed,
       serverSeedHash: newServerSeedHash,
-      clientSeed: pamEngine.getState().seeds.clientSeed,
+      clientSeed: 'luckydrop_vip_client_seed',
       nonce: 1,
       winningNumbers: '[7,14,23,38,49]',
       winningGoldenBall: 8,
@@ -2149,7 +2399,6 @@ const handleDeleteRound = (rawCode: string, deleteAll: boolean = false) => {
   return { deletedRoundCode: targetWithHash, removedCount: beforeLen - dbState.rounds.length };
 };
 
-// Delete Lottery Round via DELETE /:roundCode or POST /delete
 app.delete('/api/admin/rounds/:roundCode', optionalAuth, (req: AuthRequest, res) => {
   try {
     const out = handleDeleteRound(req.params.roundCode || '');
@@ -2179,7 +2428,6 @@ app.post('/api/admin/rounds/delete', optionalAuth, (req: AuthRequest, res) => {
   }
 });
 
-// Toggle Round Status (ACTIVE <-> PAUSED)
 app.post('/api/admin/rounds/toggle', optionalAuth, (req: AuthRequest, res) => {
   try {
     const { roundCode } = req.body || {};
@@ -2199,7 +2447,6 @@ app.post('/api/admin/rounds/toggle', optionalAuth, (req: AuthRequest, res) => {
   }
 });
 
-// Update Round Ticket Price & Optional Timer Reset
 app.post('/api/admin/rounds/price', optionalAuth, (req: AuthRequest, res) => {
   try {
     const { roundCode, ticketPriceUsdt, durationMinutes } = req.body || {};
@@ -2228,58 +2475,289 @@ app.post('/api/admin/rounds/price', optionalAuth, (req: AuthRequest, res) => {
 });
 
 // ============================================================================
+// REAL TELEGRAM QUESTS VERIFICATION (`getChatMember`) & ANTI-SYBIL REFERRAL BIND
+// ============================================================================
+
+const handleQuestVerificationAndClaim = async (req: AuthRequest, res: express.Response) => {
+  try {
+    const { session, userKey, userAccount, userPam, commitUserAccount } =
+      getOrCreateIsolatedUserContext(req);
+
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const { questId, channelId } = req.body || {};
+      const cleanQuestId = String(questId || '').trim();
+      const questSpec = INITIAL_TMA_QUESTS.find((q) => q.id === cleanQuestId);
+      if (!questSpec) {
+        return res.status(404).json({
+          ok: false,
+          error: 'QUEST_NOT_FOUND — ماموریت مورد نظر یافت نشد.',
+        });
+      }
+
+      if (userAccount.completedQuests.includes(cleanQuestId)) {
+        return res.status(409).json({
+          ok: false,
+          error: 'QUEST_ALREADY_CLAIMED — پاداش این ماموریت قبلاً دریافت شده است.',
+        });
+      }
+
+      // Real Telegram Bot API `getChatMember` verification for channel/group membership quests
+      if (cleanQuestId === 'JOIN_TELEGRAM_CHANNEL' || channelId) {
+        const activeBotToken = getEffectiveBotToken();
+        const targetChannel = normalizeTelegramChatId(
+          String(channelId || getEffectiveNotificationChatId() || '@LuckyDropOfficial')
+        );
+        const numericUserId = session.verifiedUserId || Number(userKey);
+
+        if (!activeBotToken || activeBotToken.length < 10) {
+          return res.status(400).json({
+            ok: false,
+            error:
+              'TELEGRAM_BOT_TOKEN_MISSING — برای تایید عضویت واقعی در کانال تلگرام، متغیر محیطی TELEGRAM_BOT_TOKEN باید روی سرور تنظیم شود.',
+          });
+        }
+        if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+          return res.status(400).json({
+            ok: false,
+            error: 'INVALID_TELEGRAM_USER_ID — شناسه کاربری تلگرام برای بررسی عضویت یافت نشد.',
+          });
+        }
+
+        const chatMemberUrl = `https://api.telegram.org/bot${encodeURIComponent(
+          activeBotToken
+        )}/getChatMember?chat_id=${encodeURIComponent(targetChannel)}&user_id=${encodeURIComponent(
+          String(numericUserId)
+        )}`;
+
+        try {
+          const tgResp = await fetch(chatMemberUrl, { method: 'GET' });
+          const tgData: any = await tgResp.json().catch(() => null);
+          const memberStatus = String(tgData?.result?.status || '').toLowerCase();
+          const isValidMember =
+            tgResp.ok &&
+            tgData?.ok &&
+            (memberStatus === 'member' ||
+              memberStatus === 'administrator' ||
+              memberStatus === 'creator');
+
+          if (!isValidMember) {
+            return res.status(400).json({
+              ok: false,
+              verified: false,
+              memberStatus: memberStatus || 'not_member',
+              error: `عضویت شما در کانال رسمی (${targetChannel}) هنوز توسط سرور تلگرام تایید نشد (وضعیت: ${memberStatus || 'عدم عضویت'}). ابتدا عضو شوید و دوباره تلاش کنید.`,
+            });
+          }
+        } catch (err: any) {
+          return res.status(502).json({
+            ok: false,
+            error: `خطا در ارتباط با API تلگرام (getChatMember): ${err?.message || 'Network Error'}`,
+          });
+        }
+      } else if (cleanQuestId === 'INVITE_3_FRIENDS') {
+        if (userAccount.referrals.length < 3) {
+          return res.status(400).json({
+            ok: false,
+            error: `شما تاکنون ${userAccount.referrals.length} نفر از ۳ دوست مورد نیاز را دعوت کرده‌اید.`,
+          });
+        }
+      } else if (cleanQuestId === 'PLAY_10_MINIGAMES') {
+        const miniGameCount = userPam
+          .getState()
+          .ledger.filter((e) => e.type === 'DEBIT' && e.vertical.startsWith('INSTANT_')).length;
+        if (miniGameCount < 10) {
+          return res.status(400).json({
+            ok: false,
+            error: `شما تاکنون ${miniGameCount} دور از ۱۰ دور بازی آنی مورد نیاز را انجام داده‌اید.`,
+          });
+        }
+      }
+
+      // Mark quest completed & credit isolated user rewards
+      userAccount.completedQuests.push(cleanQuestId);
+      let bonusTicketAwarded: PersistentTicketRecord | null = null;
+
+      if (questSpec.rewardType === 'FREE_PLINKO_DROPS') {
+        userAccount.freePlinkoDrops += questSpec.rewardAmount;
+      } else if (questSpec.rewardType === 'FREE_SCRATCH_CARD') {
+        userAccount.freeScratchCards += questSpec.rewardAmount;
+        userAccount.xp += 35;
+      } else if (questSpec.rewardType === 'BONUS_XP') {
+        userAccount.xp += questSpec.rewardAmount;
+        userAccount.freePlinkoDrops += 1;
+      } else if (questSpec.rewardType === 'FREE_LOTTERY_TICKET') {
+        userAccount.freeLotteryTickets += questSpec.rewardAmount;
+        const activeRound = dbState.rounds.find((r) => r.status === 'ACTIVE') || dbState.rounds[0];
+        const targetRoundCode = activeRound?.roundCode || '#LDR-8493';
+        const seedsNow = userPam.getState().seeds;
+        const ticketCode = `QST-${Math.floor(100000 + Math.random() * 900000)}`;
+        const txHash = `0x${sha256Hex(`quest:${cleanQuestId}:${userKey}:${Date.now()}`)}`;
+
+        bonusTicketAwarded = {
+          id: Date.now(),
+          ticketCode,
+          userUid: userPam.getState().playerId,
+          roundCode: targetRoundCode,
+          mainNumbers: JSON.stringify([7, 14, 21, 35, 49]),
+          goldenBall: 7,
+          costUsdt: '0.00',
+          currencyNetwork: 'TELEGRAM QUEST BONUS (TURNOVER-LOCKED)',
+          txHash,
+          transactionUuid: `tx_quest_${cleanQuestId}_${userKey}`,
+          clientSeed: seedsNow.clientSeed,
+          serverSeedHash: seedsNow.serverSeedHash,
+          nonce: seedsNow.nonce,
+          commitHash: txHash.slice(2, 34),
+          status: 'ACTIVE',
+          confirmations: 19,
+          prizeWonUsdt: '0.00',
+          claimed: false,
+          createdAt: 'همین الان (پاداش ماموریت تاییدشده تلگرام)',
+        };
+        dbState.tickets.unshift(bonusTicketAwarded);
+        userAccount.myTickets.unshift(ticketCode);
+      }
+
+      commitUserAccount();
+
+      return res.json({
+        ok: true,
+        verified: true,
+        questId: cleanQuestId,
+        completedQuests: userAccount.completedQuests,
+        freePlinkoDrops: userAccount.freePlinkoDrops,
+        freeScratchCards: userAccount.freeScratchCards,
+        freeLotteryTickets: userAccount.freeLotteryTickets,
+        xp: userAccount.xp,
+        bonusTicketAwarded,
+        message: `✅ ماموریت «${questSpec.titleFa}» توسط سرور تایید شد و پاداش به حساب شما افزوده گردید!`,
+      });
+    });
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error.message || 'خطا در تایید ماموریت' });
+  }
+};
+
+app.post(
+  '/api/quests/verify',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleQuestVerificationAndClaim
+);
+app.post(
+  '/api/quests/claim',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleQuestVerificationAndClaim
+);
+
+// Anti-Sybil Referral Binding Endpoint
+app.post(
+  '/api/referral/bind',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    const { userKey, userAccount, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const startParam = String(req.body?.startParam || req.body?.code || '').trim();
+      const result = bindUserReferralAntiSybil({
+        userId: userKey,
+        startParam,
+        usersMap: dbState.users || {},
+      });
+      commitUserAccount();
+      if (!result.bound) {
+        return res.status(result.status || 400).json({
+          ok: false,
+          reason: result.reason,
+          error:
+            result.reason === 'SELF_REFERRAL_FORBIDDEN'
+              ? '⛔ قفل ضدتقلب (Anti-Sybil): امکان ثبت کد دعوت خودتان وجود ندارد.'
+              : result.reason === 'ALREADY_REFERRED_IMMUTABLE'
+              ? 'ℹ️ کد معرف شما قبلاً ثبت شده و غیرقابل تغییر است.'
+              : 'کد معرف واردشده نامعتبر است.',
+        });
+      }
+      return res.json({
+        ok: true,
+        inviterId: result.inviterId,
+        referredByUserId: userAccount.referredByUserId,
+        message: `✅ کد معرف (${result.inviterId}) با موفقیت به حساب شما متصل شد.`,
+      });
+    });
+  }
+);
+
+// ============================================================================
 // LOYALTY CHEST, TICKET CLAIM, CRYPTO DEPOSIT/WITHDRAWAL & TELEGRAM BOT
 // ============================================================================
 
-app.post('/api/loyalty/open-chest', optionalAuth, async (_req: AuthRequest, res) => {
-  try {
-    const tickets = dbState.tickets || [];
-    const totalSpent = tickets.reduce((s, t) => s + (Number(t.costUsdt) || 5), 0);
+app.post(
+  '/api/loyalty/open-chest',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const playerId = userPam.getState().playerId;
+        const userTickets = (dbState.tickets || []).filter(
+          (t) =>
+            (t.userUid === playerId || t.userUid === userKey) &&
+            parseFloat(t.costUsdt || '0') > 0
+        );
+        const totalSpent = userTickets.reduce((s, t) => s + (Number(t.costUsdt) || 0), 0);
 
-    const report = evaluateZeroLossLoyaltyChest({
-      totalTicketsPurchased: tickets.length,
-      totalSpentUsdt: totalSpent,
-      chestsClaimedCount: dbState.chestsClaimedCount,
-      availableRolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
-      ticketsPerChest: 3,
-    });
+        const report = evaluateZeroLossLoyaltyChest({
+          totalTicketsPurchased: userTickets.length,
+          totalSpentUsdt: totalSpent,
+          chestsClaimedCount: dbState.chestsClaimedCount,
+          availableRolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
+          ticketsPerChest: 3,
+        });
 
-    if (report.chestsAvailableToOpen <= 0 || report.safeRewardUsdt <= 0) {
-      return res.status(400).json({
-        error: `برای باز کردن صندوقچه بعدی، ${report.ticketsUntilNextChest} بلیت دیگر خریداری کنید.`,
+        if (report.chestsAvailableToOpen <= 0 || report.safeRewardUsdt <= 0) {
+          return res.status(400).json({
+            error: `برای باز کردن صندوقچه بعدی، ${report.ticketsUntilNextChest} بلیت دیگر خریداری کنید.`,
+          });
+        }
+
+        dbState.chestsClaimedCount += 1;
+        dbState.rolloverReservePoolUsdt = Number(
+          Math.max(0, dbState.rolloverReservePoolUsdt - report.safeRewardUsdt).toFixed(2)
+        );
+
+        const bonusRes = userPam.bonus({
+          transactionUuid: generateDeterministicUuid('tx_loyalty_chest'),
+          roundId: `#CHEST-${dbState.chestsClaimedCount}`,
+          vertical: 'VIP_LOYALTY_BONUS',
+          amountUsdt: report.safeRewardUsdt,
+          creditToRealBalance: true,
+          note: `پاداش صندوقچه وفاداری طلایی (${report.rewardTierLabelFa}) از محل ۳٪ ذخیره سرریز`,
+        });
+
+        commitUserAccount();
+
+        return res.json({
+          ok: true,
+          rewardUsdt: report.safeRewardUsdt,
+          rewardTierLabelFa: report.rewardTierLabelFa,
+          tonBalance: bonusRes.tonBalance,
+          starsBalance: bonusRes.starsBalance,
+          ledgerEntry: bonusRes.ledgerEntry,
+          chestsClaimedCount: dbState.chestsClaimedCount,
+          rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
+        });
       });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'خطا در بازگشایی صندوقچه وفاداری' });
     }
-
-    dbState.chestsClaimedCount += 1;
-    dbState.rolloverReservePoolUsdt = Number(
-      Math.max(0, dbState.rolloverReservePoolUsdt - report.safeRewardUsdt).toFixed(2)
-    );
-
-    const bonusRes = pamEngine.bonus({
-      transactionUuid: generateDeterministicUuid('tx_loyalty_chest'),
-      roundId: `#CHEST-${dbState.chestsClaimedCount}`,
-      vertical: 'VIP_LOYALTY_BONUS',
-      amountUsdt: report.safeRewardUsdt,
-      creditToRealBalance: true,
-      note: `پاداش صندوقچه وفاداری طلایی (${report.rewardTierLabelFa}) از محل ۳٪ ذخیره سرریز`,
-    });
-
-    persistAll();
-
-    return res.json({
-      ok: true,
-      rewardUsdt: report.safeRewardUsdt,
-      rewardTierLabelFa: report.rewardTierLabelFa,
-      tonBalance: bonusRes.tonBalance,
-      starsBalance: bonusRes.starsBalance,
-      ledgerEntry: bonusRes.ledgerEntry,
-      chestsClaimedCount: dbState.chestsClaimedCount,
-      rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'خطا در بازگشایی صندوقچه وفاداری' });
   }
-});
+);
 
 app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, res) => {
   try {
@@ -2293,7 +2771,6 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
     } = req.body || {};
     const incomingToken = String(botToken).trim();
     dbState.telegramBotConfig = {
-      // Preserve existing token if masked placeholder was sent back from UI
       botToken: incomingToken.includes('••••')
         ? dbState.telegramBotConfig.botToken
         : incomingToken,
@@ -2338,46 +2815,65 @@ app.post('/api/admin/telegram/test', optionalAuth, async (_req: AuthRequest, res
   }
 });
 
-app.post('/api/tickets/claim', optionalAuth, async (req: AuthRequest, res) => {
-  try {
-    const { ticketCode, prizeUsdt = 25, network = 'USDT (TRC-20)' } = req.body || {};
-    if (!ticketCode) {
-      return res.status(400).json({ error: 'کد بلیت نامعتبر است.' });
+app.post(
+  '/api/tickets/claim',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const { ticketCode, network = 'TON Network' } = req.body || {};
+        if (!ticketCode) {
+          return res.status(400).json({ error: 'کد بلیت نامعتبر است.' });
+        }
+        if (dbState.claimedTicketCodes.includes(ticketCode)) {
+          return res.status(409).json({ error: 'جایزه این بلیت قبلاً دریافت شده است.' });
+        }
+
+        const ticket = dbState.tickets.find((t) => t.ticketCode === ticketCode);
+        if (!ticket) {
+          return res.status(404).json({ error: 'بلیت مورد نظر در سیستم یافت نشد.' });
+        }
+        const playerId = userPam.getState().playerId;
+        if (ticket.userUid !== playerId && ticket.userUid !== userKey) {
+          return res.status(403).json({ error: 'این بلیت متعلق به حساب کاربری شما نیست.' });
+        }
+
+        // Strict server-side prize verification: never trust client-supplied prizeUsdt!
+        const verifiedPrizeUsdt = Number(ticket.prizeWonUsdt || 0);
+        if (!Number.isFinite(verifiedPrizeUsdt) || verifiedPrizeUsdt <= 0 || ticket.status !== 'WON') {
+          return res.status(400).json({ error: 'این بلیت برنده جایزه قابل برداشت نیست.' });
+        }
+
+        const creditRes = userPam.credit({
+          transactionUuid: `tx_claim_${ticketCode}`,
+          referenceTransactionUuid: ticket.transactionUuid || null,
+          roundId: ticket.roundCode || '#CLAIM',
+          vertical: 'LUCKYDROP_LOTTERY',
+          amountUsdt: verifiedPrizeUsdt,
+          note: `تسویه جایزه کوپن برنده ${ticketCode} (${network})`,
+        });
+
+        ticket.claimed = true;
+        ticket.status = 'WON';
+        dbState.claimedTicketCodes.push(ticketCode);
+        commitUserAccount();
+
+        res.json({
+          ok: true,
+          ticketCode,
+          tonBalance: creditRes.tonBalance,
+          starsBalance: creditRes.starsBalance,
+          ledgerEntry: creditRes.ledgerEntry,
+        });
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'خطا در تسویه جایزه' });
     }
-    if (dbState.claimedTicketCodes.includes(ticketCode)) {
-      return res.status(400).json({ error: 'جایزه این بلیت قبلاً دریافت شده است.' });
-    }
-
-    const ticket = dbState.tickets.find((t) => t.ticketCode === ticketCode);
-    const amount = Number(ticket?.prizeWonUsdt || prizeUsdt) || 25;
-
-    const creditRes = pamEngine.credit({
-      transactionUuid: `tx_claim_${ticketCode}`,
-      referenceTransactionUuid: ticket?.transactionUuid || null,
-      roundId: ticket?.roundCode || '#CLAIM',
-      vertical: 'LUCKYDROP_LOTTERY',
-      amountUsdt: amount,
-      note: `تسویه جایزه کوپن برنده ${ticketCode} (${network})`,
-    });
-
-    if (ticket) {
-      ticket.claimed = true;
-      ticket.status = 'WON';
-    }
-    dbState.claimedTicketCodes.push(ticketCode);
-    persistAll();
-
-    res.json({
-      ok: true,
-      ticketCode,
-      tonBalance: creditRes.tonBalance,
-      starsBalance: creditRes.starsBalance,
-      ledgerEntry: creditRes.ledgerEntry,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'خطا در تسویه جایزه' });
   }
-});
+);
 
 const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
   try {
@@ -2389,63 +2885,152 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
       });
     }
 
-    const {
-      amountUsdt = 50,
-      amountTon,
-      network = 'TON Network',
-      txHash = '',
-      boc = '',
-      senderWallet = '',
-      officialRecipientWallet = serverSecurityConfig.publicTonTreasuryWallet,
-      mode = 'ONCHAIN_AUTO',
-      verificationMode,
-      requireSignedBoc = false,
-    } = req.body || {};
+    const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
 
-    const effectiveMode = verificationMode || mode || 'ONCHAIN_AUTO';
-    const cleanBoc = String(boc || '').trim();
-    if (requireSignedBoc && !cleanBoc) {
-      return res.status(400).json({
-        ok: false,
-        error: 'MISSING_SIGNED_BOC — تراکنش TON باید در کیف پول TON Connect امضا شود (BOC یافت نشد).',
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const {
+        amountUsdt,
+        amountTon,
+        network = 'TON Network',
+        txHash = '',
+        boc = '',
+        senderWallet = '',
+        officialRecipientWallet = serverSecurityConfig.publicTonTreasuryWallet,
+        mode = 'ONCHAIN_AUTO',
+        verificationMode,
+        requireSignedBoc = false,
+      } = req.body || {};
+
+      const effectiveMode = verificationMode || mode || 'ONCHAIN_AUTO';
+      const cleanBoc = String(boc || '').trim();
+      if (requireSignedBoc && !cleanBoc) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            'MISSING_SIGNED_BOC — تراکنش TON باید در کیف پول TON Connect امضا شود (BOC یافت نشد).',
+        });
+      }
+
+      const rawTxHash =
+        String(txHash || '').trim() ||
+        (cleanBoc ? `boc_${sha256Hex(cleanBoc).slice(0, 48)}` : '');
+
+      if (!rawTxHash || rawTxHash.length < 6) {
+        return res.status(400).json({
+          ok: false,
+          error: 'MISSING_TX_HASH — کد پیگیری / هش تراکنش (TXID) معتبر ارسال نشده است.',
+        });
+      }
+
+      const rawDepositAmount =
+        amountUsdt !== undefined
+          ? Number(amountUsdt)
+          : amountTon !== undefined
+          ? Number(amountTon) * DEFAULT_FX_RATES.TON
+          : NaN;
+
+      const amountValidation = validateStrictFinancialAmount({
+        rawAmount: rawDepositAmount,
+        currency: 'USDT',
+        minAmount: 0.1,
       });
-    }
-    const cleanTxHash =
-      String(txHash || '').trim() ||
-      (cleanBoc ? `boc_${sha256Hex(cleanBoc).slice(0, 48)}` : `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`);
 
-    if (processedDepositTxHashes.has(cleanTxHash)) {
-      return res.status(409).json({
-        error: 'این هش تراکنش (TXID) قبلاً در سیستم ثبت و پردازش شده است.',
+      if (!amountValidation.valid) {
+        return res.status(400).json({
+          ok: false,
+          error: amountValidation.error,
+        });
+      }
+
+      // Anti-Replay Idempotency Check (409 Conflict on duplicate TXID)
+      const idempotency = verifyAndRecordDepositIdempotency({
+        txHashOrChargeId: rawTxHash,
+        processedSet: processedDepositTxHashes,
       });
-    }
+      if (!idempotency.ok) {
+        return res.status(idempotency.status).json({
+          ok: false,
+          error: idempotency.error,
+        });
+      }
 
-    const safeAmount = Math.max(1, Number(amountUsdt) || 50);
-    const userDisplayName = pamEngine.getState().displayName;
+      const cleanTxHash = idempotency.normalizedKey;
+      const safeAmount = amountValidation.cleanAmount;
+      const userDisplayName = userPam.getState().displayName;
+      const playerId = userPam.getState().playerId;
 
-    if (effectiveMode === 'ADMIN_MANUAL') {
-      processedDepositTxHashes.add(cleanTxHash);
-      const pendingItem: ServerDepositItem = {
+      if (effectiveMode === 'ADMIN_MANUAL') {
+        const pendingItem: ServerDepositItem = {
+          id: Date.now(),
+          depositCode: `DEP-${Math.floor(100000 + Math.random() * 900000)}`,
+          userUid: playerId,
+          userDisplayName,
+          network,
+          senderWallet: senderWallet || 'External Wallet / Exchange',
+          officialRecipientWallet,
+          amountUsdt: safeAmount,
+          amountCrypto: `${safeAmount} USDT`,
+          txHash: cleanTxHash,
+          explorerUrl: getBlockchainExplorerTxUrl(network, cleanTxHash),
+          explorerNote: 'در انتظار تایید اپراتور ارشد در کاکپیت',
+          verificationMethod: 'ADMIN_MANUAL',
+          verificationMode: 'ADMIN_MANUAL',
+          status: 'PENDING_ADMIN',
+          confirmations: 1,
+          createdAt: 'همین الان',
+        };
+        dbState.deposits.unshift(pendingItem);
+        commitUserAccount();
+
+        if (dbState.telegramBotConfig.notifyOnDeposit) {
+          await dispatchAdminTelegramAlert({
+            eventType: 'DEPOSIT',
+            userDisplayName,
+            amountUsdt: safeAmount,
+            network,
+            details: `حواله دستی در صف تایید ادمین (${pendingItem.depositCode})`,
+          });
+        }
+
+        return res.json({
+          ok: true,
+          queuedForAdmin: true,
+          deposit: pendingItem,
+          deposits: dbState.deposits.filter((d) => d.userUid === playerId),
+        });
+      }
+
+      const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
+      const creditRes = userPam.credit({
+        transactionUuid: `tx_dep_${depositCode}_${cleanTxHash.slice(0, 10)}`,
+        referenceTransactionUuid: null,
+        roundId: depositCode,
+        vertical: 'CRYPTO_TREASURY',
+        amountUsdt: safeAmount,
+        note: `شارژ آنی کیف پول از شبکه ${network} (${depositCode})`,
+      });
+
+      const confirmedItem: ServerDepositItem = {
         id: Date.now(),
-        depositCode: `DEP-${Math.floor(100000 + Math.random() * 900000)}`,
-        userUid: pamEngine.getState().playerId,
+        depositCode,
+        userUid: playerId,
         userDisplayName,
         network,
-        senderWallet: senderWallet || 'External Wallet / Exchange',
+        senderWallet: senderWallet || 'Connected Web3 Wallet',
         officialRecipientWallet,
         amountUsdt: safeAmount,
         amountCrypto: `${safeAmount} USDT`,
         txHash: cleanTxHash,
         explorerUrl: getBlockchainExplorerTxUrl(network, cleanTxHash),
-        explorerNote: 'در انتظار تایید اپراتور ارشد در کاکپیت',
-        verificationMethod: 'ADMIN_MANUAL',
-        verificationMode: 'ADMIN_MANUAL',
-        status: 'PENDING_ADMIN',
-        confirmations: 1,
+        explorerNote: 'تایید اتوماتیک نود شبکه و شارژ در PAM Ledger',
+        verificationMethod: 'ONCHAIN_AUTO',
+        verificationMode: 'ONCHAIN_AUTO',
+        status: 'CREDITED',
+        confirmations: 19,
         createdAt: 'همین الان',
       };
-      dbState.deposits.unshift(pendingItem);
-      persistAll();
+      dbState.deposits.unshift(confirmedItem);
+      commitUserAccount();
 
       if (dbState.telegramBotConfig.notifyOnDeposit) {
         await dispatchAdminTelegramAlert({
@@ -2453,447 +3038,454 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
           userDisplayName,
           amountUsdt: safeAmount,
           network,
-          details: `حواله دستی در صف تایید ادمین (${pendingItem.depositCode})`,
+          details: `شارژ آنی Web3 تایید شد (${depositCode})`,
         });
       }
 
       return res.json({
         ok: true,
-        queuedForAdmin: true,
-        deposit: pendingItem,
-        deposits: dbState.deposits,
+        queuedForAdmin: false,
+        tonBalance: creditRes.tonBalance,
+        starsBalance: creditRes.starsBalance,
+        ledgerEntry: creditRes.ledgerEntry,
+        deposit: confirmedItem,
+        deposits: dbState.deposits.filter((d) => d.userUid === playerId),
       });
-    }
-
-    // ONCHAIN_AUTO: Immediately credit via PAM Seamless Wallet Engine
-    processedDepositTxHashes.add(cleanTxHash);
-    const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
-    const creditRes = pamEngine.credit({
-      transactionUuid: `tx_dep_${depositCode}_${cleanTxHash.slice(0, 10)}`,
-      referenceTransactionUuid: null,
-      roundId: depositCode,
-      vertical: 'CRYPTO_TREASURY',
-      amountUsdt: safeAmount,
-      note: `شارژ آنی کیف پول از شبکه ${network} (${depositCode})`,
-    });
-
-    const confirmedItem: ServerDepositItem = {
-      id: Date.now(),
-      depositCode,
-      userUid: pamEngine.getState().playerId,
-      userDisplayName,
-      network,
-      senderWallet: senderWallet || 'Connected Web3 Wallet',
-      officialRecipientWallet,
-      amountUsdt: safeAmount,
-      amountCrypto: `${safeAmount} USDT`,
-      txHash: cleanTxHash,
-      explorerUrl: getBlockchainExplorerTxUrl(network, cleanTxHash),
-      explorerNote: 'تایید اتوماتیک نود شبکه و شارژ در PAM Ledger',
-      verificationMethod: 'ONCHAIN_AUTO',
-      verificationMode: 'ONCHAIN_AUTO',
-      status: 'CREDITED',
-      confirmations: 19,
-      createdAt: 'همین الان',
-    };
-    dbState.deposits.unshift(confirmedItem);
-    persistAll();
-
-    if (dbState.telegramBotConfig.notifyOnDeposit) {
-      await dispatchAdminTelegramAlert({
-        eventType: 'DEPOSIT',
-        userDisplayName,
-        amountUsdt: safeAmount,
-        network,
-        details: `شارژ آنی Web3 تایید شد (${depositCode})`,
-      });
-    }
-
-    return res.json({
-      ok: true,
-      queuedForAdmin: false,
-      tonBalance: creditRes.tonBalance,
-      starsBalance: creditRes.starsBalance,
-      ledgerEntry: creditRes.ledgerEntry,
-      deposit: confirmedItem,
-      deposits: dbState.deposits,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'خطا در شارژ کیف پول' });
   }
 };
 
-app.post('/api/wallet/deposit', optionalAuth, requireTelegramWebAppAuth, handleCryptoDeposit);
-app.post('/api/deposit', optionalAuth, requireTelegramWebAppAuth, handleCryptoDeposit);
+app.post(
+  '/api/wallet/deposit',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleCryptoDeposit
+);
+app.post(
+  '/api/deposit',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleCryptoDeposit
+);
 
-// Strict TON Connect Signed BOC Verification & Ledger Credit Endpoint
-app.post('/api/wallet/deposit-ton', optionalAuth, requireTelegramWebAppAuth, async (req: AuthRequest, res) => {
+// Strict TON Connect Signed BOC Verification & Ledger Credit Endpoint (Anti-Replay 409 Conflict)
+app.post(
+  '/api/wallet/deposit-ton',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      if (dbState.killSwitchActive) {
+        return res.status(503).json({
+          ok: false,
+          status: 'HALTED',
+          error:
+            '503 Service Unavailable — KILL_SWITCH_ACTIVE: درگاه واریز و برداشت توسط کلید قطع اضطراری قفل شده است.',
+        });
+      }
+
+      const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const {
+          boc = '',
+          txHash = '',
+          amountTon,
+          amountUsdt,
+          senderWallet = '',
+          destinationWallet,
+          memo = '',
+        } = req.body || {};
+
+        const cleanBoc = String(boc || txHash || '').trim();
+        if (!cleanBoc || cleanBoc.length < 8) {
+          return res.status(400).json({
+            ok: false,
+            error:
+              'MISSING_SIGNED_BOC — تراکنش TON باید در کیف پول TON Connect امضا شود (BOC معتبر یافت نشد).',
+          });
+        }
+
+        const tonValidation = validateStrictFinancialAmount({
+          rawAmount: amountTon,
+          currency: 'TON',
+          minAmount: 0.01,
+        });
+        if (!tonValidation.valid) {
+          return res.status(400).json({
+            ok: false,
+            error: tonValidation.error,
+          });
+        }
+        const safeAmountTon = tonValidation.cleanAmount;
+
+        const bocTxHash = `0x${sha256Hex(`ton_boc:${cleanBoc}`)}`;
+        const idempotency = verifyAndRecordDepositIdempotency({
+          txHashOrChargeId: bocTxHash,
+          processedSet: processedDepositTxHashes,
+        });
+        if (!idempotency.ok) {
+          return res.status(idempotency.status).json({
+            ok: false,
+            error:
+              '409 Conflict — DUPLICATE_BOC: این بسته امضاشده (BOC / TXID) قبلاً در سیستم ثبت و پردازش شده است.',
+          });
+        }
+
+        const liveSecurityCfg = loadServerSecurityConfig(process.env);
+        const officialRecipientWallet =
+          String(destinationWallet || '').trim() || liveSecurityCfg.publicTonTreasuryWallet;
+        const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
+        const computedUsdt =
+          typeof amountUsdt === 'number' && Number.isFinite(amountUsdt) && amountUsdt > 0
+            ? Number(amountUsdt.toFixed(2))
+            : Number((safeAmountTon * DEFAULT_FX_RATES.TON).toFixed(2));
+        const userDisplayName = userPam.getState().displayName;
+        const playerId = userPam.getState().playerId;
+
+        const creditRes = userPam.credit({
+          transactionUuid: `tx_ton_boc_${depositCode}_${bocTxHash.slice(2, 12)}`,
+          referenceTransactionUuid: null,
+          roundId: depositCode,
+          vertical: 'TON_CONNECT_BOC_TREASURY',
+          currency: 'TON',
+          amountTon: safeAmountTon,
+          amountUsdt: computedUsdt,
+          note: `واریز تاییدشده TON Connect BOC (+${safeAmountTon.toFixed(2)} TON • ${memo || depositCode})`,
+        });
+
+        const confirmedItem: ServerDepositItem = {
+          id: Date.now(),
+          depositCode,
+          userUid: playerId,
+          userDisplayName,
+          network: 'TON (TON Connect 2.0 Signed BOC)',
+          senderWallet: String(senderWallet || 'TON Connect Wallet'),
+          officialRecipientWallet,
+          amountUsdt: computedUsdt,
+          amountCrypto: `${safeAmountTon.toFixed(2)} TON`,
+          txHash: bocTxHash,
+          explorerUrl: getBlockchainExplorerTxUrl('TON Network', bocTxHash),
+          explorerNote: 'تایید BOC امضاشده TON Connect و شارژ در PAM Ledger',
+          verificationMethod: 'ONCHAIN_AUTO',
+          verificationMode: 'ONCHAIN_AUTO',
+          status: 'CREDITED',
+          confirmations: 19,
+          createdAt: 'همین الان',
+        };
+
+        dbState.deposits.unshift(confirmedItem);
+        commitUserAccount();
+
+        if (dbState.telegramBotConfig.notifyOnDeposit) {
+          await dispatchAdminTelegramAlert({
+            eventType: 'DEPOSIT',
+            userDisplayName,
+            amountUsdt: computedUsdt,
+            network: 'TON (Signed BOC)',
+            details: `واریز تاییدشده TON Connect (+${safeAmountTon.toFixed(2)} TON • ${depositCode})`,
+          });
+        }
+
+        const latestPam = userPam.getState();
+        return res.json({
+          ok: true,
+          queuedForAdmin: false,
+          tonBalance: creditRes.tonBalance,
+          starsBalance: creditRes.starsBalance,
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+          ledgerEntry: creditRes.ledgerEntry,
+          deposit: confirmedItem,
+          deposits: dbState.deposits.filter((d) => d.userUid === playerId),
+        });
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        ok: false,
+        error: error.message || 'خطا در تایید BOC و شارژ کیف پول TON',
+      });
+    }
+  }
+);
+
+// Real Telegram Stars (XTR) Invoice Link Creation Endpoint (`/api/wallet/create-stars-invoice`)
+// Calls https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/createInvoiceLink with currency "XTR".
+// Credits the user ONLY when the verified `successful_payment` webhook arrives at `/api/telegram/webhook`!
+const handleCreateStarsInvoice = async (req: AuthRequest, res: express.Response) => {
   try {
     if (dbState.killSwitchActive) {
       return res.status(503).json({
         ok: false,
         status: 'HALTED',
         error:
-          '503 Service Unavailable — KILL_SWITCH_ACTIVE: درگاه واریز و برداشت توسط کلید قطع اضطراری قفل شده است.',
+          '503 Service Unavailable — KILL_SWITCH_ACTIVE: درگاه واریز و برداشت موقتاً متوقف است.',
       });
     }
 
-    const {
-      boc = '',
-      amountTon = 0,
-      amountUsdt,
-      senderWallet = '',
-      destinationWallet,
-      memo = '',
-    } = req.body || {};
+    const { userKey, userPam } = getOrCreateIsolatedUserContext(req);
 
-    const cleanBoc = String(boc || '').trim();
-    if (!cleanBoc || cleanBoc.length < 8) {
-      return res.status(400).json({
-        ok: false,
-        error: 'MISSING_SIGNED_BOC — تراکنش TON باید در کیف پول TON Connect امضا شود (BOC معتبر یافت نشد).',
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const { amountStars, amount } = req.body || {};
+      const rawStars = amountStars !== undefined ? amountStars : amount;
+
+      const starsValidation = validateStrictFinancialAmount({
+        rawAmount: rawStars,
+        currency: 'STARS',
+        minAmount: 10,
       });
-    }
 
-    const safeAmountTon = Number(Number(amountTon || 0).toFixed(4));
-    if (!Number.isFinite(safeAmountTon) || safeAmountTon <= 0) {
-      return res.status(400).json({
-        ok: false,
-        error: 'INVALID_TON_AMOUNT — مقدار واریز TON باید بزرگ‌تر از صفر باشد.',
-      });
-    }
-
-    const bocTxHash = `0x${sha256Hex(`ton_boc:${cleanBoc}`)}`;
-    if (processedDepositTxHashes.has(bocTxHash)) {
-      return res.status(409).json({
-        ok: false,
-        error: 'DUPLICATE_BOC — این بسته امضاشده (BOC) قبلاً در سیستم ثبت و پردازش شده است.',
-      });
-    }
-
-    processedDepositTxHashes.add(bocTxHash);
-    const liveSecurityCfg = loadServerSecurityConfig(process.env);
-    const officialRecipientWallet =
-      String(destinationWallet || '').trim() || liveSecurityCfg.publicTonTreasuryWallet;
-    const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
-    const computedUsdt =
-      typeof amountUsdt === 'number' && amountUsdt > 0
-        ? Number(amountUsdt.toFixed(2))
-        : Number((safeAmountTon * DEFAULT_FX_RATES.TON).toFixed(2));
-    const userDisplayName = pamEngine.getState().displayName;
-
-    const creditRes = pamEngine.credit({
-      transactionUuid: `tx_ton_boc_${depositCode}_${bocTxHash.slice(2, 12)}`,
-      referenceTransactionUuid: null,
-      roundId: depositCode,
-      vertical: 'TON_CONNECT_BOC_TREASURY',
-      currency: 'TON',
-      amountTon: safeAmountTon,
-      amountUsdt: computedUsdt,
-      note: `واریز تاییدشده TON Connect BOC (+${safeAmountTon.toFixed(2)} TON • ${memo || depositCode})`,
-    });
-
-    const confirmedItem: ServerDepositItem = {
-      id: Date.now(),
-      depositCode,
-      userUid: pamEngine.getState().playerId,
-      userDisplayName,
-      network: 'TON (TON Connect 2.0 Signed BOC)',
-      senderWallet: String(senderWallet || 'TON Connect Wallet'),
-      officialRecipientWallet,
-      amountUsdt: computedUsdt,
-      amountCrypto: `${safeAmountTon.toFixed(2)} TON`,
-      txHash: bocTxHash,
-      explorerUrl: getBlockchainExplorerTxUrl('TON Network', bocTxHash),
-      explorerNote: 'تایید BOC امضاشده TON Connect و شارژ در PAM Ledger',
-      verificationMethod: 'ONCHAIN_AUTO',
-      verificationMode: 'ONCHAIN_AUTO',
-      status: 'CREDITED',
-      confirmations: 19,
-      createdAt: 'همین الان',
-    };
-
-    dbState.deposits.unshift(confirmedItem);
-    persistAll();
-
-    if (dbState.telegramBotConfig.notifyOnDeposit) {
-      await dispatchAdminTelegramAlert({
-        eventType: 'DEPOSIT',
-        userDisplayName,
-        amountUsdt: computedUsdt,
-        network: 'TON (Signed BOC)',
-        details: `واریز تاییدشده TON Connect (+${safeAmountTon.toFixed(2)} TON • ${depositCode})`,
-      });
-    }
-
-    return res.json({
-      ok: true,
-      queuedForAdmin: false,
-      tonBalance: creditRes.tonBalance,
-      starsBalance: creditRes.starsBalance,
-      pamState: {
-        ...pamEngine.getState(),
-        seeds: { ...pamEngine.getState().seeds, serverSeed: '' },
-      },
-      ledgerEntry: creditRes.ledgerEntry,
-      deposit: confirmedItem,
-      deposits: dbState.deposits,
-    });
-  } catch (error: any) {
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'خطا در تایید BOC و شارژ کیف پول TON',
-    });
-  }
-});
-
-// Real Telegram Stars (XTR) Deposit & Invoice Endpoint
-app.post('/api/wallet/deposit-stars', optionalAuth, requireTelegramWebAppAuth, async (req: AuthRequest, res) => {
-  try {
-    if (dbState.killSwitchActive) {
-      return res.status(503).json({
-        ok: false,
-        status: 'HALTED',
-        error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: درگاه واریز و برداشت موقتاً متوقف است.',
-      });
-    }
-
-    const { amountStars = 500, memo = '' } = req.body || {};
-    const safeStars = Math.max(10, Math.round(Number(amountStars) || 0));
-    if (!Number.isFinite(safeStars) || safeStars < 10) {
-      return res.status(400).json({
-        ok: false,
-        error: 'حداقل مقدار شارژ ستاره تلگرام ۱۰ ⭐ است.',
-      });
-    }
-
-    const activeToken = getEffectiveBotToken();
-    let invoiceLink = '';
-    if (activeToken.length > 10) {
-      try {
-        const invoiceResp = await fetch(
-          `https://api.telegram.org/bot${encodeURIComponent(activeToken)}/createInvoiceLink`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title: `شارژ ${safeStars} ستاره در LuckyDrop`,
-              description: `افزایش موجودی کیف پول Telegram Stars در مینی‌اپ LuckyDrop (+${safeStars} ⭐)`,
-              payload: `stars_topup_${safeStars}_${Date.now()}`,
-              provider_token: '',
-              currency: 'XTR',
-              prices: [{ label: `${safeStars} Telegram Stars`, amount: safeStars }],
-            }),
-          }
-        );
-        const invoiceJson: any = await invoiceResp.json().catch(() => null);
-        if (invoiceResp.ok && invoiceJson?.ok && typeof invoiceJson.result === 'string') {
-          invoiceLink = invoiceJson.result;
-        }
-      } catch {
-        // continue with instant ledger credit
+      if (!starsValidation.valid) {
+        return res.status(400).json({
+          ok: false,
+          error: starsValidation.error,
+        });
       }
-    }
 
-    const depositCode = `STR-${Math.floor(100000 + Math.random() * 900000)}`;
-    const computedUsdt = Number((safeStars * 0.02).toFixed(2));
-    const userDisplayName = pamEngine.getState().displayName;
-    const chargeTxHash = `xtr_${sha256Hex(`${depositCode}:${safeStars}:${Date.now()}`).slice(0, 32)}`;
+      const safeStars = starsValidation.cleanAmount;
+      const activeToken = getEffectiveBotToken();
 
-    const creditRes = pamEngine.credit({
-      transactionUuid: `tx_stars_dep_${depositCode}`,
-      referenceTransactionUuid: null,
-      roundId: depositCode,
-      vertical: 'TELEGRAM_STARS_INVOICE',
-      currency: 'STARS',
-      amountStars: safeStars,
-      amountUsdt: computedUsdt,
-      note: `شارژ آنی کیف پول Telegram Stars (+${safeStars} ⭐ • ${memo || depositCode})`,
-    });
+      if (!activeToken || activeToken.length < 10) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            'TELEGRAM_BOT_TOKEN_MISSING — برای صدور فاکتور واقعی Telegram Stars (XTR)، متغیر محیطی TELEGRAM_BOT_TOKEN باید روی سرور تنظیم شود.',
+        });
+      }
 
-    const starsDepositItem: ServerDepositItem = {
-      id: Date.now(),
-      depositCode,
-      userUid: pamEngine.getState().playerId,
-      userDisplayName,
-      network: 'Telegram Stars (XTR)',
-      senderWallet: userDisplayName,
-      officialRecipientWallet: 'LuckyDrop Stars Treasury',
-      amountUsdt: computedUsdt,
-      amountCrypto: `${safeStars.toLocaleString('en-US')} ⭐`,
-      txHash: chargeTxHash,
-      explorerUrl: 'https://t.me/TelegramStars',
-      explorerNote: 'شارژ آنی کیف پول ستاره تلگرام (XTR)',
-      verificationMethod: 'ONCHAIN_AUTO',
-      verificationMode: 'ONCHAIN_AUTO',
-      status: 'CREDITED',
-      confirmations: 19,
-      createdAt: 'همین الان',
-    };
-
-    dbState.deposits.unshift(starsDepositItem);
-    persistAll();
-
-    if (dbState.telegramBotConfig.notifyOnDeposit) {
-      void dispatchAdminTelegramAlert({
-        eventType: 'DEPOSIT',
-        userDisplayName,
-        amountUsdt: computedUsdt,
-        amountStars: safeStars,
-        network: 'Telegram Stars (XTR)',
-        details: `شارژ کیف پول ستاره (+${safeStars} ⭐ • ${depositCode})`,
+      const invoicePayload = JSON.stringify({
+        type: 'stars_topup',
+        userId: userKey,
+        stars: safeStars,
+        ts: Date.now(),
       });
-    }
 
-    return res.json({
-      ok: true,
-      invoiceLink,
-      starsAmount: safeStars,
-      tonBalance: creditRes.tonBalance,
-      starsBalance: creditRes.starsBalance,
-      pamState: {
-        ...pamEngine.getState(),
-        seeds: { ...pamEngine.getState().seeds, serverSeed: '' },
-      },
-      deposit: starsDepositItem,
-      deposits: dbState.deposits,
+      const invoiceResp = await fetch(
+        `https://api.telegram.org/bot${encodeURIComponent(activeToken)}/createInvoiceLink`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: `شارژ ${safeStars} ستاره در LuckyDrop`,
+            description: `افزایش موجودی کیف پول Telegram Stars در مینی‌اپ LuckyDrop (+${safeStars} ⭐)`,
+            payload: invoicePayload,
+            provider_token: '',
+            currency: 'XTR',
+            prices: [{ label: `${safeStars} Telegram Stars`, amount: safeStars }],
+          }),
+        }
+      );
+
+      const invoiceJson: any = await invoiceResp.json().catch(() => null);
+      if (!invoiceResp.ok || !invoiceJson?.ok || typeof invoiceJson.result !== 'string') {
+        return res.status(502).json({
+          ok: false,
+          error:
+            invoiceJson?.description ||
+            `خطای API تلگرام در صدور فاکتور XTR (کد ${invoiceResp.status})`,
+        });
+      }
+
+      const invoiceLink = invoiceJson.result;
+      const latestPam = userPam.getState();
+
+      return res.json({
+        ok: true,
+        invoiceLink,
+        starsAmount: safeStars,
+        pendingWebhookSettlement: true,
+        tonBalance: latestPam.tonBalance,
+        starsBalance: latestPam.starsBalance,
+        pamState: {
+          ...latestPam,
+          seeds: { ...latestPam.seeds, serverSeed: '' },
+        },
+        message: `فاکتور رسمی ${safeStars} ⭐ Telegram Stars صادر شد. پس از پرداخت در پنجره تلگرام و دریافت وبهوک successful_payment، موجودی شما شارژ می‌شود.`,
+      });
     });
   } catch (error: any) {
     return res.status(500).json({
       ok: false,
-      error: error.message || 'خطا در شارژ ستاره‌های تلگرام',
+      error: error.message || 'خطا در صدور فاکتور ستاره‌های تلگرام',
     });
   }
-});
+};
 
-// Real Telegram Stars (XTR) Withdrawal Endpoint
-app.post('/api/wallet/withdraw-stars', optionalAuth, requireTelegramWebAppAuth, async (req: AuthRequest, res) => {
-  try {
-    if (dbState.killSwitchActive) {
-      return res.status(503).json({
+app.post(
+  '/api/wallet/create-stars-invoice',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleCreateStarsInvoice
+);
+app.post(
+  '/api/wallet/deposit-stars',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleCreateStarsInvoice
+);
+
+// Real Telegram Stars (XTR) Withdrawal Endpoint (Mutex-Locked + Strict Balance Check)
+app.post(
+  '/api/wallet/withdraw-stars',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      if (dbState.killSwitchActive) {
+        return res.status(503).json({
+          ok: false,
+          status: 'HALTED',
+          error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: برداشت وجه موقتاً متوقف است.',
+        });
+      }
+
+      const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const { amountStars, amount, destination = '' } = req.body || {};
+        const rawStars = amountStars !== undefined ? amountStars : amount;
+        const currentStars = userPam.getState().starsBalance;
+
+        const starsValidation = validateStrictFinancialAmount({
+          rawAmount: rawStars,
+          currency: 'STARS',
+          minAmount: 50,
+          maxAvailableBalance: currentStars,
+        });
+
+        if (!starsValidation.valid) {
+          return res.status(400).json({
+            ok: false,
+            error: starsValidation.error,
+            starsBalance: currentStars,
+          });
+        }
+
+        const safeStars = starsValidation.cleanAmount;
+        const cleanDest = String(destination || '').trim() || userPam.getState().displayName;
+        const withdrawalCode = `WDS-${Math.floor(100000 + Math.random() * 900000)}`;
+        const computedUsdt = Number((safeStars * 0.02).toFixed(2));
+        const playerId = userPam.getState().playerId;
+
+        const debitRes = userPam.debit({
+          transactionUuid: `tx_wd_stars_${withdrawalCode}`,
+          roundId: withdrawalCode,
+          vertical: 'TELEGRAM_STARS_TREASURY',
+          currency: 'STARS',
+          amountStars: safeStars,
+          amountUsdt: computedUsdt,
+          note: `برداشت آنی ستاره تلگرام (${safeStars.toLocaleString('en-US')} ⭐ به مقصد ${cleanDest}) (${withdrawalCode})`,
+          incrementNonce: false,
+        });
+
+        if (!debitRes.ok) {
+          return res.status(400).json({
+            ok: false,
+            error: debitRes.error || 'موجودی ستاره‌های شما کافی نیست.',
+          });
+        }
+
+        const newItem: ServerWithdrawalItem = {
+          id: Date.now(),
+          withdrawalCode,
+          userUid: playerId,
+          userDisplayName: userPam.getState().displayName,
+          network: 'Telegram Stars (XTR)',
+          destinationAddress: cleanDest,
+          grossAmountUsdt: computedUsdt,
+          networkFeeUsdt: 0,
+          netAmountUsdt: computedUsdt,
+          netAmountCrypto: `${safeStars.toLocaleString('en-US')} ⭐`,
+          twoFactorVerified: true,
+          status: 'completed',
+          txHash: `xtr_wd_${sha256Hex(`${withdrawalCode}:${safeStars}`).slice(0, 28)}`,
+          createdAt: 'همین الان (تسویه آنی Stars)',
+        };
+
+        dbState.withdrawals.unshift(newItem);
+        commitUserAccount();
+
+        if (dbState.telegramBotConfig.notifyOnWithdrawal) {
+          void dispatchAdminTelegramAlert({
+            eventType: 'WITHDRAWAL',
+            userDisplayName: userPam.getState().displayName,
+            amountUsdt: computedUsdt,
+            amountStars: safeStars,
+            network: 'Telegram Stars (XTR)',
+            withdrawalCode,
+            destinationAddress: cleanDest,
+            details: `✅ برداشت ستاره تلگرام (${safeStars.toLocaleString('en-US')} ⭐) به مقصد ${cleanDest} ثبت و تسویه شد (${withdrawalCode})`,
+          });
+        }
+
+        const latestPam = userPam.getState();
+        return res.json({
+          ok: true,
+          withdrawal: newItem,
+          withdrawals: dbState.withdrawals.filter((w) => w.userUid === playerId),
+          tonBalance: debitRes.tonBalance,
+          starsBalance: debitRes.starsBalance,
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+          ledgerEntry: debitRes.ledgerEntry,
+        });
+      });
+    } catch (error: any) {
+      return res.status(500).json({
         ok: false,
-        status: 'HALTED',
-        error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: برداشت وجه موقتاً متوقف است.',
+        error: error.message || 'خطا در ثبت برداشت ستاره تلگرام',
       });
     }
-
-    const { amountStars = 0, destination = '' } = req.body || {};
-    const safeStars = Math.round(Number(amountStars) || 0);
-    const cleanDest = String(destination || '').trim() || pamEngine.getState().displayName;
-
-    if (!Number.isFinite(safeStars) || safeStars < 50) {
-      return res.status(400).json({
-        ok: false,
-        error: 'حداقل مقدار برداشت ستاره تلگرام ۵۰ ⭐ است.',
-      });
-    }
-
-    const currentStars = pamEngine.getState().starsBalance;
-    if (safeStars > currentStars) {
-      return res.status(400).json({
-        ok: false,
-        error: `موجودی ستاره‌های شما (${currentStars.toLocaleString('en-US')} ⭐) برای برداشت ${safeStars.toLocaleString('en-US')} ⭐ کافی نیست.`,
-      });
-    }
-
-    const withdrawalCode = `WDS-${Math.floor(100000 + Math.random() * 900000)}`;
-    const computedUsdt = Number((safeStars * 0.02).toFixed(2));
-
-    const debitRes = pamEngine.debit({
-      transactionUuid: `tx_wd_stars_${withdrawalCode}`,
-      roundId: withdrawalCode,
-      vertical: 'TELEGRAM_STARS_TREASURY',
-      currency: 'STARS',
-      amountStars: safeStars,
-      amountUsdt: computedUsdt,
-      note: `برداشت آنی ستاره تلگرام (${safeStars.toLocaleString('en-US')} ⭐ به مقصد ${cleanDest}) (${withdrawalCode})`,
-      incrementNonce: false,
-    });
-
-    if (!debitRes.ok) {
-      return res.status(400).json({
-        ok: false,
-        error: debitRes.error || 'موجودی ستاره‌های شما کافی نیست.',
-      });
-    }
-
-    const newItem: ServerWithdrawalItem = {
-      id: Date.now(),
-      withdrawalCode,
-      userUid: pamEngine.getState().playerId,
-      userDisplayName: pamEngine.getState().displayName,
-      network: 'Telegram Stars (XTR)',
-      destinationAddress: cleanDest,
-      grossAmountUsdt: computedUsdt,
-      networkFeeUsdt: 0,
-      netAmountUsdt: computedUsdt,
-      netAmountCrypto: `${safeStars.toLocaleString('en-US')} ⭐`,
-      twoFactorVerified: true,
-      status: 'completed',
-      txHash: `xtr_wd_${sha256Hex(`${withdrawalCode}:${safeStars}`).slice(0, 28)}`,
-      createdAt: 'همین الان (تسویه آنی Stars)',
-    };
-
-    dbState.withdrawals.unshift(newItem);
-    persistAll();
-
-    if (dbState.telegramBotConfig.notifyOnWithdrawal) {
-      void dispatchAdminTelegramAlert({
-        eventType: 'WITHDRAWAL',
-        userDisplayName: pamEngine.getState().displayName,
-        amountUsdt: computedUsdt,
-        amountStars: safeStars,
-        network: 'Telegram Stars (XTR)',
-        withdrawalCode,
-        destinationAddress: cleanDest,
-        details: `✅ برداشت ستاره تلگرام (${safeStars.toLocaleString('en-US')} ⭐) به مقصد ${cleanDest} ثبت و تسویه شد (${withdrawalCode})`,
-      });
-    }
-
-    return res.json({
-      ok: true,
-      withdrawal: newItem,
-      withdrawals: dbState.withdrawals,
-      tonBalance: debitRes.tonBalance,
-      starsBalance: debitRes.starsBalance,
-      pamState: {
-        ...pamEngine.getState(),
-        seeds: { ...pamEngine.getState().seeds, serverSeed: '' },
-      },
-      ledgerEntry: debitRes.ledgerEntry,
-    });
-  } catch (error: any) {
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'خطا در ثبت برداشت ستاره تلگرام',
-    });
   }
-});
+);
 
 app.post('/api/admin/deposits/action', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { depositCode, action } = req.body || {};
+    const creditDepositTarget = (dep: ServerDepositItem) => {
+      dep.status = 'CREDITED';
+      dep.confirmations = 19;
+      const ownerKey = String(dep.userUid || '').replace(/^tg_/, '');
+      const ownerAcc = dbState.users?.[ownerKey];
+      if (ownerAcc) {
+        const ownerPam = new PAMSeamlessWalletEngine(ownerAcc.pamState);
+        ownerPam.credit({
+          transactionUuid: `tx_admin_dep_${dep.depositCode}`,
+          referenceTransactionUuid: null,
+          roundId: dep.depositCode,
+          vertical: 'CRYPTO_TREASURY',
+          amountUsdt: dep.amountUsdt,
+          note: `تایید حواله واریز توسط ادمین (${dep.depositCode})`,
+        });
+        ownerAcc.pamState = ownerPam.getState();
+        ownerAcc.tonBalance = roundTonClean(ownerAcc.pamState.tonBalance);
+        ownerAcc.starsBalance = roundStarsClean(ownerAcc.pamState.starsBalance);
+        ownerAcc.ledger = ownerAcc.pamState.ledger;
+      }
+    };
+
     if (action === 'approve_all') {
       for (const dep of dbState.deposits) {
         if (dep.status === 'pending_admin' || dep.status === 'PENDING_ADMIN') {
-          dep.status = 'CREDITED';
-          dep.confirmations = 19;
-          pamEngine.credit({
-            transactionUuid: `tx_admin_dep_${dep.depositCode}`,
-            referenceTransactionUuid: null,
-            roundId: dep.depositCode,
-            vertical: 'CRYPTO_TREASURY',
-            amountUsdt: dep.amountUsdt,
-            note: `تایید حواله واریز توسط ادمین (${dep.depositCode})`,
-          });
+          creditDepositTarget(dep);
         }
       }
       persistAll();
       return res.json({
         ok: true,
         deposits: dbState.deposits,
-        tonBalance: pamEngine.getState().tonBalance,
-        starsBalance: pamEngine.getState().starsBalance,
       });
     }
 
@@ -2901,17 +3493,11 @@ app.post('/api/admin/deposits/action', optionalAuth, async (req: AuthRequest, re
     if (!target) {
       return res.status(404).json({ error: 'درخواست واریز یافت نشد.' });
     }
-    if (action === 'approve' && (target.status === 'pending_admin' || target.status === 'PENDING_ADMIN')) {
-      target.status = 'CREDITED';
-      target.confirmations = 19;
-      pamEngine.credit({
-        transactionUuid: `tx_admin_dep_${target.depositCode}`,
-        referenceTransactionUuid: null,
-        roundId: target.depositCode,
-        vertical: 'CRYPTO_TREASURY',
-        amountUsdt: target.amountUsdt,
-        note: `تایید حواله واریز توسط ادمین (${target.depositCode})`,
-      });
+    if (
+      action === 'approve' &&
+      (target.status === 'pending_admin' || target.status === 'PENDING_ADMIN')
+    ) {
+      creditDepositTarget(target);
     } else if (action === 'reject') {
       target.status = 'REJECTED';
     }
@@ -2920,132 +3506,152 @@ app.post('/api/admin/deposits/action', optionalAuth, async (req: AuthRequest, re
       ok: true,
       deposit: target,
       deposits: dbState.deposits,
-      tonBalance: pamEngine.getState().tonBalance,
-      starsBalance: pamEngine.getState().starsBalance,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'خطا در تایید واریز توسط ادمین' });
   }
 });
 
-app.post('/api/wallet/withdraw', optionalAuth, requireTelegramWebAppAuth, async (req: AuthRequest, res) => {
-  try {
-    if (dbState.killSwitchActive) {
-      return res.status(503).json({
-        status: 'HALTED',
-        error:
-          '503 Service Unavailable — KILL_SWITCH_ACTIVE: برداشت وجه موقتاً توسط کلید اضطراری متوقف شده است.',
+app.post(
+  '/api/wallet/withdraw',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      if (dbState.killSwitchActive) {
+        return res.status(503).json({
+          status: 'HALTED',
+          error:
+            '503 Service Unavailable — KILL_SWITCH_ACTIVE: برداشت وجه موقتاً توسط کلید اضطراری متوقف شده است.',
+        });
+      }
+
+      const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const {
+          network = 'TON Network',
+          destinationAddress = '',
+          grossAmountUsdt,
+          networkFeeUsdt = 0.25,
+          netAmountUsdt,
+          amountTon: explicitAmountTon,
+          amount,
+        } = req.body || {};
+
+        const rawAmountTon =
+          explicitAmountTon !== undefined
+            ? Number(explicitAmountTon)
+            : amount !== undefined
+            ? Number(amount)
+            : grossAmountUsdt !== undefined
+            ? Number(grossAmountUsdt) / DEFAULT_FX_RATES.TON
+            : NaN;
+
+        const currentTonBalance = userPam.getState().tonBalance;
+        const tonValidation = validateStrictFinancialAmount({
+          rawAmount: rawAmountTon,
+          currency: 'TON',
+          minAmount: 0.1,
+          maxAvailableBalance: currentTonBalance,
+        });
+
+        if (!tonValidation.valid) {
+          return res.status(400).json({
+            ok: false,
+            error: tonValidation.error,
+            tonBalance: currentTonBalance,
+          });
+        }
+
+        const derivedAmountTon = tonValidation.cleanAmount;
+        const amountNum = Number((derivedAmountTon * DEFAULT_FX_RATES.TON).toFixed(2));
+        const gate = evaluateHighValueWithdrawalGate(
+          derivedAmountTon,
+          dbState.autoWithdrawLimitTon || 50
+        );
+
+        const withdrawalCode = `WD-${Math.floor(100000 + Math.random() * 900000)}`;
+        const netTon = Number(Math.max(0.01, derivedAmountTon - 0.02).toFixed(4));
+        const playerId = userPam.getState().playerId;
+
+        const debitRes = userPam.debit({
+          transactionUuid: `tx_wd_${withdrawalCode}`,
+          roundId: withdrawalCode,
+          vertical: 'CRYPTO_TREASURY',
+          currency: 'TON',
+          amountTon: derivedAmountTon,
+          amountUsdt: amountNum,
+          note: gate.requiresAdminApproval
+            ? `برداشت مبلغ بالا (${derivedAmountTon.toFixed(2)} TON) — در انتظار تایید ادمین (${withdrawalCode})`
+            : `برداشت اتوماتیک آنی شبکه TON (${derivedAmountTon.toFixed(2)} TON) (${withdrawalCode})`,
+          incrementNonce: false,
+        });
+
+        if (!debitRes.ok) {
+          return res
+            .status(400)
+            .json({ error: debitRes.error || 'موجودی کیف پول برای این برداشت کافی نیست.' });
+        }
+
+        const newItem: ServerWithdrawalItem = {
+          id: Date.now(),
+          withdrawalCode,
+          userUid: playerId,
+          userDisplayName: userPam.getState().displayName,
+          network: network.includes('TON') || network.includes('Stars') ? network : 'TON Network',
+          destinationAddress,
+          grossAmountUsdt: amountNum,
+          networkFeeUsdt: Number(networkFeeUsdt) || 0.1,
+          netAmountUsdt: Number(netAmountUsdt) || Number((netTon * DEFAULT_FX_RATES.TON).toFixed(2)),
+          netAmountCrypto: `${netTon.toFixed(2)} TON`,
+          twoFactorVerified: true,
+          status: gate.initialStatus,
+          txHash: `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
+          createdAt: gate.requiresAdminApproval
+            ? 'در انتظار تایید ادمین (مبلغ بالا)'
+            : 'همین الان (تسویه اتوماتیک TON)',
+        };
+        dbState.withdrawals.unshift(newItem);
+        commitUserAccount();
+
+        if (dbState.telegramBotConfig.notifyOnWithdrawal) {
+          await dispatchAdminTelegramAlert({
+            eventType: gate.requiresAdminApproval ? 'HIGH_VALUE_WITHDRAWAL' : 'WITHDRAWAL',
+            userDisplayName: userPam.getState().displayName,
+            amountUsdt: amountNum,
+            amountTon: derivedAmountTon,
+            network: 'TON Network',
+            withdrawalCode,
+            destinationAddress,
+            details: gate.requiresAdminApproval
+              ? `⚠️ درخواست برداشت مبلغ بالا (${derivedAmountTon.toFixed(2)} TON) نیازمند تایید ادمین (${withdrawalCode})`
+              : `✅ برداشت اتوماتیک (${derivedAmountTon.toFixed(2)} TON) تسویه شد (${withdrawalCode})`,
+          });
+        }
+
+        const latestPam = userPam.getState();
+        res.json({
+          ok: true,
+          withdrawal: newItem,
+          withdrawals: dbState.withdrawals.filter((w) => w.userUid === playerId),
+          requiresAdminApproval: gate.requiresAdminApproval,
+          autoWithdrawLimitTon: gate.thresholdTon,
+          tonBalance: debitRes.tonBalance,
+          starsBalance: debitRes.starsBalance,
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+          ledgerEntry: debitRes.ledgerEntry,
+        });
       });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'خطا در ثبت درخواست برداشت' });
     }
-
-    const {
-      network = 'TON Network',
-      destinationAddress = '',
-      grossAmountUsdt = 100,
-      networkFeeUsdt = 0.25,
-      netAmountUsdt = 99.75,
-      netAmountCrypto = '19.18 TON',
-      amountTon: explicitAmountTon,
-    } = req.body || {};
-
-    const derivedAmountTon =
-      Number(explicitAmountTon) > 0
-        ? Number(Number(explicitAmountTon).toFixed(4))
-        : Number((Number(grossAmountUsdt || 5) / 5.0).toFixed(4));
-
-    if (!Number.isFinite(derivedAmountTon) || derivedAmountTon < 0.1) {
-      return res.status(400).json({
-        error: 'حداقل مقدار برداشت در شبکه TON معادل 0.10 TON است.',
-      });
-    }
-
-    const currentTonBalance = pamEngine.getState().tonBalance;
-    if (derivedAmountTon > currentTonBalance) {
-      return res.status(400).json({
-        error: `موجودی TON شما (${currentTonBalance.toFixed(2)} TON) برای برداشت ${derivedAmountTon.toFixed(2)} TON کافی نیست.`,
-      });
-    }
-
-    const amountNum = Number((derivedAmountTon * 5.0).toFixed(2));
-    const gate = evaluateHighValueWithdrawalGate(
-      derivedAmountTon,
-      dbState.autoWithdrawLimitTon || 50
-    );
-
-    const withdrawalCode = `WD-${Math.floor(100000 + Math.random() * 900000)}`;
-    const netTon = Number(Math.max(0.01, derivedAmountTon - 0.02).toFixed(4));
-
-    const debitRes = pamEngine.debit({
-      transactionUuid: `tx_wd_${withdrawalCode}`,
-      roundId: withdrawalCode,
-      vertical: 'CRYPTO_TREASURY',
-      currency: 'TON',
-      amountTon: derivedAmountTon,
-      amountUsdt: amountNum,
-      note: gate.requiresAdminApproval
-        ? `برداشت مبلغ بالا (${derivedAmountTon.toFixed(2)} TON) — در انتظار تایید ادمین (${withdrawalCode})`
-        : `برداشت اتوماتیک آنی شبکه TON (${derivedAmountTon.toFixed(2)} TON) (${withdrawalCode})`,
-      incrementNonce: false,
-    });
-
-    if (!debitRes.ok) {
-      return res.status(400).json({ error: debitRes.error || 'موجودی کیف پول برای این برداشت کافی نیست.' });
-    }
-
-    const newItem: ServerWithdrawalItem = {
-      id: Date.now(),
-      withdrawalCode,
-      userUid: pamEngine.getState().playerId,
-      userDisplayName: pamEngine.getState().displayName,
-      network: network.includes('TON') || network.includes('Stars') ? network : 'TON Network',
-      destinationAddress,
-      grossAmountUsdt: amountNum,
-      networkFeeUsdt: Number(networkFeeUsdt) || 0.1,
-      netAmountUsdt: Number(netAmountUsdt) || Number((netTon * 5.0).toFixed(2)),
-      netAmountCrypto: `${netTon.toFixed(2)} TON`,
-      twoFactorVerified: true,
-      status: gate.initialStatus,
-      txHash: `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
-      createdAt: gate.requiresAdminApproval
-        ? 'در انتظار تایید ادمین (مبلغ بالا)'
-        : 'همین الان (تسویه اتوماتیک TON)',
-    };
-    dbState.withdrawals.unshift(newItem);
-    persistAll();
-
-    if (dbState.telegramBotConfig.notifyOnWithdrawal) {
-      await dispatchAdminTelegramAlert({
-        eventType: gate.requiresAdminApproval ? 'HIGH_VALUE_WITHDRAWAL' : 'WITHDRAWAL',
-        userDisplayName: pamEngine.getState().displayName,
-        amountUsdt: amountNum,
-        amountTon: derivedAmountTon,
-        network: 'TON Network',
-        withdrawalCode,
-        destinationAddress,
-        details: gate.requiresAdminApproval
-          ? `⚠️ درخواست برداشت مبلغ بالا (${derivedAmountTon.toFixed(2)} TON) نیازمند تایید ادمین (${withdrawalCode})`
-          : `✅ برداشت اتوماتیک (${derivedAmountTon.toFixed(2)} TON) تسویه شد (${withdrawalCode})`,
-      });
-    }
-
-    res.json({
-      ok: true,
-      withdrawal: newItem,
-      withdrawals: dbState.withdrawals,
-      requiresAdminApproval: gate.requiresAdminApproval,
-      autoWithdrawLimitTon: gate.thresholdTon,
-      tonBalance: debitRes.tonBalance,
-      starsBalance: debitRes.starsBalance,
-      pamState: {
-        ...pamEngine.getState(),
-        seeds: { ...pamEngine.getState().seeds, serverSeed: '' },
-      },
-      ledgerEntry: debitRes.ledgerEntry,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || 'خطا در ثبت درخواست برداشت' });
   }
-});
+);
 
 app.post('/api/admin/withdrawals/threshold', optionalAuth, (req: AuthRequest, res) => {
   const { autoWithdrawLimitTon } = req.body || {};
@@ -3079,22 +3685,28 @@ app.post('/api/admin/withdrawals/action', optionalAuth, async (req: AuthRequest,
     target.status = 'broadcasting';
   } else if (action === 'reject') {
     target.status = 'rejected';
-    // Refund rejected withdrawal via PAM Rollback!
-    pamEngine.rollback({
-      transactionUuid: `tx_rb_wd_${target.withdrawalCode}`,
-      referenceTransactionUuid: `tx_wd_${target.withdrawalCode}`,
-      roundId: target.withdrawalCode,
-      vertical: 'CRYPTO_TREASURY',
-      note: `برگشت وجه درخواست برداشت ردشده (${target.withdrawalCode})`,
-    });
+    const ownerKey = String(target.userUid || '').replace(/^tg_/, '');
+    const ownerAcc = dbState.users?.[ownerKey];
+    if (ownerAcc) {
+      const ownerPam = new PAMSeamlessWalletEngine(ownerAcc.pamState);
+      ownerPam.rollback({
+        transactionUuid: `tx_rb_wd_${target.withdrawalCode}`,
+        referenceTransactionUuid: `tx_wd_${target.withdrawalCode}`,
+        roundId: target.withdrawalCode,
+        vertical: 'CRYPTO_TREASURY',
+        note: `برگشت وجه درخواست برداشت ردشده (${target.withdrawalCode})`,
+      });
+      ownerAcc.pamState = ownerPam.getState();
+      ownerAcc.tonBalance = roundTonClean(ownerAcc.pamState.tonBalance);
+      ownerAcc.starsBalance = roundStarsClean(ownerAcc.pamState.starsBalance);
+      ownerAcc.ledger = ownerAcc.pamState.ledger;
+    }
   }
   persistAll();
   res.json({
     ok: true,
     withdrawal: target,
     withdrawals: dbState.withdrawals,
-    tonBalance: pamEngine.getState().tonBalance,
-    starsBalance: pamEngine.getState().starsBalance,
   });
 });
 
@@ -3172,7 +3784,6 @@ app.post('/api/telegram/broadcast', optionalAuth, (req: AuthRequest, res) => {
 // ============================================================================
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
-    // Optional secret token verification if TELEGRAM_WEBHOOK_SECRET is configured in .env
     if (serverSecurityConfig.telegramWebhookSecret) {
       const headerSecret = String(req.headers['x-telegram-bot-api-secret-token'] || '').trim();
       if (headerSecret && headerSecret !== serverSecurityConfig.telegramWebhookSecret) {
@@ -3201,17 +3812,40 @@ app.post('/api/telegram/webhook', async (req, res) => {
       return res.json({ ok: true, handled: 'PRE_CHECKOUT_QUERY' });
     }
 
-    // 2. Handle Telegram Stars `successful_payment` (Currency: 'XTR')
+    // 2. Handle Telegram Stars `successful_payment` (Currency: 'XTR') with strict 409 Conflict Idempotency
     const starsVerification = verifyTelegramStarsSuccessfulPayment({
       message: update.message,
       starsUsdRate: 0.02,
     });
     if (starsVerification && starsVerification.valid) {
       const chargeId = starsVerification.telegramPaymentChargeId;
-      if (!processedDepositTxHashes.has(chargeId)) {
-        processedDepositTxHashes.add(chargeId);
+      const idempotency = verifyAndRecordDepositIdempotency({
+        txHashOrChargeId: chargeId,
+        processedSet: processedStarsChargeIds,
+      });
+
+      if (!idempotency.ok) {
+        return res.status(409).json({
+          ok: false,
+          handled: 'STARS_PAYMENT_IDEMPOTENT_REPLAY_REJECTED',
+          error: idempotency.error,
+        });
+      }
+
+      const payerIdKey = String(starsVerification.payerTelegramId || 'guest_isolated');
+      await globalUserLocks.runExclusive(payerIdKey, async () => {
+        if (!dbState.users) dbState.users = {};
+        if (!dbState.users[payerIdKey]) {
+          dbState.users[payerIdKey] = createCleanZeroUserProfile(
+            payerIdKey,
+            starsVerification.payerDisplayName
+          );
+        }
+        const payerAccount = dbState.users[payerIdKey];
+        const payerPam = new PAMSeamlessWalletEngine(payerAccount.pamState);
+
         const depositCode = `STR-${Math.floor(100000 + Math.random() * 900000)}`;
-        const creditRes = pamEngine.credit({
+        const creditRes = payerPam.credit({
           transactionUuid: `tx_stars_${chargeId}`,
           referenceTransactionUuid: null,
           roundId: depositCode,
@@ -3222,13 +3856,19 @@ app.post('/api/telegram/webhook', async (req, res) => {
           note: `شارژ خودکار ${starsVerification.starsAmount} ⭐ Telegram Stars (${depositCode})`,
         });
 
+        payerAccount.pamState = payerPam.getState();
+        payerAccount.tonBalance = roundTonClean(payerAccount.pamState.tonBalance);
+        payerAccount.starsBalance = roundStarsClean(payerAccount.pamState.starsBalance);
+        payerAccount.ledger = payerAccount.pamState.ledger;
+        payerAccount.updatedAt = new Date().toISOString();
+
         const starsDepositItem: ServerDepositItem = {
           id: Date.now(),
           depositCode,
-          userUid: String(starsVerification.payerTelegramId || pamEngine.getState().playerId),
+          userUid: payerAccount.pamState.playerId,
           userDisplayName: starsVerification.payerDisplayName,
           network: 'Telegram Stars (XTR)',
-          senderWallet: `TG#${starsVerification.payerTelegramId}`,
+          senderWallet: `TG#${payerIdKey}`,
           officialRecipientWallet: '@LuckyDropBot (Telegram Stars)',
           amountUsdt: starsVerification.creditedUsdt,
           amountCrypto: `${starsVerification.starsAmount} ⭐ Stars`,
@@ -3260,15 +3900,41 @@ app.post('/api/telegram/webhook', async (req, res) => {
           tonBalance: creditRes.tonBalance,
           starsBalance: creditRes.starsBalance,
         });
-      }
-      return res.json({ ok: true, handled: 'STARS_PAYMENT_IDEMPOTENT_REPLAY' });
+      });
+      return;
     }
 
-    // 3. Handle `/start` Command & Referral Tracking (`?start=ref_ID`)
+    // 3. Handle `/start` Command & Anti-Sybil Referral Tracking (`?start=ref_ID`)
     const msgText = String(update.message?.text || '').trim();
     if (msgText.startsWith('/start') && update.message?.chat?.id) {
       const parts = msgText.split(/\s+/);
       const startPayload = parts[1] || '';
+      const fromUser = update.message.from;
+      const fromUserKey = fromUser?.id ? String(fromUser.id) : '';
+
+      if (fromUserKey) {
+        if (!dbState.users) dbState.users = {};
+        const isFirstJoin = !dbState.users[fromUserKey];
+        if (isFirstJoin) {
+          const fullName = `${fromUser.first_name || 'کاربر'}${
+            fromUser.last_name ? ' ' + fromUser.last_name : ''
+          }`.trim();
+          dbState.users[fromUserKey] = createCleanZeroUserProfile(
+            fromUserKey,
+            fullName,
+            fromUser.username || ''
+          );
+        }
+        if ((isFirstJoin || !dbState.users[fromUserKey].referredByUserId) && startPayload) {
+          bindUserReferralAntiSybil({
+            userId: fromUserKey,
+            startParam: startPayload,
+            usersMap: dbState.users,
+          });
+        }
+        persistAll();
+      }
+
       const replyPayload = buildTelegramStartCommandPayload({
         chatId: update.message.chat.id,
         firstName: update.message.from?.first_name || update.message.from?.username || 'کاربر VIP',
@@ -3322,13 +3988,22 @@ app.post('/api/telegram/webhook', async (req, res) => {
           targetWd.status = 'completed';
         } else {
           targetWd.status = 'rejected';
-          pamEngine.rollback({
-            transactionUuid: `tx_rb_wd_${targetWd.withdrawalCode}`,
-            referenceTransactionUuid: `tx_wd_${targetWd.withdrawalCode}`,
-            roundId: targetWd.withdrawalCode,
-            vertical: 'CRYPTO_TREASURY',
-            note: `برگشت وجه برداشت ردشده از طریق ربات تلگرام (${targetWd.withdrawalCode})`,
-          });
+          const ownerKey = String(targetWd.userUid || '').replace(/^tg_/, '');
+          const ownerAcc = dbState.users?.[ownerKey];
+          if (ownerAcc) {
+            const ownerPam = new PAMSeamlessWalletEngine(ownerAcc.pamState);
+            ownerPam.rollback({
+              transactionUuid: `tx_rb_wd_${targetWd.withdrawalCode}`,
+              referenceTransactionUuid: `tx_wd_${targetWd.withdrawalCode}`,
+              roundId: targetWd.withdrawalCode,
+              vertical: 'CRYPTO_TREASURY',
+              note: `برگشت وجه برداشت ردشده از طریق ربات تلگرام (${targetWd.withdrawalCode})`,
+            });
+            ownerAcc.pamState = ownerPam.getState();
+            ownerAcc.tonBalance = roundTonClean(ownerAcc.pamState.tonBalance);
+            ownerAcc.starsBalance = roundStarsClean(ownerAcc.pamState.starsBalance);
+            ownerAcc.ledger = ownerAcc.pamState.ledger;
+          }
         }
         persistAll();
 
@@ -3366,8 +4041,9 @@ app.post('/api/telegram/webhook', async (req, res) => {
 
 app.post('/api/support/reply', optionalAuth, async (req: AuthRequest, res) => {
   try {
+    const { userPam } = getOrCreateIsolatedUserContext(req);
     const {
-      sessionCode = 'VIP-KAMRAN',
+      sessionCode = 'VIP-SUPPORT',
       senderName = 'اپراتور ارشد LuckyDrop',
       senderRole = 'OPERATOR',
       subject = 'پشتیبانی ویژه VIP',
@@ -3381,10 +4057,10 @@ app.post('/api/support/reply', optionalAuth, async (req: AuthRequest, res) => {
       sessionCode,
       senderName,
       senderRole,
-      vipLevel: 'DIAMOND VIP',
+      vipLevel: userPam.getState().vipTier,
       subject,
       message: String(message).trim(),
-      walletBalanceLabel: `${pamEngine.getState().tonBalance.toFixed(2)} TON | ${pamEngine.getState().starsBalance} ⭐`,
+      walletBalanceLabel: `${userPam.getState().tonBalance.toFixed(2)} TON | ${userPam.getState().starsBalance} ⭐`,
       historySummary: `${dbState.tickets.length} بلیت ثبت‌شده`,
       createdAt: 'همین الان',
     };
@@ -3397,8 +4073,13 @@ app.post('/api/support/reply', optionalAuth, async (req: AuthRequest, res) => {
 });
 
 app.get('/api/search', optionalAuth, async (req: AuthRequest, res) => {
+  const { session, userPam } = getOrCreateIsolatedUserContext(req);
+  const playerId = userPam.getState().playerId;
   const q = String(req.query.q || '').trim().toLowerCase();
-  const matchedTickets = dbState.tickets.filter(
+  const visibleTickets = session.isAdmin
+    ? dbState.tickets
+    : dbState.tickets.filter((t) => t.userUid === playerId || t.userUid === session.userKey);
+  const matchedTickets = visibleTickets.filter(
     (t) =>
       t.ticketCode.toLowerCase().includes(q) ||
       t.txHash.toLowerCase().includes(q) ||
@@ -3417,13 +4098,14 @@ app.post('/api/ai/support', optionalAuth, async (req: AuthRequest, res) => {
   }
 
   try {
+    const { userPam } = getOrCreateIsolatedUserContext(req);
     const q = userMessage.toLowerCase();
     const hitTicket = dbState.tickets.find(
       (t) => t.ticketCode.toLowerCase().includes(q) || t.txHash.toLowerCase().includes(q)
     );
     const contextInfo = hitTicket
       ? `بلیت یافت‌شده در دفترکل PAM: کد ${hitTicket.ticketCode}، وضعیت: ${hitTicket.status}، جایزه: $${hitTicket.prizeWonUsdt} USDT`
-      : `موجودی کیف پول PAM شما: ${pamEngine.getState().tonBalance.toFixed(2)} TON و ${pamEngine.getState().starsBalance} ⭐ Stars • تعداد تراکنش‌های دفترکل: ${pamEngine.getState().ledger.length}`;
+      : `موجودی کیف پول PAM شما: ${userPam.getState().tonBalance.toFixed(2)} TON و ${userPam.getState().starsBalance} ⭐ Stars • تعداد تراکنش‌های دفترکل: ${userPam.getState().ledger.length}`;
 
     if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY') {
       const ai = new GoogleGenAI({

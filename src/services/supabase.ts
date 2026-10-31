@@ -42,7 +42,10 @@ export interface WithdrawalRecord {
   createdAt: string;
 }
 
-const LOCAL_STORAGE_KEY = 'luckydrop_vip_persistent_state_v5';
+function getLocalStateStorageKey(userId?: string | number): string {
+  const cleanId = String(userId || 'guest').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `luckydrop_u_${cleanId}_persistent_state_v6`;
+}
 
 export interface PersistentLocalState {
   withdrawals: WithdrawalRecord[];
@@ -50,79 +53,44 @@ export interface PersistentLocalState {
   customRoundsCreated: any[];
 }
 
-const INITIAL_WITHDRAWALS: WithdrawalRecord[] = [
-  {
-    id: 901,
-    withdrawalCode: 'WD-884120',
-    userUid: 'vip-demo-user',
-    userDisplayName: 'کامران سهرابی (VIP)',
-    network: 'TON Network',
-    destinationAddress: 'UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
-    grossAmountUsdt: 450.0,
-    networkFeeUsdt: 0.25,
-    netAmountUsdt: 449.75,
-    netAmountCrypto: '86.49 TON',
-    twoFactorVerified: true,
-    status: 'pending_review',
-    txHash: '0x94a8b7c6d5e4f3a2b1c0987654321fedcba0987654321fedcba098765432101',
-    createdAt: '۱۰ دقیقه پیش',
-  },
-  {
-    id: 902,
-    withdrawalCode: 'WD-883904',
-    userUid: 'vip-demo-user',
-    userDisplayName: 'نسترن فرهادی (VIP)',
-    network: 'TON Network',
-    destinationAddress: 'UQDk8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_ZarrinVIP',
-    grossAmountUsdt: 1200.0,
-    networkFeeUsdt: 0.25,
-    netAmountUsdt: 1199.75,
-    netAmountCrypto: '212.72 TON',
-    twoFactorVerified: true,
-    status: 'completed',
-    txHash: '0x3f82c1099b84a712e904d2c3f1a8b904d2c3f1a8b904d2c3f1a8b904d2c3f1a8',
-    createdAt: '۱ ساعت پیش',
-  },
-];
-
-export function loadLocalState(): PersistentLocalState {
+export function loadLocalState(userId?: string | number): PersistentLocalState {
   if (typeof window === 'undefined') {
     return {
-      withdrawals: INITIAL_WITHDRAWALS,
+      withdrawals: [],
       claimedTicketCodes: [],
       customRoundsCreated: [],
     };
   }
+  const key = getLocalStateStorageKey(userId);
   try {
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) {
-      const seed: PersistentLocalState = {
-        withdrawals: INITIAL_WITHDRAWALS,
+      return {
+        withdrawals: [],
         claimedTicketCodes: [],
         customRoundsCreated: [],
       };
-      window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(seed));
-      return seed;
     }
     const parsed = JSON.parse(raw);
     return {
-      withdrawals: Array.isArray(parsed.withdrawals) ? parsed.withdrawals : INITIAL_WITHDRAWALS,
+      withdrawals: Array.isArray(parsed.withdrawals) ? parsed.withdrawals : [],
       claimedTicketCodes: Array.isArray(parsed.claimedTicketCodes) ? parsed.claimedTicketCodes : [],
       customRoundsCreated: Array.isArray(parsed.customRoundsCreated) ? parsed.customRoundsCreated : [],
     };
   } catch {
     return {
-      withdrawals: INITIAL_WITHDRAWALS,
+      withdrawals: [],
       claimedTicketCodes: [],
       customRoundsCreated: [],
     };
   }
 }
 
-export function saveLocalState(state: PersistentLocalState): void {
+export function saveLocalState(state: PersistentLocalState, userId?: string | number): void {
   if (typeof window === 'undefined') return;
+  const key = getLocalStateStorageKey(userId);
   try {
-    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(key, JSON.stringify(state));
   } catch {
     // Ignore storage quota errors
   }

@@ -173,7 +173,7 @@ export class PAMSeamlessWalletEngine {
     const genesisTon =
       typeof initialState?.genesisTonBalance === 'number'
         ? roundTon(initialState.genesisTonBalance)
-        : 606.06;
+        : 0;
 
     const startingTon =
       typeof initialState?.tonBalance === 'number'
@@ -183,7 +183,7 @@ export class PAMSeamlessWalletEngine {
     const genesisStars =
       typeof initialState?.genesisStarsBalance === 'number'
         ? roundStars(initialState.genesisStarsBalance)
-        : 2500;
+        : 0;
 
     const startingStars =
       typeof initialState?.starsBalance === 'number'
@@ -215,9 +215,9 @@ export class PAMSeamlessWalletEngine {
       : [];
 
     this.state = {
-      playerId: initialState?.playerId || 'vip-demo-user',
-      displayName: initialState?.displayName || 'کامران سهرابی (VIP)',
-      vipTier: initialState?.vipTier || 'DIAMOND VIP',
+      playerId: initialState?.playerId || 'tg_guest',
+      displayName: initialState?.displayName || 'کاربر تلگرام',
+      vipTier: initialState?.vipTier || 'MEMBER',
       currency: initialState?.currency === 'STARS' ? 'STARS' : 'TON',
       tonUsdRate: tonRate,
       starsUsdRate: starsRate,
@@ -225,9 +225,9 @@ export class PAMSeamlessWalletEngine {
       genesisStarsBalance: genesisStars,
       tonBalance: startingTon,
       starsBalance: startingStars,
-      referralEarningsTon: roundTon(initialState?.referralEarningsTon ?? 3.68),
+      referralEarningsTon: roundTon(initialState?.referralEarningsTon ?? 0),
       referralEarningsStars: roundStars(initialState?.referralEarningsStars ?? 0),
-      bonusTokensTon: roundTon(initialState?.bonusTokensTon ?? 5.0),
+      bonusTokensTon: roundTon(initialState?.bonusTokensTon ?? 0),
       sessionToken:
         initialState?.sessionToken || `pam_sess_${sha256Hex(initialServerSeed).slice(0, 24)}`,
       authenticatedAt: initialState?.authenticatedAt || new Date().toISOString(),
@@ -860,15 +860,25 @@ export class PAMSeamlessWalletEngine {
 // BROWSER INDEXEDDB + LOCALSTORAGE PERSISTENCE LAYER
 // ============================================================================
 
-const IDB_DB_NAME = 'LuckyDrop_PAM_Database_v2';
+const IDB_DB_NAME = 'LuckyDrop_PAM_Database_v3';
 const IDB_STORE_NAME = 'pam_wallet_state';
-const IDB_KEY = 'primary_player_pam_state_ton_stars';
-const LS_FALLBACK_KEY = 'luckydrop_pam_wallet_state_ton_stars_v2';
 
-export async function savePAMStateToIndexedDB(state: PAMPlayerState): Promise<void> {
+function resolveScopedPamKeys(userId?: string | number) {
+  const cleanUid = String(userId || 'guest').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return {
+    idbKey: `pam_state_u_${cleanUid}`,
+    lsKey: `luckydrop_u_${cleanUid}_pam_wallet_state_v3`,
+  };
+}
+
+export async function savePAMStateToIndexedDB(
+  state: PAMPlayerState,
+  userId?: string | number
+): Promise<void> {
   if (typeof window === 'undefined') return;
+  const { idbKey, lsKey } = resolveScopedPamKeys(userId ?? state.playerId);
   try {
-    localStorage.setItem(LS_FALLBACK_KEY, JSON.stringify(state));
+    localStorage.setItem(lsKey, JSON.stringify(state));
   } catch {
     // ignore quota error
   }
@@ -888,7 +898,7 @@ export async function savePAMStateToIndexedDB(state: PAMPlayerState): Promise<vo
         try {
           const db = req.result;
           const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
-          tx.objectStore(IDB_STORE_NAME).put(state, IDB_KEY);
+          tx.objectStore(IDB_STORE_NAME).put(state, idbKey);
           tx.oncomplete = () => {
             db.close();
             resolve();
@@ -908,8 +918,11 @@ export async function savePAMStateToIndexedDB(state: PAMPlayerState): Promise<vo
   });
 }
 
-export async function loadPAMStateFromIndexedDB(): Promise<PAMPlayerState | null> {
+export async function loadPAMStateFromIndexedDB(
+  userId?: string | number
+): Promise<PAMPlayerState | null> {
   if (typeof window === 'undefined') return null;
+  const { idbKey, lsKey } = resolveScopedPamKeys(userId);
 
   if (typeof window.indexedDB !== 'undefined') {
     const fromIdb = await new Promise<PAMPlayerState | null>((resolve) => {
@@ -925,7 +938,7 @@ export async function loadPAMStateFromIndexedDB(): Promise<PAMPlayerState | null
           try {
             const db = req.result;
             const tx = db.transaction(IDB_STORE_NAME, 'readonly');
-            const getReq = tx.objectStore(IDB_STORE_NAME).get(IDB_KEY);
+            const getReq = tx.objectStore(IDB_STORE_NAME).get(idbKey);
             getReq.onsuccess = () => {
               db.close();
               resolve((getReq.result as PAMPlayerState) || null);
@@ -949,7 +962,7 @@ export async function loadPAMStateFromIndexedDB(): Promise<PAMPlayerState | null
   }
 
   try {
-    const raw = localStorage.getItem(LS_FALLBACK_KEY);
+    const raw = localStorage.getItem(lsKey);
     if (raw) {
       return JSON.parse(raw) as PAMPlayerState;
     }

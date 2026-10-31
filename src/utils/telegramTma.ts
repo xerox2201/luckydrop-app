@@ -251,10 +251,10 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
     mathRationaleFa: 'پاداش وفاداری ویژه کاربران فعال روزانه',
     rewardType: 'FREE_SCRATCH_CARD',
     rewardAmount: 1,
-    progress: 1,
+    progress: 0,
     target: 7,
     claimed: false,
-    streakDay: 3,
+    streakDay: 0,
   },
   {
     id: 'PLAY_10_MINIGAMES',
@@ -265,11 +265,20 @@ export const INITIAL_TMA_QUESTS: TmaQuestItem[] = [
     mathRationaleFa: 'تکمیل نوار امتیاز XP و دریافت کوپن قرعه‌کشی رایگان',
     rewardType: 'BONUS_XP',
     rewardAmount: 100,
-    progress: 4,
+    progress: 0,
     target: 10,
     claimed: false,
   },
 ];
+
+/**
+ * Generates a localStorage key strictly scoped by verified telegramUserId
+ * so switching Telegram accounts on the same device never leaks state.
+ */
+export function getScopedStorageKey(telegramUserId: number | string, baseKey: string): string {
+  const cleanId = String(telegramUserId || 'guest').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `luckydrop_u_${cleanId}_${baseKey}`;
+}
 
 function getTelegramWebApp(): any {
   if (typeof window === 'undefined') return null;
@@ -297,43 +306,70 @@ export function initTelegramMiniAppSdk(): TelegramWebAppUser {
 
 /**
  * Resolves the active Telegram user from `Telegram.WebApp.initDataUnsafe.user`,
- * or returns a realistic persisted Telegram VIP profile in AI Studio preview.
+ * or generates an isolated per-session Telegram user ID in browser preview (zero shared demo profile).
  */
 export function resolveTelegramUser(): TelegramWebAppUser {
   const twa = getTelegramWebApp();
   const unsafeUser = twa?.initDataUnsafe?.user;
-  if (unsafeUser && typeof unsafeUser.id === 'number') {
+  if (unsafeUser && typeof unsafeUser.id === 'number' && unsafeUser.id > 0) {
     return {
       id: unsafeUser.id,
-      first_name: unsafeUser.first_name || 'VIP Player',
+      first_name: unsafeUser.first_name || 'کاربر',
       last_name: unsafeUser.last_name || '',
-      username: unsafeUser.username || `tg_user_${unsafeUser.id}`,
+      username: unsafeUser.username || `tg_${unsafeUser.id}`,
       language_code: unsafeUser.language_code || 'fa',
-      is_premium: Boolean(unsafeUser.is_premium ?? true),
+      is_premium: Boolean(unsafeUser.is_premium),
       photo_url: unsafeUser.photo_url,
     };
   }
 
   try {
-    const saved = localStorage.getItem('luckydrop_tma_user_v1');
+    // Allow URL query override `?tg_uid=...` for multi-tenant isolation testing
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryUid = Number(urlParams.get('tg_uid') || 0);
+      if (Number.isFinite(queryUid) && queryUid > 0) {
+        return {
+          id: Math.floor(queryUid),
+          first_name: 'کاربر',
+          last_name: `#${Math.floor(queryUid).toString().slice(-4)}`,
+          username: `tg_${Math.floor(queryUid)}`,
+          language_code: 'fa',
+          is_premium: false,
+        };
+      }
+    }
+
+    const saved = localStorage.getItem('luckydrop_isolated_tg_user_v3');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed.id === 'number') {
+      if (parsed && typeof parsed.id === 'number' && parsed.id > 0 && parsed.id !== 778899101) {
         return parsed;
       }
     }
-  } catch {
-    // ignore
-  }
 
-  return {
-    id: 778899101,
-    first_name: 'کامران',
-    last_name: 'VIP',
-    username: 'Kamran_TON_VIP',
-    language_code: 'fa',
-    is_premium: true,
-  };
+    const generatedId = Math.floor(100000000 + Math.random() * 899999999);
+    const freshUser: TelegramWebAppUser = {
+      id: generatedId,
+      first_name: 'کاربر',
+      last_name: `#${String(generatedId).slice(-4)}`,
+      username: `tg_${generatedId}`,
+      language_code: 'fa',
+      is_premium: false,
+    };
+    localStorage.setItem('luckydrop_isolated_tg_user_v3', JSON.stringify(freshUser));
+    return freshUser;
+  } catch {
+    const fallbackId = 800000001;
+    return {
+      id: fallbackId,
+      first_name: 'کاربر',
+      last_name: 'تلگرام',
+      username: `tg_${fallbackId}`,
+      language_code: 'fa',
+      is_premium: false,
+    };
+  }
 }
 
 /**

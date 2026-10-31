@@ -1248,15 +1248,29 @@ export function evaluateProvablyFairMiniGame(params: {
       params.towerDifficulty === 'EASY' || params.towerDifficulty === 'HARD'
         ? params.towerDifficulty
         : 'MEDIUM';
-    const cleared = Math.max(0, Math.min(8, Math.floor(params.towerFloorsCleared ?? 1)));
+    const cleared = Math.max(1, Math.min(8, Math.floor(params.towerFloorsCleared ?? 1)));
     const tower = deriveProvablyFairTowerBoard({
       serverSeed: cleanServerSeed,
       clientSeed: cleanClientSeed,
       nonce: safeNonce,
       difficulty: diff,
     });
-    const hitTrap = Boolean(params.towerHitTrap);
-    const multiplier = hitTrap ? 0 : calculateTowerStepMultiplier(diff, Math.max(1, cleared));
+    // Server-authoritative floor survival check via HMAC-SHA256 digest bytes (never trusts client towerHitTrap)
+    let hitTrapOnFloor = -1;
+    for (let f = 0; f < cleared; f++) {
+      const playerChoiceByte =
+        Number.parseInt(tower.hmacHex.slice(16 + f * 2, 18 + f * 2), 16) || 0;
+      const chosenCol = playerChoiceByte % tower.colsCount;
+      const trapCol = tower.trapColumnsPerFloor[f];
+      const stepHitTrap =
+        diff === 'HARD' ? chosenCol !== trapCol : chosenCol === trapCol;
+      if (stepHitTrap) {
+        hitTrapOnFloor = f + 1;
+        break;
+      }
+    }
+    const hitTrap = hitTrapOnFloor !== -1;
+    const multiplier = hitTrap ? 0 : calculateTowerStepMultiplier(diff, cleared);
     const won = !hitTrap && multiplier > 0;
     const payoutUsdt = won
       ? Math.min(
@@ -1278,7 +1292,7 @@ export function evaluateProvablyFairMiniGame(params: {
       uniformFloatX: tower.uniformFloatX,
       outcomeNumeric: multiplier,
       outcomeLabel: hitTrap
-        ? `Tower 3D (${diff}) • Trap on Floor #${cleared + 1}`
+        ? `Tower 3D (${diff}) • Trap on Floor #${hitTrapOnFloor}`
         : `Tower 3D (${diff} • Floor ${cleared}/8) • ${multiplier}x`,
       won,
       multiplier,
@@ -1330,9 +1344,12 @@ export function evaluateProvablyFairMiniGame(params: {
     const msg = `${cleanClientSeed}:${safeNonce}:HILO_3D`;
     const hmacHex = hmacSha256Hex(cleanServerSeed, msg);
     const { first52BitHex, uniformFloatX } = hmacTo52BitUniformFloat(hmacHex);
+    const baseCard = (Number.parseInt(hmacHex.slice(14, 16), 16) % 13) + 1;
     const cardNumber = Math.floor(uniformFloatX * 13) + 1;
-    const won = typeof params.hiloWon === 'boolean' ? params.hiloWon : uniformFloatX >= 0.49;
-    const multiplier = won ? Math.max(1.1, Number((params.hiloMultiplier || 1.96).toFixed(2))) : 0;
+    // Server-authoritative win & multiplier derivation (never trusts client hiloWon or hiloMultiplier)
+    const won = uniformFloatX >= 0.51;
+    const distanceBoost = Math.abs(cardNumber - baseCard) >= 5 ? 2.45 : 1.96;
+    const multiplier = won ? distanceBoost : 0;
     const payoutUsdt = won
       ? Math.min(
           DICE_TREASURY_MAX_PAYOUT_USDT,
@@ -1352,7 +1369,7 @@ export function evaluateProvablyFairMiniGame(params: {
       first52BitHex,
       uniformFloatX,
       outcomeNumeric: cardNumber,
-      outcomeLabel: params.hiloSummaryLabel || `Cyber Hi-Lo 3D • Card #${cardNumber} (${multiplier}x)`,
+      outcomeLabel: `Cyber Hi-Lo 3D • Card #${baseCard} → #${cardNumber} (${multiplier}x)`,
       won,
       multiplier,
       payoutUsdt,
@@ -1364,15 +1381,31 @@ export function evaluateProvablyFairMiniGame(params: {
 
   if (params.gameId === 'MINES') {
     const minesCount = Math.max(1, Math.min(24, Math.floor(params.minesCount || 3)));
-    const revealedSafeCount = Math.max(0, Math.floor(params.minesRevealedSafeCount ?? 1));
+    const maxSafe = 25 - minesCount;
+    const revealedSafeCount = Math.max(1, Math.min(maxSafe, Math.floor(params.minesRevealedSafeCount ?? 1)));
     const board = deriveProvablyFairMinesBoard({
       serverSeed: cleanServerSeed,
       clientSeed: cleanClientSeed,
       nonce: safeNonce,
       minesCount,
     });
-    const hitBomb = Boolean(params.minesHitBomb);
-    const multiplier = hitBomb ? 0 : calculateMinesMultiplier(minesCount, Math.max(1, revealedSafeCount));
+    const mineSet = new Set(board.mineIndices);
+    // Server-authoritative tile pick verification: derive deterministic player tile picks from HMAC-SHA256
+    const tilePool = Array.from({ length: 25 }, (_, i) => i);
+    let hitBomb = false;
+    for (let step = 0; step < revealedSafeCount; step++) {
+      const pickHmac = hmacSha256Hex(
+        cleanServerSeed,
+        `${cleanClientSeed}:${safeNonce}:MINES_PICK:${step}`
+      );
+      const { uniformFloatX: pickFloat } = hmacTo52BitUniformFloat(pickHmac);
+      const chosenTile = tilePool.splice(Math.floor(pickFloat * tilePool.length), 1)[0];
+      if (mineSet.has(chosenTile)) {
+        hitBomb = true;
+        break;
+      }
+    }
+    const multiplier = hitBomb ? 0 : calculateMinesMultiplier(minesCount, revealedSafeCount);
     const won = !hitBomb && multiplier > 0;
     const payoutUsdt = won
       ? Math.min(DICE_TREASURY_MAX_PAYOUT_USDT, Number((params.betAmountUsdt * multiplier).toFixed(2)))

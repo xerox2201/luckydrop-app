@@ -84,6 +84,7 @@ import {
   DEFAULT_TON_USD_RATE,
   DEFAULT_STARS_USD_RATE,
   initTelegramMiniAppSdk,
+  getScopedStorageKey,
   tmaCurrencyToUsdt,
   usdtToTmaCurrency,
   formatTmaCurrency,
@@ -648,14 +649,7 @@ const ROUTE_TO_PATH: Record<AppRoute, string> = {
 const buildDefaultConcurrentRounds = (): LotteryRoundItem[] => {
   const nowMs = Date.now();
   return MULTI_LOTTERY_SPECS.map((spec, idx) => {
-    const initialCollectedUsdt =
-      spec.id === 'MEGA_WEEKLY'
-        ? 450
-        : spec.id === 'DAILY_BLITZ'
-        ? 180
-        : spec.id === 'HOURLY_FLASH'
-        ? 65
-        : 220;
+    const initialCollectedUsdt = 0;
     const poolSplit = calculateDynamicPariMutuelPool(initialCollectedUsdt, 15);
     const durMin = Math.max(5, Math.round(spec.initialCountdownSec / 60));
     return {
@@ -674,7 +668,7 @@ const buildDefaultConcurrentRounds = (): LotteryRoundItem[] => {
       jackpotUsdt: poolSplit.distributablePool85Usdt.toFixed(2),
       ticketPriceUsdt: spec.ticketPriceUsdt.toFixed(2),
       rtpPercent: '85.00',
-      soldPercent: spec.soldPercent,
+      soldPercent: 0,
       remainingLabel: 'قرعه‌کشی خودکار راس تایم',
       drawTimeLabel: spec.drawTimeLabel,
       serverSeedHash: spec.serverSeedHash,
@@ -689,7 +683,7 @@ const buildDefaultConcurrentRounds = (): LotteryRoundItem[] => {
       durationMinutes: durMin,
       drawTargetTimestampMs: nowMs + durMin * 60 * 1000,
       initialSeedUsdt: '0.00',
-      ticketsSoldCount: Math.max(1, Math.round(initialCollectedUsdt / spec.ticketPriceUsdt)),
+      ticketsSoldCount: 0,
       status: 'ACTIVE',
     };
   });
@@ -700,13 +694,31 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const realTonAddress = useTonAddress();
   const realTonWallet = useTonWallet();
 
+  // Telegram Mini App (TMA) SDK Identity — resolved first so all state and storage keys are strictly scoped per user
+  const [telegramUser, setTelegramUser] = useState<TelegramWebAppUser>(() =>
+    initTelegramMiniAppSdk()
+  );
+
   const [activeRoute, setActiveRoute] = useState<AppRoute>(resolveInitialRoute);
   const [stealthCookieAuthorized, setStealthCookieAuthorized] = useState<boolean>(false);
   const [lang, setLangState] = useState<CurrencyLang>('FA');
   const [walletDrawerOpen, setWalletDrawerOpen] = useState<boolean>(false);
 
-  // Local PAM Seamless Wallet Engine Fallback & IndexedDB Synchronizer
-  const localPamEngineRef = useRef<PAMSeamlessWalletEngine>(new PAMSeamlessWalletEngine());
+  // Local PAM Seamless Wallet Engine Fallback & IndexedDB Synchronizer (Zero-Balance Clean Init)
+  const localPamEngineRef = useRef<PAMSeamlessWalletEngine>(
+    new PAMSeamlessWalletEngine({
+      playerId: `tg_${telegramUser.id}`,
+      displayName: `${telegramUser.first_name || 'کاربر تلگرام'}${telegramUser.last_name ? ' ' + telegramUser.last_name : ''}`,
+      vipTier: 'MEMBER',
+      genesisTonBalance: 0,
+      tonBalance: 0,
+      genesisStarsBalance: 0,
+      starsBalance: 0,
+      referralEarningsTon: 0,
+      referralEarningsStars: 0,
+      bonusTokensTon: 0,
+    })
+  );
   const [pamState, setPamState] = useState<PAMPlayerState>(() => localPamEngineRef.current.getState());
   const [pamReconciliation, setPamReconciliation] = useState<PAMReconciliationReport | null>(
     () => localPamEngineRef.current.reconcile().reconciliation || null
@@ -721,18 +733,25 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const authTokenRef = useRef<string | null>(null);
 
-  const [tonBalance, setTonBalance] = useState<number>(606.06);
-  const [bonusTokensTon, setBonusTokensTon] = useState<number>(5.0);
-  const [vipTier, setVipTier] = useState<string>('DIAMOND VIP');
-  const [displayName, setDisplayName] = useState<string>('کامران سهرابی (VIP)');
+  // Strict Zero-Balance Initial State for Every New User
+  const [tonBalance, setTonBalance] = useState<number>(0);
+  const [bonusTokensTon, setBonusTokensTon] = useState<number>(0);
+  const [vipTier, setVipTier] = useState<string>('MEMBER');
+  const [displayName, setDisplayName] = useState<string>(
+    () => `${telegramUser.first_name || 'کاربر تلگرام'}${telegramUser.last_name ? ' ' + telegramUser.last_name : ''}`
+  );
   const [rounds, setRounds] = useState<LotteryRoundItem[]>(buildDefaultConcurrentRounds);
   const [tickets, setTickets] = useState<TicketItem[]>([]);
   const [drawHistory, setDrawHistory] = useState<VerifiableDrawHistoryRecord[]>([]);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [supportMessages, setSupportMessages] = useState<SupportMessageItem[]>([]);
   const [deposits, setDeposits] = useState<DepositRecordItem[]>([]);
-  const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>(() => loadLocalState().withdrawals);
-  const [claimedTicketCodes, setClaimedTicketCodes] = useState<string[]>(() => loadLocalState().claimedTicketCodes);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>(
+    () => loadLocalState(telegramUser.id).withdrawals
+  );
+  const [claimedTicketCodes, setClaimedTicketCodes] = useState<string[]>(
+    () => loadLocalState(telegramUser.id).claimedTicketCodes
+  );
   const [killSwitchActive, setKillSwitchActive] = useState<boolean>(false);
   const [firestoreConnected, setFirestoreConnected] = useState<boolean>(true);
 
@@ -743,19 +762,21 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       const tgUser = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user;
       if (tgUser?.username) return `@${tgUser.username}`;
-      return localStorage.getItem('luckydrop_tg_username') || '@Kamran_TON_VIP';
+      if (telegramUser.username) return `@${telegramUser.username.replace(/^@/, '')}`;
+      return (
+        localStorage.getItem(getScopedStorageKey(telegramUser.id, 'luckydrop_tg_username')) ||
+        `@user_${telegramUser.id}`
+      );
     } catch {
-      return '@Kamran_TON_VIP';
+      return `@user_${telegramUser.id}`;
     }
   });
 
-  // Telegram Mini App (TMA) SDK, Auto-Auth, Dual-Currency (TON & Stars), Quests & Admin ID Lock
-  const [telegramUser, setTelegramUser] = useState<TelegramWebAppUser>(() =>
-    initTelegramMiniAppSdk()
-  );
   const [activeTmaCurrency, setActiveTmaCurrencyState] = useState<ActiveTmaCurrency>(() => {
     try {
-      const saved = localStorage.getItem('luckydrop_active_tma_currency');
+      const saved = localStorage.getItem(
+        getScopedStorageKey(telegramUser.id, 'luckydrop_active_tma_currency')
+      );
       return saved === 'STARS' ? 'STARS' : 'TON';
     } catch {
       return 'TON';
@@ -775,14 +796,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return DEFAULT_STARS_USD_RATE;
     }
   });
-  const [starsBalance, setStarsBalance] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem('luckydrop_stars_balance_v1');
-      return raw !== null ? Number(raw) : 2500;
-    } catch {
-      return 2500;
-    }
-  });
+  const [starsBalance, setStarsBalance] = useState<number>(0);
   const [adminTelegramUserIds, setAdminTelegramUserIdsState] = useState<number[]>(
     DEFAULT_ADMIN_TELEGRAM_USER_IDS
   );
@@ -798,37 +812,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     errorStatus: null,
     ready: false,
   });
-  const [freePlinkoDrops, setFreePlinkoDrops] = useState<number>(() => {
-    try {
-      return Number(localStorage.getItem('luckydrop_free_plinko_drops_v1') ?? 2);
-    } catch {
-      return 2;
-    }
-  });
-  const [freeScratchCards, setFreeScratchCards] = useState<number>(() => {
-    try {
-      return Number(localStorage.getItem('luckydrop_free_scratch_cards_v1') ?? 1);
-    } catch {
-      return 1;
-    }
-  });
-  const [freeLotteryTickets, setFreeLotteryTickets] = useState<number>(() => {
-    try {
-      return Number(localStorage.getItem('luckydrop_free_lottery_tickets_v1') ?? 1);
-    } catch {
-      return 1;
-    }
-  });
-  const [tmaXpPoints, setTmaXpPoints] = useState<number>(() => {
-    try {
-      return Number(localStorage.getItem('luckydrop_tma_xp_v1') ?? 65);
-    } catch {
-      return 65;
-    }
-  });
+  const [freePlinkoDrops, setFreePlinkoDrops] = useState<number>(0);
+  const [freeScratchCards, setFreeScratchCards] = useState<number>(0);
+  const [freeLotteryTickets, setFreeLotteryTickets] = useState<number>(0);
+  const [tmaXpPoints, setTmaXpPoints] = useState<number>(0);
   const [tmaQuests, setTmaQuests] = useState<TmaQuestItem[]>(() => {
     try {
-      const raw = localStorage.getItem('luckydrop_tma_quests_v1');
+      const raw = localStorage.getItem(
+        getScopedStorageKey(telegramUser.id, 'luckydrop_tma_quests_v3')
+      );
       if (raw) return JSON.parse(raw);
     } catch {
       // ignore
@@ -846,7 +838,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     HapticEngine.selectionChanged();
     setActiveTmaCurrencyState(currency);
     try {
-      localStorage.setItem('luckydrop_active_tma_currency', currency);
+      localStorage.setItem(
+        getScopedStorageKey(telegramUser.id, 'luckydrop_active_tma_currency'),
+        currency
+      );
     } catch {
       // ignore
     }
@@ -907,7 +902,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const next = freePlinkoDrops - 1;
     setFreePlinkoDrops(next);
     try {
-      localStorage.setItem('luckydrop_free_plinko_drops_v1', String(next));
+      localStorage.setItem(
+        getScopedStorageKey(telegramUser.id, 'luckydrop_free_plinko_drops_v3'),
+        String(next)
+      );
     } catch {
       // ignore
     }
@@ -919,7 +917,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const next = freeScratchCards - 1;
     setFreeScratchCards(next);
     try {
-      localStorage.setItem('luckydrop_free_scratch_cards_v1', String(next));
+      localStorage.setItem(
+        getScopedStorageKey(telegramUser.id, 'luckydrop_free_scratch_cards_v3'),
+        String(next)
+      );
     } catch {
       // ignore
     }
@@ -929,128 +930,116 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const completeAndClaimTmaQuest = (
     questId: TmaQuestItem['id']
   ): { ok: boolean; message: string } => {
-    HapticEngine.notificationOccurred('success');
-    let rewardMsg = '✅ پاداش ماموریت (Bonus Token بدون ریسک خزانه) به حساب شما اضافه شد!';
+    const existingQuest = tmaQuests.find((q) => q.id === questId);
+    if (existingQuest?.claimed) {
+      return { ok: false, message: 'ℹ️ این ماموریت قبلاً دریافت شده است.' };
+    }
 
-    setTmaQuests((prev) => {
-      const next = prev.map((q) => {
-        if (q.id !== questId) return q;
-        if (q.claimed) {
-          rewardMsg = 'ℹ️ این ماموریت قبلاً دریافت شده است.';
-          return q;
-        }
-        if (q.rewardType === 'FREE_PLINKO_DROPS') {
-          setFreePlinkoDrops((d) => {
-            const v = d + q.rewardAmount;
-            try {
-              localStorage.setItem('luckydrop_free_plinko_drops_v1', String(v));
-            } catch {}
-            return v;
-          });
-          rewardMsg = `🎁 +${q.rewardAmount} توپ رایگان Plinko (Play-Only Bonus Token) فعال شد!`;
-        } else if (q.rewardType === 'FREE_LOTTERY_TICKET') {
-          setFreeLotteryTickets((t) => {
-            const v = t + q.rewardAmount;
-            try {
-              localStorage.setItem('luckydrop_free_lottery_tickets_v1', String(v));
-            } catch {}
-            return v;
-          });
-          const bonusTicket: TicketItem = {
-            id: Date.now(),
-            ticketCode: `QST-${Math.floor(100000 + Math.random() * 900000)}`,
-            userUid: String(telegramUser.id),
-            roundCode: '#ZRN-8493',
-            mainNumbers: JSON.stringify([7, 14, 21, 35, 49]),
-            goldenBall: 7,
-            costUsdt: '0.00',
-            currencyNetwork: 'TELEGRAM QUEST BONUS (TURNOVER-LOCKED)',
-            txHash: `0x${sha256Hex(`quest:${questId}:${Date.now()}`)}`,
-            transactionUuid: `tx_quest_${questId}_${Date.now()}`,
-            clientSeed: pamState.seeds.clientSeed,
-            serverSeedHash: pamState.seeds.serverSeedHash,
-            nonce: pamState.seeds.nonce,
-            commitHash: sha256Hex(`${questId}:${Date.now()}`).slice(0, 32),
-            status: 'ACTIVE',
-            confirmations: 19,
-            prizeWonUsdt: '0.00',
-            claimed: false,
-            createdAt: 'همین الان (پاداش ماموریت تلگرام)',
-          };
-          setTickets((old) => [bonusTicket, ...old]);
-          rewardMsg = `🎟️ +1 کوپن رایگان لاتاری (#${bonusTicket.ticketCode} • Turnover-Locked) صادر شد!`;
-        } else if (q.rewardType === 'FREE_SCRATCH_CARD') {
-          setFreeScratchCards((s) => {
-            const v = s + q.rewardAmount;
-            try {
-              localStorage.setItem('luckydrop_free_scratch_cards_v1', String(v));
-            } catch {}
-            return v;
-          });
-          setTmaXpPoints((xp) => {
-            const v = xp + 35;
-            try {
-              localStorage.setItem('luckydrop_tma_xp_v1', String(v));
-            } catch {}
-            return v;
-          });
-          rewardMsg = '✨ +1 کارت اسکرچ هولوگرافیک رایگان + 35 XP روزانه دریافت شد!';
-        } else if (q.rewardType === 'BONUS_XP') {
-          setTmaXpPoints((xp) => {
-            const v = xp + q.rewardAmount;
-            try {
-              localStorage.setItem('luckydrop_tma_xp_v1', String(v));
-            } catch {}
-            return v;
-          });
-          setFreePlinkoDrops((d) => d + 1);
-          rewardMsg = `⚡ +${q.rewardAmount} XP + ۱ دراپ رایگان Plinko دریافت شد!`;
-        }
-        return {
-          ...q,
-          progress: q.target,
-          claimed: true,
-        };
-      });
+    // Trigger real server-authoritative quest verification (/api/quests/verify) which checks getChatMember for channel quests
+    (async () => {
       try {
-        localStorage.setItem('luckydrop_tma_quests_v1', JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'X-Telegram-Init-Data':
+            typeof window !== 'undefined'
+              ? String((window as any)?.Telegram?.WebApp?.initData || '').trim()
+              : '',
+          'X-Telegram-User-Id': String(telegramUser.id),
+        };
+        const res = await fetch('/api/quests/verify', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            questId,
+            walletConnected: Boolean(realTonAddress),
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          HapticEngine.notificationOccurred('success');
+          if (typeof data.xp === 'number') setTmaXpPoints(data.xp);
+          if (typeof data.freePlinkoDrops === 'number') setFreePlinkoDrops(data.freePlinkoDrops);
+          if (typeof data.freeScratchCards === 'number') setFreeScratchCards(data.freeScratchCards);
+          if (typeof data.freeLotteryTickets === 'number') setFreeLotteryTickets(data.freeLotteryTickets);
+          if (Array.isArray(data.tickets)) setTickets(data.tickets);
+          if (Array.isArray(data.completedQuests)) {
+            setTmaQuests((prev) => {
+              const next = prev.map((q) =>
+                data.completedQuests.includes(q.id)
+                  ? { ...q, progress: q.target, claimed: true }
+                  : q
+              );
+              try {
+                localStorage.setItem(
+                  getScopedStorageKey(telegramUser.id, 'luckydrop_tma_quests_v3'),
+                  JSON.stringify(next)
+                );
+              } catch {}
+              return next;
+            });
+          }
+        } else {
+          HapticEngine.notificationOccurred('error');
+        }
+      } catch {
+        // ignore network errors
+      }
+    })();
 
-    return { ok: true, message: rewardMsg };
+    if (questId === 'JOIN_OFFICIAL_CHANNEL') {
+      return {
+        ok: true,
+        message: '🔍 درخواست بررسی عضویت در کانال رسمی تلگرام به سرور ارسال شد (در صورت تایید عضویت، پاداش اعمال می‌شود).',
+      };
+    }
+
+    return {
+      ok: true,
+      message: '✅ درخواست تایید ماموریت به سرور ارسال شد.',
+    };
   };
 
   // Zero-Loss Solvency & Referral State
   const [solvencyMode, setSolvencyModeState] = useState<SolvencyProtectionMode>('AUTO_EXTEND');
   const [referralCode, setReferralCodeState] = useState<string>(() => {
     try {
-      return localStorage.getItem('luckydrop_my_referral_code') || 'VIP-KAMRAN777';
+      return (
+        localStorage.getItem(
+          getScopedStorageKey(telegramUser.id, 'luckydrop_my_referral_code_v3')
+        ) || `ref_${telegramUser.id}`
+      );
     } catch {
-      return 'VIP-KAMRAN777';
+      return `ref_${telegramUser.id}`;
     }
   });
   const [referredByCode, setReferredByCode] = useState<string>(() => {
     try {
       const params = new URLSearchParams(window.location.search);
-      const fromUrl = params.get('ref');
+      const fromUrl = params.get('ref') || params.get('start_param') || params.get('tgWebAppStartParam');
       if (fromUrl && fromUrl.trim().length >= 4) {
-        const clean = fromUrl.trim().toUpperCase();
-        localStorage.setItem('luckydrop_referred_by', clean);
+        const clean = fromUrl.trim();
+        localStorage.setItem(
+          getScopedStorageKey(telegramUser.id, 'luckydrop_referred_by_v3'),
+          clean
+        );
         return clean;
       }
-      return localStorage.getItem('luckydrop_referred_by') || '';
+      return (
+        localStorage.getItem(
+          getScopedStorageKey(telegramUser.id, 'luckydrop_referred_by_v3')
+        ) || ''
+      );
     } catch {
       return '';
     }
   });
-  const [referralEarningsTon, setReferralEarningsTon] = useState<number>(3.68);
+  const [referralEarningsTon, setReferralEarningsTon] = useState<number>(0);
   const [referralEarningsStars, setReferralEarningsStars] = useState<number>(0);
-  const [referredTicketsCount, setReferredTicketsCount] = useState<number>(14);
+  const [referredTicketsCount, setReferredTicketsCount] = useState<number>(0);
   const [referralEvents, setReferralEvents] = useState<ReferralEventItem[]>([]);
 
   // Zero-Loss VIP Loyalty Chest (3% Rollover Reserve) & Telegram Bot Alert State
-  const [rolloverReservePoolUsdt, setRolloverReservePoolUsdt] = useState<number>(48.5);
+  const [rolloverReservePoolUsdt, setRolloverReservePoolUsdt] = useState<number>(0);
   const [chestsClaimedCount, setChestsClaimedCount] = useState<number>(0);
   const [telegramBotConfig, setTelegramBotConfig] = useState<TelegramBotAlertConfig>({
     botToken: '',
@@ -1140,51 +1129,57 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       slipIndex: 1,
       mainNumbers: [7, 14, 23, 38, 49],
       goldenBall: 8,
-      clientSeed: 'zarrin_vip_slip_1',
+      clientSeed: 'luckydrop_slip_1',
     },
   ]);
   const [activeSlipIndex, setActiveSlipIndex] = useState<number>(0);
   const [activeTrackingTicket, setActiveTrackingTicket] = useState<TicketItem | null>(null);
 
-  const syncPamStateEverywhere = useCallback((nextPam: PAMPlayerState, recon?: PAMReconciliationReport) => {
-    localPamEngineRef.current.hydrateState(nextPam);
-    const hydrated = localPamEngineRef.current.getState();
-    setPamState({ ...hydrated });
-    setTonBalance(hydrated.tonBalance);
-    setBonusTokensTon(hydrated.bonusTokensTon);
-    if (typeof hydrated.referralEarningsTon === 'number') {
-      setReferralEarningsTon(hydrated.referralEarningsTon);
-    }
-    if (typeof hydrated.referralEarningsStars === 'number') {
-      setReferralEarningsStars(hydrated.referralEarningsStars);
-    }
-    if (typeof hydrated.starsBalance === 'number') {
-      setStarsBalance(hydrated.starsBalance);
-      try {
-        localStorage.setItem('luckydrop_stars_balance_v1', String(hydrated.starsBalance));
-      } catch {}
-    }
-    const computedRecon = recon || localPamEngineRef.current.reconcile().reconciliation || null;
-    setPamReconciliation(computedRecon);
-    savePAMStateToIndexedDB(hydrated);
-  }, []);
+  const syncPamStateEverywhere = useCallback(
+    (nextPam: PAMPlayerState, recon?: PAMReconciliationReport) => {
+      localPamEngineRef.current.hydrateState(nextPam);
+      const hydrated = localPamEngineRef.current.getState();
+      setPamState({ ...hydrated });
+      setTonBalance(hydrated.tonBalance);
+      setBonusTokensTon(hydrated.bonusTokensTon);
+      if (typeof hydrated.referralEarningsTon === 'number') {
+        setReferralEarningsTon(hydrated.referralEarningsTon);
+      }
+      if (typeof hydrated.referralEarningsStars === 'number') {
+        setReferralEarningsStars(hydrated.referralEarningsStars);
+      }
+      if (typeof hydrated.starsBalance === 'number') {
+        setStarsBalance(hydrated.starsBalance);
+        try {
+          localStorage.setItem(
+            getScopedStorageKey(telegramUser.id, 'luckydrop_stars_balance_v3'),
+            String(hydrated.starsBalance)
+          );
+        } catch {}
+      }
+      const computedRecon = recon || localPamEngineRef.current.reconcile().reconciliation || null;
+      setPamReconciliation(computedRecon);
+      savePAMStateToIndexedDB(hydrated, telegramUser.id);
+    },
+    [telegramUser.id]
+  );
 
-  // Hydrate from IndexedDB on initial mount before network snapshot arrives
+  // Hydrate from per-user IndexedDB on initial mount before network snapshot arrives
   useEffect(() => {
-    loadPAMStateFromIndexedDB().then((cached) => {
+    loadPAMStateFromIndexedDB(telegramUser.id).then((cached) => {
       if (cached && typeof cached.tonBalance === 'number') {
         localPamEngineRef.current.hydrateState(cached);
         const hydrated = localPamEngineRef.current.getState();
         setPamState(hydrated);
         setTonBalance(hydrated.tonBalance);
-        setBonusTokensTon(hydrated.bonusTokensTon || 5);
+        setBonusTokensTon(hydrated.bonusTokensTon || 0);
         if (typeof hydrated.starsBalance === 'number') {
           setStarsBalance(hydrated.starsBalance);
         }
         setPamReconciliation(localPamEngineRef.current.reconcile().reconciliation || null);
       }
     });
-  }, []);
+  }, [telegramUser.id]);
 
   const setActiveLotteryId = (id: LotteryTypeId) => {
     setActiveLotteryIdState(id);
@@ -1294,9 +1289,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       typeof window !== 'undefined'
         ? (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user?.id
         : undefined;
-    if (unsafeUserId) {
-      headers['X-Telegram-User-Id'] = String(unsafeUserId);
-    }
+    headers['X-Telegram-User-Id'] = String(unsafeUserId || telegramUser.id || '');
     if (auth.currentUser) {
       try {
         const token = await auth.currentUser.getIdToken();
@@ -1309,7 +1302,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       headers['Authorization'] = `Bearer ${authTokenRef.current}`;
     }
     return headers;
-  }, []);
+  }, [telegramUser.id]);
 
   const refreshSnapshot = useCallback(async () => {
     try {
@@ -1319,12 +1312,34 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const data = await res.json();
       if (data.pamState) {
         syncPamStateEverywhere(data.pamState, data.reconciliation);
-      } else if (data.user) {
+      }
+      if (data.user) {
         if (typeof data.user.tonBalance === 'number') {
           setTonBalance(data.user.tonBalance);
         }
         if (typeof data.user.starsBalance === 'number') {
           setStarsBalance(data.user.starsBalance);
+        }
+        if (typeof data.user.bonusTokens === 'number') {
+          setBonusTokensTon(data.user.bonusTokens);
+        }
+        if (typeof data.user.xp === 'number') {
+          setTmaXpPoints(data.user.xp);
+        }
+        if (typeof data.user.freePlinkoDrops === 'number') {
+          setFreePlinkoDrops(data.user.freePlinkoDrops);
+        }
+        if (typeof data.user.freeScratchCards === 'number') {
+          setFreeScratchCards(data.user.freeScratchCards);
+        }
+        if (typeof data.user.freeLotteryTickets === 'number') {
+          setFreeLotteryTickets(data.user.freeLotteryTickets);
+        }
+        if (typeof data.user.referralCode === 'string' && data.user.referralCode) {
+          setReferralCodeState(data.user.referralCode);
+        }
+        if (typeof data.user.referredBy === 'string' && data.user.referredBy) {
+          setReferredByCode(data.user.referredBy);
         }
         if (typeof data.user.referralEarningsTon === 'number') {
           setReferralEarningsTon(data.user.referralEarningsTon);
@@ -1332,8 +1347,21 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (typeof data.user.referralEarningsStars === 'number') {
           setReferralEarningsStars(data.user.referralEarningsStars);
         }
-        setVipTier(data.user.vipTier || 'DIAMOND VIP');
-        setDisplayName(data.user.displayName || 'کاربر ویژه VIP');
+        if (Array.isArray(data.user.referrals)) {
+          setReferredTicketsCount(data.user.referrals.length);
+        }
+        setVipTier(data.user.vipTier || 'MEMBER');
+        if (data.user.displayName) {
+          setDisplayName(data.user.displayName);
+        }
+        if (Array.isArray(data.user.completedQuests)) {
+          const completedIds: string[] = data.user.completedQuests;
+          setTmaQuests((prev) =>
+            prev.map((q) =>
+              completedIds.includes(q.id) ? { ...q, progress: q.target, claimed: true } : q
+            )
+          );
+        }
       }
       if (Array.isArray(data.rounds)) {
         setRounds(data.rounds);
@@ -1355,6 +1383,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const updatedPrev = data.tickets.find((t: TicketItem) => t.ticketCode === prev.ticketCode);
             return updatedPrev || data.tickets[0];
           });
+        } else {
+          setActiveTrackingTicket(null);
         }
       }
       if (Array.isArray(data.drawHistory)) {
@@ -1413,7 +1443,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setTelegramUsername(`@${user.username.replace(/^@/, '')}`);
       }
       if (user.first_name) {
-        setDisplayName(`${user.first_name}${user.last_name ? ' ' + user.last_name : ''} (VIP)`);
+        setDisplayName(`${user.first_name}${user.last_name ? ' ' + user.last_name : ''}`);
       }
 
       const rawInitData =
@@ -1480,16 +1510,59 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
         if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
       }
+      if (data.user) {
+        if (typeof data.user.xp === 'number') setTmaXpPoints(data.user.xp);
+        if (typeof data.user.freePlinkoDrops === 'number') setFreePlinkoDrops(data.user.freePlinkoDrops);
+        if (typeof data.user.freeScratchCards === 'number') setFreeScratchCards(data.user.freeScratchCards);
+        if (typeof data.user.freeLotteryTickets === 'number') setFreeLotteryTickets(data.user.freeLotteryTickets);
+        if (typeof data.user.referralCode === 'string' && data.user.referralCode) {
+          setReferralCodeState(data.user.referralCode);
+        }
+        if (typeof data.user.referredBy === 'string' && data.user.referredBy) {
+          setReferredByCode(data.user.referredBy);
+        }
+        if (typeof data.user.referralEarningsTon === 'number') {
+          setReferralEarningsTon(data.user.referralEarningsTon);
+        }
+        if (typeof data.user.referralEarningsStars === 'number') {
+          setReferralEarningsStars(data.user.referralEarningsStars);
+        }
+        if (Array.isArray(data.user.referrals)) {
+          setReferredTicketsCount(data.user.referrals.length);
+        }
+        setVipTier(data.user.vipTier || 'MEMBER');
+        if (data.user.displayName) setDisplayName(data.user.displayName);
+        if (Array.isArray(data.user.completedQuests)) {
+          const completedIds: string[] = data.user.completedQuests;
+          setTmaQuests((prev) =>
+            prev.map((q) =>
+              completedIds.includes(q.id) ? { ...q, progress: q.target, claimed: true } : q
+            )
+          );
+        }
+      }
       if (Array.isArray(data.rounds)) setRounds(data.rounds);
       if (Array.isArray(data.tickets)) setTickets(data.tickets);
-      if (Array.isArray(data.quests) && data.quests.length > 0) {
-        setTmaQuests((prev) => (prev.length > 0 ? prev : data.quests));
-      }
       if (Array.isArray(data.drawHistory)) setDrawHistory(data.drawHistory);
       if (Array.isArray(data.transactions)) setTransactions(data.transactions);
       if (Array.isArray(data.deposits)) setDeposits(data.deposits);
       if (Array.isArray(data.withdrawals)) setWithdrawals(data.withdrawals);
       if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
+
+      // If URL contains a referral parameter (?ref= or start_param), bind it once on the backend
+      const params = new URLSearchParams(window.location.search);
+      const startRef =
+        params.get('ref') ||
+        params.get('start_param') ||
+        params.get('tgWebAppStartParam') ||
+        String((window as any)?.Telegram?.WebApp?.initDataUnsafe?.start_param || '').trim();
+      if (startRef && startRef.length >= 4 && !data.user?.referredBy) {
+        fetch('/api/referral/bind', {
+          method: 'POST',
+          headers: snapshotHeaders,
+          body: JSON.stringify({ startParam: startRef }),
+        }).catch(() => {});
+      }
 
       // Step 3 (100%): Await real TonConnectUIProvider connection restoration (zero fake setTimeout)
       setSplashState({
@@ -2099,41 +2172,18 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     const isFreeBonusRound = Boolean(params.usedFreeBonusToken);
-    const effectiveDebitUsdt = isFreeBonusRound ? 0 : Math.max(0.01, Number(params.betAmountUsdt) || 0.05);
+    const numericBet = Number(params.betAmountUsdt);
+    if (!isFreeBonusRound && (!Number.isFinite(numericBet) || Number.isNaN(numericBet) || numericBet <= 0)) {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        error: '400 Bad Request — INVALID_BET_AMOUNT: مبلغ شرط نامعتبر است.',
+        tonBalance,
+        starsBalance,
+      };
+    }
+    const effectiveDebitUsdt = isFreeBonusRound ? 0 : Number(numericBet.toFixed(4));
 
-    // Progress Quest #4 (Play 10 Rounds in Mini-Games)
-    setTmaQuests((prev) => {
-      const next = prev.map((q) =>
-        q.id === 'PLAY_10_MINIGAMES' && !q.claimed
-          ? { ...q, progress: Math.min(q.target, q.progress + 1) }
-          : q
-      );
-      try {
-        localStorage.setItem('luckydrop_tma_quests_v1', JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-
-    const xpCalc = calculateZeroLossTurnoverXp(effectiveDebitUsdt, false);
-    setTmaXpPoints((xp) => {
-      const next = xp + xpCalc.xpEarned;
-      // Every 100 XP (backed by 100 TON cumulative turnover) unlocks 1 Free Lottery Ticket
-      if (Math.floor(next / 100) > Math.floor(xp / 100)) {
-        setFreeLotteryTickets((ft) => {
-          const updatedFt = ft + 1;
-          try {
-            localStorage.setItem('luckydrop_free_lottery_tickets_v1', String(updatedFt));
-          } catch {}
-          return updatedFt;
-        });
-      }
-      try {
-        localStorage.setItem('luckydrop_tma_xp_v1', String(next));
-      } catch {}
-      return next;
-    });
-
-    // If active currency is STARS and not a free bonus token, also deduct/credit starsBalance proportionally
     if (!isFreeBonusRound && activeTmaCurrency === 'STARS') {
       const neededStars = usdtToTmaCurrency(effectiveDebitUsdt, 'STARS', tonUsdRate, starsUsdRate);
       if (starsBalance < neededStars) {
@@ -2168,111 +2218,30 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const txUuid = generateDeterministicUuid('mg_debit');
 
-    // Local deterministic evaluation for interactive multi-step games (MINES, SCRATCH, TOWER_3D, HILO_3D) or Free Bonus Token rounds
-    if (
-      params.gameId === 'MINES' ||
-      params.gameId === 'SCRATCH' ||
-      params.gameId === 'TOWER_3D' ||
-      params.gameId === 'HILO_3D' ||
-      isFreeBonusRound
-    ) {
-      const seedsBefore = { ...localPamEngineRef.current.getState().seeds };
-      const roundId = `MG-${params.gameId}-${seedsBefore.nonce}`;
-      if (!isFreeBonusRound && effectiveDebitUsdt > 0) {
-        const debitRes = localPamEngineRef.current.debit({
-          transactionUuid: txUuid,
-          roundId,
-          vertical: `INSTANT_${params.gameId}`,
-          currency: activeTmaCurrency,
-          amountUsdt: effectiveDebitUsdt,
-          note: `Bet ${params.gameId} (${activeTmaCurrency})`,
-        });
-        if (!debitRes.ok) {
-          return {
-            ok: false,
-            error: debitRes.error,
-            tonBalance: debitRes.tonBalance,
-            starsBalance: debitRes.starsBalance,
-          };
-        }
-      } else {
-        localPamEngineRef.current.getState().seeds.nonce += 1;
-      }
-
-      const evaluation = evaluateProvablyFairMiniGame({
-        gameId: params.gameId,
-        serverSeed: seedsBefore.serverSeed,
-        clientSeed: seedsBefore.clientSeed,
-        nonce: seedsBefore.nonce,
-        betAmountUsdt: effectiveDebitUsdt || params.betAmountUsdt,
-        diceRollUnder: params.diceRollUnder,
-        diceTarget: params.diceTarget,
-        diceMode: params.diceMode,
-        coinSide: params.coinSide,
-        crashAutoCashoutX: params.crashAutoCashoutX,
-        plinkoRows: params.plinkoRows,
-        plinkoRisk: params.plinkoRisk,
-        minesCount: params.minesCount,
-        minesRevealedSafeCount: params.minesRevealedSafeCount,
-        minesHitBomb: params.minesHitBomb,
-        towerDifficulty: params.towerDifficulty,
-        towerFloorsCleared: params.towerFloorsCleared,
-        towerHitTrap: params.towerHitTrap,
-        wheelRisk: params.wheelRisk,
-        hiloMultiplier: params.hiloMultiplier,
-        hiloWon: params.hiloWon,
-        hiloSummaryLabel: params.hiloSummaryLabel,
-      });
-
-      if (evaluation.payoutUsdt > 0) {
-        localPamEngineRef.current.credit({
-          transactionUuid: generateDeterministicUuid('mg_credit'),
-          referenceTransactionUuid: isFreeBonusRound ? null : txUuid,
-          roundId,
-          vertical: `INSTANT_${params.gameId}`,
-          amountUsdt: evaluation.payoutUsdt,
-          note: `Win ${params.gameId} (${evaluation.multiplier}x)`,
-        });
-      }
-
-      if (activeTmaCurrency === 'STARS') {
-        const betStars = isFreeBonusRound
-          ? 0
-          : usdtToTmaCurrency(effectiveDebitUsdt, 'STARS', tonUsdRate, starsUsdRate);
-        const winStars = usdtToTmaCurrency(evaluation.payoutUsdt, 'STARS', tonUsdRate, starsUsdRate);
-        setStarsBalance((prev) => {
-          const next = Math.max(0, prev - betStars + winStars);
-          try {
-            localStorage.setItem('luckydrop_stars_balance_v1', String(next));
-          } catch {}
-          return next;
-        });
-      }
-
-      syncPamStateEverywhere(localPamEngineRef.current.getState());
-      if (evaluation.won) HapticEngine.notificationOccurred('success');
-      else HapticEngine.impactOccurred('light');
-
-      return {
-        ok: true,
-        evaluation,
-        bonusTicketAwarded: null,
-        debitTransactionUuid: txUuid,
-        tonBalance: localPamEngineRef.current.getState().tonBalance,
-        starsBalance: localPamEngineRef.current.getState().starsBalance,
-      };
-    }
-
+    // 100% Server-Authoritative RNG Execution: Frontend NEVER sends outcomes or multipliers to credit balances
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/pam/mini-game/play', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          ...params,
+          gameId: params.gameId,
           currency: activeTmaCurrency,
           betAmountUsdt: effectiveDebitUsdt,
+          usedFreeBonusToken: isFreeBonusRound,
           transaction_uuid: txUuid,
+          diceRollUnder: params.diceRollUnder,
+          diceTarget: params.diceTarget,
+          diceMode: params.diceMode,
+          coinSide: params.coinSide,
+          crashAutoCashoutX: params.crashAutoCashoutX,
+          plinkoRows: params.plinkoRows,
+          plinkoRisk: params.plinkoRisk,
+          minesCount: params.minesCount,
+          minesRevealedSafeCount: params.minesRevealedSafeCount,
+          towerDifficulty: params.towerDifficulty,
+          towerFloorsCleared: params.towerFloorsCleared,
+          wheelRisk: params.wheelRisk,
         }),
       });
       const data = await res.json();
@@ -2282,25 +2251,37 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         } else {
           await refreshSnapshot();
         }
+        if (typeof data.tonBalance === 'number') {
+          setTonBalance(data.tonBalance);
+        }
+        if (typeof data.starsBalance === 'number') {
+          setStarsBalance(data.starsBalance);
+        }
         if (data.bonusTicketAwarded) {
           setTickets((prev) => [data.bonusTicketAwarded, ...prev]);
         }
-        if (activeTmaCurrency === 'STARS' && data.evaluation) {
-          const betStars = usdtToTmaCurrency(effectiveDebitUsdt, 'STARS', tonUsdRate, starsUsdRate);
-          const winStars = usdtToTmaCurrency(
-            data.evaluation.payoutUsdt || 0,
-            'STARS',
-            tonUsdRate,
-            starsUsdRate
+
+        // Progress Quest #4 (Play 10 Rounds in Mini-Games) after verified server round
+        setTmaQuests((prev) => {
+          const next = prev.map((q) =>
+            q.id === 'PLAY_10_MINIGAMES' && !q.claimed
+              ? { ...q, progress: Math.min(q.target, q.progress + 1) }
+              : q
           );
-          setStarsBalance((prev) => {
-            const next = Math.max(0, prev - betStars + winStars);
-            try {
-              localStorage.setItem('luckydrop_stars_balance_v1', String(next));
-            } catch {}
-            return next;
-          });
+          try {
+            localStorage.setItem(
+              getScopedStorageKey(telegramUser.id, 'luckydrop_tma_quests_v3'),
+              JSON.stringify(next)
+            );
+          } catch {}
+          return next;
+        });
+
+        const xpCalc = calculateZeroLossTurnoverXp(effectiveDebitUsdt, false);
+        if (xpCalc.xpEarned > 0) {
+          setTmaXpPoints((xp) => xp + xpCalc.xpEarned);
         }
+
         if (data.evaluation?.won) HapticEngine.notificationOccurred('success');
         else HapticEngine.impactOccurred('light');
 
@@ -2313,96 +2294,20 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           starsBalance: data.starsBalance ?? starsBalance,
         };
       }
+      HapticEngine.notificationOccurred('error');
       return {
         ok: false,
-        error: data.error || 'خطا در اجرای بازی آنی',
+        error: data.error || 'خطا در اجرای بازی آنی در سرور',
         tonBalance: data.tonBalance ?? tonBalance,
         starsBalance: data.starsBalance ?? starsBalance,
       };
-    } catch {
-      // Local PAM + 52-bit HMAC-SHA256 fallback
-      const seedsBefore = { ...localPamEngineRef.current.getState().seeds };
-      const roundId = `MG-${params.gameId}-${seedsBefore.nonce}`;
-      const debitRes = localPamEngineRef.current.debit({
-        transactionUuid: txUuid,
-        roundId,
-        vertical: `INSTANT_${params.gameId}`,
-        currency: activeTmaCurrency,
-        amountUsdt: effectiveDebitUsdt,
-        note: `شرط بازی آنی ${params.gameId}`,
-      });
-      if (!debitRes.ok) {
-        return {
-          ok: false,
-          error: debitRes.error,
-          tonBalance: debitRes.tonBalance,
-          starsBalance: debitRes.starsBalance,
-        };
-      }
-      const evaluation = evaluateProvablyFairMiniGame({
-        gameId: params.gameId,
-        serverSeed: seedsBefore.serverSeed,
-        clientSeed: seedsBefore.clientSeed,
-        nonce: seedsBefore.nonce,
-        betAmountUsdt: effectiveDebitUsdt,
-        diceRollUnder: params.diceRollUnder,
-        diceTarget: params.diceTarget,
-        diceMode: params.diceMode,
-        coinSide: params.coinSide,
-        crashAutoCashoutX: params.crashAutoCashoutX,
-        plinkoRows: params.plinkoRows,
-        plinkoRisk: params.plinkoRisk,
-        wheelRisk: params.wheelRisk,
-      });
-      if (evaluation.payoutUsdt > 0) {
-        localPamEngineRef.current.credit({
-          transactionUuid: generateDeterministicUuid('mg_credit'),
-          referenceTransactionUuid: txUuid,
-          roundId,
-          vertical: `INSTANT_${params.gameId}`,
-          amountUsdt: evaluation.payoutUsdt,
-          note: `تسویه ضریب ${params.gameId} (${evaluation.multiplier}x)`,
-        });
-      }
-      let bonusTicketAwarded: TicketItem | null = null;
-      // Zero-Loss Rule: Only mint instant free ticket on bets >= 5.00 USDT (1.00 TON)
-      if (evaluation.plinkoBonusTicket && effectiveDebitUsdt >= 5.0) {
-        const ticketCode = `PLK-${Math.floor(100000 + Math.random() * 900000)}`;
-        const txHash = `0x${sha256Hex(`${txUuid}:${ticketCode}`)}`;
-        bonusTicketAwarded = {
-          id: Date.now(),
-          ticketCode,
-          userUid: localPamEngineRef.current.getState().playerId,
-          roundCode: '#ZRN-8493',
-          mainNumbers: JSON.stringify([7, 14, 21, 35, 42]),
-          goldenBall: 7,
-          costUsdt: '0.00',
-          currencyNetwork: 'GOLDEN SLOT BONUS TICKET (RESERVE-BACKED)',
-          txHash,
-          transactionUuid: `${txUuid}_bonus_ticket`,
-          clientSeed: seedsBefore.clientSeed,
-          serverSeedHash: seedsBefore.serverSeedHash,
-          nonce: seedsBefore.nonce,
-          commitHash: txHash.slice(2, 34),
-          status: 'ACTIVE',
-          confirmations: 19,
-          prizeWonUsdt: '0.00',
-          claimed: false,
-          createdAt: 'همین الان (جایزه اسلات طلایی • تامین از ذخیره ۳٪)',
-        };
-        setTickets((prev) => [bonusTicketAwarded!, ...prev]);
-      }
-      syncPamStateEverywhere(localPamEngineRef.current.getState());
-      if (evaluation.won) HapticEngine.notificationOccurred('success');
-      else HapticEngine.impactOccurred('light');
-
+    } catch (err: any) {
+      HapticEngine.notificationOccurred('error');
       return {
-        ok: true,
-        evaluation,
-        bonusTicketAwarded,
-        debitTransactionUuid: txUuid,
-        tonBalance: localPamEngineRef.current.getState().tonBalance,
-        starsBalance: localPamEngineRef.current.getState().starsBalance,
+        ok: false,
+        error: err?.message || 'خطا در ارتباط با سرور RNG (/api/pam/mini-game/play)',
+        tonBalance,
+        starsBalance,
       };
     }
   };
@@ -2542,7 +2447,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     HapticEngine.impactOccurred('medium');
     try {
       const headers = await getHeaders();
-      const res = await fetch('/api/wallet/deposit-stars', {
+      const res = await fetch('/api/wallet/create-stars-invoice', {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -2551,44 +2456,41 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.ok) {
+      if (!res.ok || !data.ok || !data.invoiceLink) {
         HapticEngine.notificationOccurred('error');
         return {
           ok: false,
-          message: data.error || 'خطا در شارژ کیف پول ستاره تلگرام',
+          message:
+            data.error ||
+            'خطا در صدور فاکتور رسمی Telegram Stars (TELEGRAM_BOT_TOKEN بررسی شود)',
         };
       }
 
       const twa = (window as any)?.Telegram?.WebApp;
-      if (data.invoiceLink && twa?.openInvoice) {
+      if (twa?.openInvoice) {
         try {
-          twa.openInvoice(data.invoiceLink);
+          twa.openInvoice(data.invoiceLink, async (status: string) => {
+            if (status === 'paid') {
+              await refreshSnapshot();
+              HapticEngine.notificationOccurred('success');
+            }
+          });
         } catch {
-          // continue
+          // ignore if outside native Telegram client
         }
       }
 
-      if (data.pamState) {
-        syncPamStateEverywhere(data.pamState);
-      } else if (typeof data.starsBalance === 'number') {
-        setStarsBalance(data.starsBalance);
-      }
-      if (Array.isArray(data.deposits)) {
-        setDeposits(data.deposits);
-      }
-      await refreshSnapshot();
-      HapticEngine.notificationOccurred('success');
       return {
         ok: true,
-        message: `⭐ شارژ +${safeStars.toLocaleString(
+        message: `⭐ فاکتور رسمی ${safeStars.toLocaleString(
           'en-US'
-        )} Stars با موفقیت تایید و به موجودی ستاره‌های شما اضافه شد!`,
+        )} Stars (XTR) صادر شد. به محض پرداخت در پنجره تلگرام و تایید وبهوک (successful_payment)، موجودی شما به صورت خودکار شارژ می‌شود.`,
       };
     } catch (err: any) {
       HapticEngine.notificationOccurred('error');
       return {
         ok: false,
-        message: err?.message || 'خطا در ارتباط با سرور جهت شارژ Telegram Stars',
+        message: err?.message || 'خطا در ارتباط با سرور جهت صدور فاکتور Telegram Stars',
       };
     }
   };
@@ -2960,27 +2862,18 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         headers,
         body: JSON.stringify({ ticketCode, prizeUsdt, network }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (typeof data.tonBalance === 'number') {
-          setTonBalance(data.tonBalance);
-        }
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (typeof data.tonBalance === 'number') {
+        setTonBalance(data.tonBalance);
       }
     } catch {
-      localPamEngineRef.current.credit({
-        transactionUuid: `tx_claim_${ticketCode}`,
-        referenceTransactionUuid: null,
-        roundId: ticketCode,
-        vertical: 'LUCKYDROP_LOTTERY',
-        amountUsdt: prizeUsdt,
-        note: `دریافت جایزه کوپن ${ticketCode}`,
-      });
-      syncPamStateEverywhere(localPamEngineRef.current.getState());
+      return false;
     }
     const nextClaimed = Array.from(new Set([...claimedTicketCodes, ticketCode]));
     setClaimedTicketCodes(nextClaimed);
-    const local = loadLocalState();
-    saveLocalState({ ...local, claimedTicketCodes: nextClaimed });
+    const local = loadLocalState(telegramUser.id);
+    saveLocalState({ ...local, claimedTicketCodes: nextClaimed }, telegramUser.id);
     await refreshSnapshot();
     return true;
   };
@@ -3578,11 +3471,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const connectTelegramAccount = (customHandle?: string): string => {
     const tgUser = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user;
     const rawHandle =
-      customHandle?.trim() || (tgUser?.username ? `@${tgUser.username}` : '@Kamran_VIP_TG');
+      customHandle?.trim() || (tgUser?.username ? `@${tgUser.username}` : `@user_${telegramUser.id}`);
     const formatted = rawHandle.startsWith('@') ? rawHandle : `@${rawHandle}`;
     setTelegramUsername(formatted);
     try {
-      localStorage.setItem('luckydrop_tg_username', formatted);
+      localStorage.setItem(
+        getScopedStorageKey(telegramUser.id, 'luckydrop_tg_username'),
+        formatted
+      );
     } catch {
       // ignore
     }
@@ -3590,25 +3486,49 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const applyReferralCode = (code: string): { ok: boolean; message: string } => {
-    const clean = (code || '').trim().toUpperCase();
+    const clean = (code || '').trim();
     if (clean.length < 4) {
       return { ok: false, message: 'کد معرف واردشده نامعتبر است.' };
     }
-    if (clean === referralCode.toUpperCase()) {
+    const cleanInviter = clean.replace(/^ref_/i, '');
+    if (
+      clean.toUpperCase() === referralCode.toUpperCase() ||
+      cleanInviter === String(telegramUser.id)
+    ) {
       return {
         ok: false,
         message: '⛔ قفل ضدتقلب (Anti-Sybil): شما نمی‌توانید کد دعوت خودتان را ثبت کنید.',
       };
     }
+    if (referredByCode && referredByCode.length >= 4) {
+      return {
+        ok: false,
+        message: '⛔ قفل ضدتقلب (Anti-Sybil): کد معرف فقط یک‌بار هنگام ثبت‌نام قابل ثبت است.',
+      };
+    }
+
     setReferredByCode(clean);
     try {
-      localStorage.setItem('luckydrop_referred_by', clean);
+      localStorage.setItem(
+        getScopedStorageKey(telegramUser.id, 'luckydrop_referred_by_v3'),
+        clean
+      );
     } catch {
       // ignore
     }
+
+    // Bind on server with anti-Sybil verification
+    getHeaders().then((headers) => {
+      fetch('/api/referral/bind', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ startParam: clean }),
+      }).catch(() => {});
+    });
+
     return {
       ok: true,
-      message: `✅ کد معرف ${clean} فعال شد! در هر خرید واقعی بلیت، ۲٪ پورسانت صرفاً از محل ۱۰٪ سود خالص لاتاری (بدون ۱ سنت ضرر به سایت یا جایزه) کسر و به معرف واریز می‌شود.`,
+      message: `✅ کد معرف ${clean} فعال شد! در هر خرید واقعی بلیت، ۲٪ پورسانت صرفاً از محل ۱۰٪ سود خالص لاتاری به معرف واریز می‌شود.`,
     };
   };
 
@@ -3620,17 +3540,20 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const uidSeed =
       firebaseUser?.uid ||
       connectedWeb3Wallet ||
-      telegramUsername ||
+      String(telegramUser.id) ||
       `VIP-${Date.now().toString(36)}`;
     const bundle = generateUniqueUserReferralLink({
       uidOrIdentity: uidSeed,
-      customAlias: customAlias || displayName.split(' ')[0] || 'ZARRIN',
+      customAlias: customAlias || `ref_${telegramUser.id}`,
       originUrl: origin,
     });
 
     setReferralCodeState(bundle.referralCode);
     try {
-      localStorage.setItem('luckydrop_my_referral_code', bundle.referralCode);
+      localStorage.setItem(
+        getScopedStorageKey(telegramUser.id, 'luckydrop_my_referral_code_v3'),
+        bundle.referralCode
+      );
     } catch {
       // ignore
     }
@@ -3653,7 +3576,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ok: true,
       referralCode: bundle.referralCode,
       referralUrl: bundle.referralUrl,
-      message: `✅ لینک و کد یکتای زیرمجموعه‌گیری شما (${bundle.referralCode}) تولید و در دیتابیس ابری Firestore (/referrals/${bundle.referralCode}) ذخیره شد!`,
+      message: `✅ لینک و کد یکتای زیرمجموعه‌گیری شما (${bundle.referralCode}) تولید شد!`,
     };
   };
 
