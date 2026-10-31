@@ -7,9 +7,11 @@ import {
   toPersianDigits,
   computeDeterministicHash,
 } from '../utils/lotteryEngine.ts';
+import { tr } from '../utils/i18n.ts';
 
 export const PlayView: React.FC = () => {
   const {
+    lang,
     activeLotteryId,
     setActiveLotteryId,
     activeLotterySpec,
@@ -108,9 +110,13 @@ export const PlayView: React.FC = () => {
     for (let i = 0; i < bulkSlips.length; i++) {
       if (bulkSlips[i].mainNumbers.length !== mainCount) {
         setFeedbackError(
-          `لطفاً در کوپن شماره #${toPersianDigits(i + 1)} دقیقاً ${toPersianDigits(
-            mainCount
-          )} عدد اصلی انتخاب نمایید.`
+          tr(
+            lang,
+            `لطفاً در کوپن شماره #${toPersianDigits(i + 1)} دقیقاً ${toPersianDigits(
+              mainCount
+            )} عدد اصلی انتخاب نمایید.`,
+            `Please select exactly ${mainCount} main balls on Slip #${i + 1}.`
+          )
         );
         setActiveSlipIndex(i);
         return;
@@ -127,7 +133,7 @@ export const PlayView: React.FC = () => {
     setMinting(false);
 
     if (!result.ok) {
-      setFeedbackError(result.error || 'خطا در صدور بلیت‌ها.');
+      setFeedbackError(result.error || tr(lang, 'خطا در صدور بلیت‌ها.', 'Failed to mint tickets.'));
       return;
     }
     navigateTo('my-tickets');
@@ -141,15 +147,22 @@ export const PlayView: React.FC = () => {
   const secs = countdownSec % 60;
 
   return (
-    <div className="space-y-3 px-3 pt-2 pb-24">
+    <div
+      data-testid="play-grid-view"
+      className="w-full max-w-[440px] mx-auto space-y-3 px-3 pt-2 pb-24"
+    >
       {/* Top Bar */}
       <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex items-center justify-between gap-2">
         <div className="min-w-0">
           <span className="text-[10px] font-mono font-bold text-[#a855f7] tracking-wider block truncate">
-            LUCKYDROP TERMINAL • ترمینال صدور بلیت
+            {tr(lang, 'LUCKYDROP • انتخاب دستی شماره‌ها', 'LUCKYDROP • CUSTOM BALL PICKER')}
           </span>
           <h1 className="text-sm font-black text-white mt-0.5 truncate">
-            خرید تکی و دسته‌ای بلیت با تخفیف پلکانی
+            {tr(
+              lang,
+              'خرید تکی و دسته‌ای بلیت با تخفیف پلکانی',
+              'Custom & Bulk Lottery Slip Builder'
+            )}
           </h1>
         </div>
         <button
@@ -157,11 +170,11 @@ export const PlayView: React.FC = () => {
           onClick={() => navigateTo('lobby')}
           className="px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-purple-500/25 text-[11px] font-bold text-purple-200 cursor-pointer shrink-0"
         >
-          بازگشت ↗
+          {tr(lang, '← بازگشت به لابی', '← Back to Lobby')}
         </button>
       </div>
 
-      {/* 1. CONCURRENT MULTI-LOTTERY SELECTOR TABS — Clean 2x2 Grid (No Vertical Wrapping) */}
+      {/* 1. CONCURRENT MULTI-LOTTERY SELECTOR TABS — Clean 2x2 Grid */}
       <div className="grid grid-cols-2 gap-2" data-testid="play-multi-lottery-tabs">
         {MULTI_LOTTERY_SPECS.map((spec) => {
           const isSelected = activeLotteryId === spec.id;
@@ -187,18 +200,20 @@ export const PlayView: React.FC = () => {
               </div>
 
               <div className="text-xs font-extrabold text-white truncate">
-                {spec.titleFa.split('(')[0].trim()}
+                {lang === 'EN' ? spec.titleEn : spec.titleFa.split('(')[0].trim()}
               </div>
 
               <div className="pt-1.5 border-t border-purple-500/20 flex flex-col gap-0.5 text-[10px]">
                 <div className="flex items-center justify-between text-purple-200/80">
-                  <span>استخر جایزه:</span>
+                  <span>{tr(lang, 'استخر جایزه:', 'Pool:')}</span>
                   <strong className="font-mono text-[#fbbf24] tabular-nums" dir="ltr">
                     {formatAmount(spec.jackpotUsdt)}
                   </strong>
                 </div>
                 <div className="text-[10px] font-semibold text-amber-300 truncate">
-                  {spec.formatLabel}
+                  {lang === 'EN'
+                    ? `${spec.mainCount}/${spec.mainMax} Balls${spec.goldenMax > 0 ? ` + 1/${spec.goldenMax} ★` : ''}`
+                    : spec.formatLabel}
                 </div>
               </div>
             </button>
@@ -210,7 +225,7 @@ export const PlayView: React.FC = () => {
       <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-[10px] font-bold text-purple-200">
-            {activeLotterySpec.titleFa.split('(')[0].trim()} • {activeLotterySpec.roundCode}
+            {lang === 'EN' ? activeLotterySpec.titleEn : activeLotterySpec.titleFa.split('(')[0].trim()} • {activeLotterySpec.roundCode}
           </span>
           <span className="px-2.5 py-0.5 rounded-full bg-[#070510] border border-purple-500/25 text-[11px] font-mono font-bold text-[#fbbf24] tabular-nums" dir="ltr">
             ⏱ {String(hrs).padStart(2, '0')}:{String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
@@ -224,7 +239,7 @@ export const PlayView: React.FC = () => {
             onClick={handleBulkQuickPick5}
             className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-600/40 to-amber-500/30 hover:brightness-110 border border-amber-400/50 text-amber-200 font-black text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span>⚡ تولید هوشمند ۵ کوپن (×5)</span>
+            <span>{tr(lang, '⚡ تولید هوشمند ۵ کوپن (×5)', '⚡ Auto-Fill 5 Slips (×5)')}</span>
           </button>
 
           <button
@@ -233,7 +248,7 @@ export const PlayView: React.FC = () => {
             onClick={handleSingleSlipQuickPick}
             className="py-2.5 px-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-400/35 text-purple-200 font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span>🎲 تصادفی کوپن فعلی</span>
+            <span>{tr(lang, '🎲 تصادفی کوپن فعلی', '🎲 Randomize Current Slip')}</span>
           </button>
         </div>
       </div>
@@ -254,7 +269,7 @@ export const PlayView: React.FC = () => {
                     : 'bg-[#070510] border border-purple-500/20 text-purple-200 hover:text-white'
                 }`}
               >
-                {toPersianDigits(cnt)}x
+                {lang === 'EN' ? cnt : toPersianDigits(cnt)}x
                 {cnt === 5 ? ' (-5%)' : cnt === 10 ? ' (-10%)' : ''}
               </button>
             ))}
@@ -262,7 +277,7 @@ export const PlayView: React.FC = () => {
 
           <div className="flex items-center gap-1.5">
             <label htmlFor="custom-slip-count" className="text-[10px] text-purple-300/70">
-              تعداد:
+              {tr(lang, 'تعداد:', 'Slips:')}
             </label>
             <input
               id="custom-slip-count"
@@ -313,13 +328,22 @@ export const PlayView: React.FC = () => {
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-xs font-black text-white">
-              مرحله اول (کوپن #{toPersianDigits(activeSlipIndex + 1)}): انتخاب{' '}
-              {toPersianDigits(mainCount)} گوی از ۱ تا {toPersianDigits(mainMax)}
+              {tr(
+                lang,
+                `مرحله اول (کوپن #${toPersianDigits(activeSlipIndex + 1)}): انتخاب ${toPersianDigits(
+                  mainCount
+                )} گوی از ۱ تا ${toPersianDigits(mainMax)}`,
+                `Step 1 (Slip #${activeSlipIndex + 1}): Pick ${mainCount} Balls (1–${mainMax})`
+              )}
             </h2>
             <p className="text-[10px] text-purple-300/70 mt-0.5">
-              انتخاب‌شده:{' '}
+              {tr(lang, 'انتخاب‌شده:', 'Selected:')}{' '}
               <strong className="text-[#fbbf24]">
-                {toPersianDigits(selectedMainBalls.length)} از {toPersianDigits(mainCount)} گوی
+                {tr(
+                  lang,
+                  `${toPersianDigits(selectedMainBalls.length)} از ${toPersianDigits(mainCount)} گوی`,
+                  `${selectedMainBalls.length} of ${mainCount} Balls`
+                )}
               </strong>
             </p>
           </div>
@@ -356,11 +380,20 @@ export const PlayView: React.FC = () => {
           <div className="flex items-center justify-between gap-2">
             <div>
               <h2 className="text-xs font-black text-white">
-                مرحله دوم (کوپن #{toPersianDigits(activeSlipIndex + 1)}): انتخاب ۱ گوی طلایی از ۱ تا{' '}
-                {toPersianDigits(goldenMax)}
+                {tr(
+                  lang,
+                  `مرحله دوم (کوپن #${toPersianDigits(activeSlipIndex + 1)}): انتخاب ۱ گوی طلایی از ۱ تا ${toPersianDigits(
+                    goldenMax
+                  )}`,
+                  `Step 2 (Slip #${activeSlipIndex + 1}): Pick 1 Golden Ball (1–${goldenMax})`
+                )}
               </h2>
               <p className="text-[10px] text-purple-300/70 mt-0.5">
-                گوی طلایی ضریب جک‌پات رده اول را فعال می‌کند.
+                {tr(
+                  lang,
+                  'گوی طلایی ضریب جک‌پات رده اول را فعال می‌کند.',
+                  'The Golden Ball unlocks the Tier-1 Mega Jackpot prize.'
+                )}
               </p>
             </div>
             <span className="px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-200 border border-purple-400/30 text-[10px] font-mono font-bold shrink-0" dir="ltr">
@@ -485,7 +518,9 @@ export const PlayView: React.FC = () => {
             </div>
           )}
           <div className="border-t border-purple-500/20 pt-2 flex items-center justify-between">
-            <span className="font-bold text-white">مبلغ کل قابل پرداخت:</span>
+            <span className="font-bold text-white">
+              {tr(lang, 'مبلغ کل قابل پرداخت:', 'Total Amount Due:')}
+            </span>
             <span
               data-testid="cart-total-usdt"
               className="font-mono font-extrabold text-sm text-[#fbbf24] tabular-nums"
@@ -508,7 +543,7 @@ export const PlayView: React.FC = () => {
         {/* Settlement Network Selector (Strictly TON or Telegram Stars) */}
         <div>
           <label className="block text-[11px] font-semibold text-purple-200/80 mb-1.5">
-            ارز تسویه یکجای سبد خرید:
+            {tr(lang, 'ارز تسویه یکجای سبد خرید:', 'Settlement Currency:')}
           </label>
           <select
             value={selectedNetwork}
@@ -537,23 +572,33 @@ export const PlayView: React.FC = () => {
           >
             <span>
               {killSwitchActive
-                ? 'فروش بلیت موقتاً متوقف است (Kill-Switch)'
+                ? tr(
+                    lang,
+                    'فروش بلیت موقتاً متوقف است (Kill-Switch)',
+                    'Ticket sales temporarily paused (Kill-Switch)'
+                  )
                 : minting
-                ? 'در حال ثبت دسته‌ای در بلاکچین...'
-                : `پرداخت یکجا و صدور ${toPersianDigits(bulkSlips.length)} بلیت (${formatAmount(
-                    cartSummary.totalUsdt
-                  )})`}
+                ? tr(lang, 'در حال ثبت دسته‌ای در بلاکچین...', 'Minting slips on-chain...')
+                : tr(
+                    lang,
+                    `پرداخت یکجا و صدور ${toPersianDigits(bulkSlips.length)} بلیت (${formatAmount(
+                      cartSummary.totalUsdt
+                    )})`,
+                    `Mint ${bulkSlips.length} Ticket(s) Now (${formatAmount(cartSummary.totalUsdt)})`
+                  )}
             </span>
           </button>
 
           <div className="flex items-center justify-between text-[11px] font-medium text-purple-300/60 tabular-nums px-1">
-            <span>موجودی فعلی: {formatAmount(balanceUsdt)}</span>
+            <span>
+              {tr(lang, 'موجودی فعلی:', 'Available Balance:')} {formatAmount(balanceUsdt)}
+            </span>
             <button
               type="button"
-              onClick={() => setDepositModalOpen(true)}
+              onClick={() => navigateTo('wallet')}
               className="text-amber-400 hover:underline font-semibold cursor-pointer"
             >
-              + شارژ آنی کیف پول
+              {tr(lang, '+ شارژ آنی کیف پول', '+ Top Up Wallet')}
             </button>
           </div>
         </div>

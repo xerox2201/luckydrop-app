@@ -1,19 +1,27 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { useLottery } from '../context/LotteryContext.tsx';
 import {
-  HapticEngine,
-  openTelegramNativeShare,
-  formatTmaCurrency,
-  usdtToTmaCurrency,
-} from '../utils/telegramTma.ts';
+  Gift,
+  Sparkles,
+  CheckCircle2,
+  Share2,
+  Copy,
+  Users,
+  Wallet,
+  MessageCircle,
+  Calendar,
+  Gamepad2,
+  ShieldCheck,
+  ExternalLink,
+} from 'lucide-react';
+import { useLottery } from '../context/LotteryContext';
+import { HapticEngine, TmaQuestItem } from '../utils/telegramTma';
+import { tr } from '../utils/i18n';
 
 export const EarnQuestsView: React.FC = () => {
   const {
+    lang,
+    navigateTo,
     telegramUser,
-    activeTmaCurrency,
-    tonUsdRate,
-    starsUsdRate,
     tmaQuests,
     completeAndClaimTmaQuest,
     freePlinkoDrops,
@@ -25,298 +33,442 @@ export const EarnQuestsView: React.FC = () => {
     referralEarningsStars,
     referredTicketsCount,
     claimReferralEarningsToWallet,
-    simulateReferredTicketPurchase,
+    formatCurrency,
     connectedTonWallet,
     connectTonWalletOneTap,
-    navigateTo,
+    telegramBotConfig,
+    tickets,
   } = useLottery();
 
-  const [bannerMsg, setBannerMsg] = useState<string | null>(null);
-  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
-  const botReferralUrl = `https://t.me/LuckyDrop_TON_Bot/app?startapp=${referralCode}`;
-  const shareText = `🎰 بازی در مینی‌اپ تلگرامی LuckyDrop با TON و Telegram Stars! با لینک دعوت من وارد شو و +2 توپ رایگان Plinko بگیر:`;
-
-  const handleQuestAction = async (questId: (typeof tmaQuests)[number]['id']) => {
-    HapticEngine.impactOccurred('medium');
-    if (questId === 'CONNECT_TON_WALLET') {
-      if (!connectedTonWallet) {
-        const res = await connectTonWalletOneTap();
-        setBannerMsg(res.message);
-        setTimeout(() => setBannerMsg(null), 4500);
-        return;
-      }
-    } else if (questId === 'JOIN_TELEGRAM_CHANNEL') {
-      const twa = (window as any)?.Telegram?.WebApp;
-      if (twa?.openTelegramLink) {
-        try {
-          twa.openTelegramLink('https://t.me/LuckyDrop_TON_Official');
-        } catch {}
-      }
-    }
-    const res = completeAndClaimTmaQuest(questId);
-    setBannerMsg(res.message);
-    setTimeout(() => setBannerMsg(null), 4500);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
   };
+
+  const botUsernameClean = (
+    telegramBotConfig?.botUsername || 'LuckyDrop_TON_Bot'
+  ).replace(/^@/, '');
+  const officialChannelUrl =
+    telegramBotConfig?.officialChannelUrl || 'https://t.me/LuckyDrop_TON_Official';
+
+  const tmaReferralUrl = `https://t.me/${botUsernameClean}/app?startapp=ref_${telegramUser.id}`;
+
+  // Dynamic 7-Day Streak Progress derived from real user quest/activity state (Zero hardcoded Day 3/7)
+  const completedQuestsCount = tmaQuests.filter((q) => q.claimed).length;
+  const dailyStreakQuest = tmaQuests.find((q) => q.id === 'DAILY_STREAK_7');
+  const activeStreakDays = Math.min(
+    7,
+    Math.max(
+      dailyStreakQuest?.claimed ? 1 : 0,
+      completedQuestsCount + (tickets.length > 0 ? 1 : 0)
+    )
+  );
 
   const handleCopyInviteLink = () => {
     HapticEngine.impactOccurred('light');
-    navigator.clipboard?.writeText(botReferralUrl);
+    navigator.clipboard.writeText(tmaReferralUrl).catch(() => {});
     setCopiedLink(true);
-    setBannerMsg('✅ لینک دعوت تلگرام شما در کلیپ‌بورد کپی شد!');
-    setTimeout(() => {
-      setCopiedLink(false);
-      setBannerMsg(null);
-    }, 3000);
+    showToast(
+      tr(
+        lang,
+        '🔗 لینک دعوت اختصاصی تلگرام شما کپی شد!',
+        '🔗 Your Telegram referral link has been copied!'
+      )
+    );
+    setTimeout(() => setCopiedLink(false), 2500);
   };
 
-  const handleClaimCommission = async () => {
+  const handleTelegramNativeShare = () => {
     HapticEngine.impactOccurred('medium');
-    const res = await claimReferralEarningsToWallet();
-    setBannerMsg(res.message);
-    setTimeout(() => setBannerMsg(null), 4500);
+    const shareText = tr(
+      lang,
+      `🎰 در مینی‌اپ قرعه‌کشی و بازی‌های آنی LuckyDrop TON شرکت کن و با لینک من توپ رایگان Plinko و بلیت هدیه بگیر! 💎⭐`,
+      `🎰 Join LuckyDrop TON Mini App for Provably Fair Lotteries & 9 Instant Games! Claim your free Plinko drops with my link! 💎⭐`
+    );
+    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(
+      tmaReferralUrl
+    )}&text=${encodeURIComponent(shareText)}`;
+
+    try {
+      const twa = (window as any)?.Telegram?.WebApp;
+      if (twa?.openTelegramLink) {
+        twa.openTelegramLink(tgShareUrl);
+        return;
+      }
+    } catch {
+      // fallback
+    }
+    window.open(tgShareUrl, '_blank', 'noopener,noreferrer');
   };
 
-  const handleSimulateFriendBet = async () => {
-    HapticEngine.impactOccurred('medium');
-    const res = await simulateReferredTicketPurchase(25);
-    setBannerMsg(res.message);
-    setTimeout(() => setBannerMsg(null), 5000);
+  const handleQuestAction = async (quest: TmaQuestItem) => {
+    if (quest.claimed) {
+      showToast(
+        tr(
+          lang,
+          'ℹ️ پاداش این ماموریت قبلاً دریافت شده است.',
+          'ℹ️ This quest reward has already been claimed.'
+        )
+      );
+      return;
+    }
+
+    if (quest.id === 'CONNECT_TON_WALLET' && !connectedTonWallet) {
+      const res = await connectTonWalletOneTap('Tonkeeper');
+      if (res.ok) {
+        showToast(res.message);
+      }
+      return;
+    }
+
+    if (quest.id === 'JOIN_TELEGRAM_CHANNEL') {
+      try {
+        const twa = (window as any)?.Telegram?.WebApp;
+        if (twa?.openTelegramLink) {
+          twa.openTelegramLink(officialChannelUrl);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const res = completeAndClaimTmaQuest(quest.id);
+    showToast(res.message);
   };
 
-  const referralCommissionInActiveCurr =
-    activeTmaCurrency === 'STARS'
-      ? referralEarningsStars > 0
-        ? referralEarningsStars
-        : usdtToTmaCurrency(referralEarningsTon * tonUsdRate, 'STARS', tonUsdRate, starsUsdRate)
-      : referralEarningsTon;
+  const getQuestIcon = (id: TmaQuestItem['id']) => {
+    switch (id) {
+      case 'CONNECT_TON_WALLET':
+        return <Wallet className="w-5 h-5 text-[#38BDF8]" />;
+      case 'JOIN_TELEGRAM_CHANNEL':
+        return <MessageCircle className="w-5 h-5 text-[#00F5D4]" />;
+      case 'DAILY_STREAK_7':
+        return <Calendar className="w-5 h-5 text-[#FFE066]" />;
+      case 'PLAY_10_MINIGAMES':
+        return <Gamepad2 className="w-5 h-5 text-purple-400" />;
+    }
+  };
 
   return (
-    <div
-      data-testid="tma-earn-quests-view"
-      className="space-y-3 px-3 pt-2 pb-24 max-w-[440px] mx-auto"
-    >
-      {/* Top Bonus Inventory Card with 3D Backdrop */}
-      <div className="relative overflow-hidden rounded-2xl bg-[#130d24]/95 border border-amber-400/30 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.5)] backdrop-blur-md space-y-3">
+    <main className="w-full px-3 pt-3 pb-8 space-y-4 select-none">
+      {/* 1. HERO BONUS & TURNOVER-LOCKED REWARDS SUMMARY */}
+      <section className="relative overflow-hidden rounded-3xl p-4 bg-gradient-to-br from-[#16102C] via-[#0F0A20] to-[#080512] border border-[#FFD700]/30 shadow-xl">
         <img
-          src="/assets/aistudio/Gemini_Generated_Image___13__cf879f0e.jpg"
-          alt="LuckyDrop 3D Telegram Quests"
-          referrerPolicy="no-referrer"
-          className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none"
+          src="/assets/3d/ton-chest-3d.png"
+          alt="TON Bonus Chest 3D"
+          className="absolute -left-4 -bottom-4 w-28 h-28 object-cover opacity-20 pointer-events-none"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.display = 'none';
+          }}
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#090514]/82 via-[#130d24]/85 to-[#090514]/94 pointer-events-none" />
-        <div className="relative z-10 flex items-center justify-between gap-2">
-          <h1 className="text-base font-bold tracking-wide text-white">
-            🎁 ماموریت‌ها و دعوت دوستان LuckyDrop
-          </h1>
-          <span className="text-xs font-semibold text-[#fbbf24] font-mono tabular-nums" dir="ltr">
-            {tmaXpPoints} XP
-          </span>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/35 text-emerald-300 text-[10px] font-black mb-1">
+              <Sparkles className="w-3 h-3" />
+              <span>
+                {tr(
+                  lang,
+                  'ماموریت‌های تلگرام و پاداش وفاداری',
+                  'Telegram Quests & Loyalty Rewards'
+                )}
+              </span>
+            </div>
+            <h1 className="text-lg font-black text-white">
+              {tr(lang, 'کسب جوایز رایگان و دعوت دوستان', 'Earn Free Drops & Invite Friends')}
+            </h1>
+          </div>
+          <div className="px-3 py-1.5 rounded-2xl bg-[#FFD700]/15 border border-[#FFD700]/35 text-center">
+            <div className="text-[9px] text-slate-300">{tr(lang, 'امتیاز XP', 'XP Score')}</div>
+            <div className="font-mono text-sm font-black text-[#FFE066]" dir="ltr">
+              {tmaXpPoints.toLocaleString('en-US')} XP
+            </div>
+          </div>
         </div>
 
-        {/* 3 Bonus Token Pills */}
-        <div className="relative z-10 grid grid-cols-3 gap-2" dir="ltr">
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            type="button"
+        {/* User's Active Bonus Inventory */}
+        <div className="grid grid-cols-3 gap-2">
+          <div
             onClick={() => navigateTo('mini-games')}
-            className="bg-[#090612] hover:bg-purple-950/60 border border-purple-500/20 rounded-xl p-2.5 text-center transition-colors cursor-pointer"
+            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 text-center cursor-pointer hover:border-[#00F5D4]/40 transition-all"
           >
-            <strong className="font-mono text-xs font-bold text-[#00f59b] block tabular-nums">
-              🟢 {freePlinkoDrops} Drops
-            </strong>
-            <span className="text-[10px] text-purple-300/60 block mt-0.5">Plinko</span>
-          </motion.button>
+            <div className="text-base">🟣</div>
+            <div className="font-mono text-sm font-black text-[#00F5D4] mt-0.5">
+              {freePlinkoDrops}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'توپ رایگان Plinko', 'Free Plinko Drops')}
+            </div>
+          </div>
 
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            type="button"
+          <div
             onClick={() => navigateTo('mini-games')}
-            className="bg-[#090612] hover:bg-purple-950/60 border border-purple-500/20 rounded-xl p-2.5 text-center transition-colors cursor-pointer"
+            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 text-center cursor-pointer hover:border-[#FFE066]/40 transition-all"
           >
-            <strong className="font-mono text-xs font-bold text-[#fbbf24] block tabular-nums">
-              ✨ {freeScratchCards} Cards
-            </strong>
-            <span className="text-[10px] text-purple-300/60 block mt-0.5">Scratch</span>
-          </motion.button>
+            <div className="text-base">🎫</div>
+            <div className="font-mono text-sm font-black text-[#FFE066] mt-0.5">
+              {freeScratchCards}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'کارت اسکرچ هدیه', 'Free Scratch Cards')}
+            </div>
+          </div>
 
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            type="button"
+          <div
             onClick={() => navigateTo('lobby')}
-            className="bg-[#090612] hover:bg-purple-950/60 border border-purple-500/20 rounded-xl p-2.5 text-center transition-colors cursor-pointer"
+            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 text-center cursor-pointer hover:border-emerald-400/40 transition-all"
           >
-            <strong className="font-mono text-xs font-bold text-purple-200 block tabular-nums">
-              🎟️ {freeLotteryTickets} Tickets
-            </strong>
-            <span className="text-[10px] text-purple-300/60 block mt-0.5">Lottery</span>
-          </motion.button>
+            <div className="text-base">🎟️</div>
+            <div className="font-mono text-sm font-black text-emerald-300 mt-0.5">
+              {freeLotteryTickets}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'بلیت رایگان لاتاری', 'Free Lottery Slips')}
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {bannerMsg && (
-        <div
-          data-testid="earn-quest-banner"
-          className="p-3 rounded-2xl bg-[#130d24]/90 border border-[#00f59b]/50 text-[#00f59b] text-xs font-semibold"
-        >
-          {bannerMsg}
+      {toastMessage && (
+        <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 text-xs font-bold text-center">
+          {toastMessage}
         </div>
       )}
 
-      {/* 7-Day Daily Streak Visual Tracker */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-2.5">
+      {/* 2. DYNAMIC 7-DAY STREAK BAR (DRIVEN BY REAL USER QUEST/ACTIVITY STATE) */}
+      <section className="rounded-2xl p-3.5 bg-[#110C22]/90 border border-white/10 space-y-2.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-purple-200/80">🔥 استریک چک‌این ۷ روزه</span>
-          <span className="font-mono text-[11px] font-medium text-purple-300/50 tabular-nums" dir="ltr">
-            Day 3 / 7
+          <div className="flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-[#FFE066]" />
+            <h2 className="text-xs font-black text-white">
+              {tr(lang, 'استریک حضور ۷ روزه تلگرام', '7-Day Telegram Activity Streak')}
+            </h2>
+          </div>
+          <span
+            className="text-[10px] font-mono text-[#00F5D4] font-bold"
+            data-testid="streak-counter-badge"
+          >
+            {tr(lang, `روز ${activeStreakDays} از ۷`, `Day ${activeStreakDays} / 7`)}
           </span>
         </div>
-        <div className="grid grid-cols-7 gap-1.5" dir="ltr">
+
+        <div className="grid grid-cols-7 gap-1" dir="ltr">
           {[1, 2, 3, 4, 5, 6, 7].map((day) => {
-            const done = day <= 3;
+            const done = day <= activeStreakDays;
             return (
               <div
                 key={day}
-                className={`rounded-xl py-1.5 text-center font-mono text-[10px] font-bold border ${
+                className={`p-1.5 rounded-xl border text-center ${
                   done
-                    ? 'bg-purple-600/35 border-purple-400/50 text-white'
-                    : 'bg-[#090612] border-purple-500/15 text-purple-300/50'
+                    ? 'bg-[#FFD700]/20 border-[#FFD700]/50 text-[#FFE066]'
+                    : 'bg-white/[0.03] border-white/10 text-slate-500'
                 }`}
               >
-                <div>D{day}</div>
-                <div className="text-xs mt-0.5">{day === 7 ? '🎟️' : done ? '✓' : '⭐'}</div>
+                <div className="text-[9px] font-mono font-bold">D{day}</div>
+                <div className="text-xs my-0.5">{day === 7 ? '🎁' : done ? '✓' : '•'}</div>
               </div>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      {/* Interactive Quests List */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold tracking-wide text-white">📋 ماموریت‌های روزانه و جوایز رایگان</h2>
-          <span className="text-[11px] font-medium text-purple-300/50 tabular-nums" dir="ltr">
-            {tmaQuests.filter((q) => q.claimed).length}/{tmaQuests.length} Done
+      {/* 3. FOUR OFFICIAL TMA QUEST CARDS */}
+      <section className="space-y-2.5">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-xs font-black text-white flex items-center gap-1.5">
+            <Gift className="w-4 h-4 text-[#00F5D4]" />
+            <span>
+              {tr(
+                lang,
+                'ماموریت‌های فعال (پاداش در گردش بازی)',
+                'Active Quests (Turnover-Locked Rewards)'
+              )}
+            </span>
+          </h2>
+          <span className="text-[10px] text-slate-400">
+            {tmaQuests.filter((q) => q.claimed).length}/{tmaQuests.length}{' '}
+            {tr(lang, 'تکمیل‌شده', 'Completed')}
           </span>
         </div>
 
-        <div className="space-y-2.5">
-          {tmaQuests.map((quest) => (
-            <div
-              key={quest.id}
-              data-testid={`quest-card-${quest.id}`}
-              className="rounded-xl bg-[#090612] border border-purple-500/20 p-3 space-y-2"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1 min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-white">{quest.titleFa}</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-medium text-[#00f59b]">
-                      {quest.rewardLabelFa}
-                    </span>
-                    <span className="text-[10px] font-mono text-purple-300/50 tabular-nums" dir="ltr">
-                      ({quest.progress}/{quest.target})
+        {tmaQuests.map((quest) => (
+          <div
+            key={quest.id}
+            className={`p-3.5 rounded-2xl border transition-all ${
+              quest.claimed
+                ? 'bg-emerald-950/20 border-emerald-500/30'
+                : 'bg-[#110C22]/90 border-white/10 hover:border-white/20'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-2.5">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                  {getQuestIcon(quest.id)}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black text-white">
+                    {lang === 'EN' ? quest.titleEn : quest.titleFa}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {lang === 'EN'
+                      ? quest.id === 'CONNECT_TON_WALLET'
+                        ? 'Connect Tonkeeper, MyTonWallet, Tonhub, or Bitget Wallet'
+                        : quest.id === 'JOIN_TELEGRAM_CHANNEL'
+                        ? 'Join the official community channel for draw alerts'
+                        : quest.id === 'DAILY_STREAK_7'
+                        ? 'Check in daily to receive a free Scratch Card & XP'
+                        : 'Play 10 rounds across any Instant Mini-Game'
+                      : quest.subtitleFa}
+                  </div>
+                  <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-lg bg-[#FFD700]/12 border border-[#FFD700]/30 text-[10px] font-black text-[#FFE066]">
+                    <span>
+                      🎁{' '}
+                      {lang === 'EN'
+                        ? quest.id === 'CONNECT_TON_WALLET'
+                          ? '+2 Free Plinko Drops + 50 XP'
+                          : quest.id === 'JOIN_TELEGRAM_CHANNEL'
+                          ? '+1 Free Lottery Ticket + 40 XP'
+                          : quest.id === 'DAILY_STREAK_7'
+                          ? '+1 Free Scratch Card + 35 XP'
+                          : '+3 Free Plinko Drops + 80 XP'
+                        : quest.rewardLabelFa}
                     </span>
                   </div>
                 </div>
-
-                <motion.button
-                  whileTap={{ scale: 0.96 }}
-                  type="button"
-                  data-testid={`claim-quest-${quest.id}`}
-                  disabled={quest.claimed}
-                  onClick={() => handleQuestAction(quest.id)}
-                  className={`h-9 px-3 rounded-xl font-bold text-xs shrink-0 cursor-pointer transition-all ${
-                    quest.claimed
-                      ? 'bg-purple-950/50 border border-purple-500/20 text-purple-300/50'
-                      : 'bg-gradient-to-r from-[#9333ea] to-[#7e22ce] text-white shadow-[0_3px_0_#581c87]'
-                  }`}
-                >
-                  {quest.claimed ? '✓ دریافت شد' : 'دریافت'}
-                </motion.button>
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Viral Telegram Referral Card */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-3">
+              <button
+                onClick={() => handleQuestAction(quest)}
+                disabled={quest.claimed}
+                data-testid={`quest-claim-btn-${quest.id}`}
+                className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                  quest.claimed
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 cursor-default'
+                    : 'bg-gradient-to-r from-[#0098EA] to-[#00F5D4] text-slate-950 shadow-md active:scale-95'
+                }`}
+              >
+                {quest.claimed ? (
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {tr(lang, 'دریافت شد', 'Claimed')}
+                  </span>
+                ) : quest.id === 'JOIN_TELEGRAM_CHANNEL' ? (
+                  <span className="flex items-center gap-1">
+                    <ExternalLink className="w-3 h-3" />
+                    {tr(lang, 'عضویت و بررسی', 'Join & Verify')}
+                  </span>
+                ) : (
+                  tr(lang, 'دریافت پاداش', 'Claim Reward')
+                )}
+              </button>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* 4. ZERO-DEFICIT AFFILIATE REFERRAL ENGINE (10% OF HOUSE EDGE) */}
+      <section className="rounded-3xl p-4 bg-gradient-to-br from-[#10192E] via-[#0B1120] to-[#070510] border border-[#0098EA]/35 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold tracking-wide text-white">
-            🚀 دعوت دوستان به LuckyDrop
-          </h3>
-          <span className="text-[11px] font-medium text-[#fbbf24] tabular-nums" dir="ltr">
-            @{telegramUser.username || 'VIP'}
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-[#0098EA]/20 border border-[#0098EA]/40 flex items-center justify-center text-[#38BDF8]">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-white">
+                {tr(lang, 'سیستم دعوت دوستان (Affiliate)', 'Telegram Affiliate Program')}
+              </h2>
+              <p className="text-[10px] text-slate-400">
+                {tr(
+                  lang,
+                  '۱۰٪ از کارمزد هر بازی دوستانتان مستقیماً به کیف پول شما واریز می‌شود',
+                  'Earn 10% of the house fee on every ticket & game played by your referrals'
+                )}
+              </p>
+            </div>
+          </div>
+          <span className="px-2 py-1 rounded-lg bg-[#00F5D4]/15 border border-[#00F5D4]/30 text-[#00F5D4] font-mono text-[10px] font-black">
+            10% RevShare
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2" dir="ltr">
-          <div className="bg-[#090612] border border-purple-500/20 rounded-xl p-2.5">
-            <span className="text-[10px] font-medium text-purple-300/50 block">INVITED</span>
-            <strong className="text-sm font-mono font-bold text-white tabular-nums">
-              {referredTicketsCount} Friends
-            </strong>
+        {/* Shareable Telegram Mini App Deep Link */}
+        <div className="p-2.5 rounded-2xl bg-black/50 border border-white/10 flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1 text-left font-mono text-[11px] text-[#38BDF8] truncate" dir="ltr">
+            {tmaReferralUrl}
           </div>
-          <div className="bg-[#090612] border border-purple-500/20 rounded-xl p-2.5">
-            <span className="text-[10px] font-medium text-purple-300/50 block">COMMISSION</span>
-            <strong
-              data-testid="referral-commission-balance"
-              className="text-sm font-mono font-bold text-[#00f59b] tabular-nums"
-            >
-              {formatTmaCurrency(referralCommissionInActiveCurr, activeTmaCurrency)}
-            </strong>
-          </div>
-        </div>
-
-        {/* Invite Link Box */}
-        <div
-          className="h-10 bg-[#090612] border border-purple-500/20 rounded-xl px-3 flex items-center justify-between gap-2"
-          dir="ltr"
-        >
-          <code className="text-[11px] font-mono text-purple-200/80 truncate">{botReferralUrl}</code>
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            type="button"
+          <button
             onClick={handleCopyInviteLink}
-            className="h-7 px-2.5 rounded-lg bg-purple-950/80 text-[11px] font-semibold text-white shrink-0 cursor-pointer"
+            className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-[11px] font-bold cursor-pointer"
           >
-            {copiedLink ? '✓ Copied' : 'Copy'}
-          </motion.button>
+            <Copy className="w-3.5 h-3.5" />
+            <span>
+              {copiedLink
+                ? tr(lang, 'کپی شد!', 'Copied!')
+                : tr(lang, 'کپی لینک', 'Copy Link')}
+            </span>
+          </button>
         </div>
 
-        {/* Share & Claim Row */}
-        <div className="grid grid-cols-2 gap-2">
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            type="button"
-            data-testid="telegram-native-share-btn"
-            onClick={() => openTelegramNativeShare(botReferralUrl, shareText)}
-            className="h-11 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <span>✈️ ارسال دعوت</span>
-          </motion.button>
-
-          <motion.button
-            whileTap={{ scale: 0.96 }}
-            type="button"
-            data-testid="claim-referral-commission-btn"
-            onClick={handleClaimCommission}
-            className="h-11 rounded-xl stake-emerald-cta font-bold text-xs text-[#041f14] flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <span>💸 برداشت پورسانت</span>
-          </motion.button>
-        </div>
-
-        <motion.button
-          whileTap={{ scale: 0.96 }}
-          type="button"
-          onClick={handleSimulateFriendBet}
-          className="w-full h-9 rounded-xl bg-[#090612] border border-purple-500/20 text-[11px] font-medium text-purple-300/60 hover:text-white cursor-pointer"
+        {/* Native Telegram Share Button */}
+        <button
+          onClick={handleTelegramNativeShare}
+          className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#0098EA] via-[#00B4D8] to-[#00F5D4] text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-[0_8px_20px_rgba(0,152,234,0.35)] cursor-pointer active:scale-98"
         >
-          ⚡ شبیه‌سازی شرط زیرمجموعه (+۱۰٪ کمیسیون)
-        </motion.button>
-      </div>
-    </div>
+          <Share2 className="w-4 h-4" />
+          <span>
+            {tr(
+              lang,
+              'ارسال دعوت‌نامه مستقیم در چت‌های تلگرام',
+              'Share Invite Link in Telegram Chats'
+            )}
+          </span>
+        </button>
+
+        {/* Referral Stats & Claim Commission */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'دوستان دعوت‌شده فعال', 'Active Referrals')}
+            </div>
+            <div className="font-mono text-sm font-black text-white mt-0.5">
+              {referredTicketsCount} {tr(lang, 'نفر / تراکنش', 'Users')}
+            </div>
+          </div>
+
+          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'کمیسیون قابل برداشت', 'Claimable Commission')}
+            </div>
+            <div className="font-mono text-sm font-black text-[#00F5D4] mt-0.5" dir="ltr">
+              {formatCurrency(referralEarningsTon, 'TON')}
+              {referralEarningsStars > 0 ? ` + ${referralEarningsStars} ⭐` : ''}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={async () => {
+            const res = await claimReferralEarningsToWallet();
+            showToast(res.message);
+          }}
+          className="w-full py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 font-black text-xs transition-all cursor-pointer"
+        >
+          {tr(lang, '💸 انتقال کمیسیون به کیف پول اصلی', '💸 Transfer Commission to Main Wallet')}
+        </button>
+
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 pt-1">
+          <ShieldCheck className="w-3.5 h-3.5 text-[#00F5D4] shrink-0" />
+          <span>
+            {tr(
+              lang,
+              `کد معرف اختصاصی شما: ${referralCode} • تسویه آنی از کارمزد پلتفرم`,
+              `Your Referral Code: ${referralCode} • Instant Revenue Share Settlement`
+            )}
+          </span>
+        </div>
+      </section>
+    </main>
   );
 };

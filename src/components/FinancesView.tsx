@@ -63,7 +63,7 @@ export const FinancesView: React.FC = () => {
               داشبورد سود خالص اپراتور و جریان نقدینگی خزانه
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              در مدل توکنومیکس زرین لاتاری، به ازای هر ۱۰۰ تتر فروش بلیط، دقیقاً <strong className="text-emerald-400">۱۰٪ سود خالص بدون ریسک</strong> پیش از قرعه‌کشی توسط قرارداد هوشمند جدا شده و آماده انتقال به کیف پول سرد (Ledger HW) است.
+              در مدل توکنومیکس LuckyDrop، به ازای هر ۱۰۰ واحد فروش بلیت، دقیقاً <strong className="text-emerald-400">۱۰٪ سود خالص بدون ریسک</strong> پیش از قرعه‌کشی توسط قرارداد هوشمند جدا شده و آماده انتقال به کیف پول سرد (Ledger HW) است.
             </p>
           </div>
 

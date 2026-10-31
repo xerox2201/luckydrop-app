@@ -8,8 +8,21 @@ export class DiceSoundEngine {
   private muted: boolean = false;
   private lastTickTimeMs: number = 0;
 
+  constructor(initialMuted = false) {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem('luckydrop_audio_muted');
+        this.muted = stored !== null ? stored === 'true' : initialMuted;
+      } catch {
+        this.muted = initialMuted;
+      }
+    } else {
+      this.muted = initialMuted;
+    }
+  }
+
   private ensureContext(): AudioContext | null {
-    if (this.muted) return null;
+    if (this.isMuted()) return null;
     if (typeof window === 'undefined') return null;
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -24,15 +37,32 @@ export class DiceSoundEngine {
   }
 
   public isMuted(): boolean {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem('luckydrop_audio_muted');
+        if (stored !== null) {
+          this.muted = stored === 'true';
+        }
+      } catch {
+        // ignore
+      }
+    }
     return this.muted;
   }
 
   public setMuted(mute: boolean): void {
     this.muted = mute;
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('luckydrop_audio_muted', String(mute));
+      } catch {
+        // ignore
+      }
+    }
   }
 
   public toggleMute(): boolean {
-    this.muted = !this.muted;
+    this.setMuted(!this.isMuted());
     return this.muted;
   }
 

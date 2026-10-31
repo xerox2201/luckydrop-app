@@ -9,7 +9,7 @@ export const FooterAndChat: React.FC = () => {
   const [messages, setMessages] = useState<{ sender: 'AI' | 'USER'; text: string }[]>([
     {
       sender: 'AI',
-      text: 'سلام! من پشتیبان هوشمند ۲۴ ساعته زرین لاتاری هستم. هر سوالی درباره نحوه واریز تتر (TRC-20) و تون‌کوین (TON)، الگوریتم اثبات‌پذیر منصفانه SHA-256 یا محاسبه ضریب برد دارید بپرسید.',
+      text: 'سلام! من پشتیبان هوشمند ۲۴ ساعته LuckyDrop هستم. هر سوالی درباره نحوه واریز تون‌کوین (TON) و Telegram Stars، الگوریتم اثبات‌پذیر منصفانه SHA-256 یا محاسبه ضریب برد دارید بپرسید.',
     },
   ]);
 
@@ -62,7 +62,7 @@ export const FooterAndChat: React.FC = () => {
         ...prev,
         {
           sender: 'AI',
-          text: 'در زرین لاتاری، ۸۵٪ کل فروش بلیط در قالب استخر جوایز (RTP) به برندگان پرداخت شده و تمامی قرعه‌کشی‌ها با هش SHA-256 قابل راستی‌آزمایی هستند.',
+          text: 'در پلتفرم LuckyDrop، ۸۵٪ کل فروش بلیت در قالب استخر جوایز (RTP) به برندگان پرداخت شده و تمامی قرعه‌کشی‌ها با هش SHA-256 قابل راستی‌آزمایی هستند.',
         },
       ]);
     } finally {
@@ -79,7 +79,7 @@ export const FooterAndChat: React.FC = () => {
               <div className="w-8 h-8 rounded-xl gold-gradient-cta flex items-center justify-center text-[#2a1700] font-black">
                 ★
               </div>
-              <span className="text-base font-black text-white">LuckyDrop — زرین لاتاری VIP</span>
+              <span className="text-base font-black text-white">LuckyDrop — Web3 TMA VIP</span>
             </div>
             <p className="leading-relaxed text-slate-400">
               اولین پلتفرم قرعه‌کشی غیرمتمرکز Web3 با تسویه آنی روی شبکه‌های TRON و TON، بدون نیاز به احراز هویت (No-KYC) و تضمین بازگشت ۸۵٪ جوایز در قرارداد هوشمند.
@@ -164,7 +164,7 @@ export const FooterAndChat: React.FC = () => {
 
         <div className="max-w-[1440px] mx-auto mt-8 pt-6 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4 text-[11px] text-slate-500">
           <div>
-            © ۱۴۰۳ زرین لاتاری (Zarrin Lottery / LuckyDrop). تمامی حقوق معنوی، قرعه‌کشی‌ها و مارک‌های تجاری محفوظ است.
+            © ۱۴۰۳ LuckyDrop Web3 Gaming. تمامی حقوق معنوی، قرعه‌کشی‌ها و مارک‌های تجاری محفوظ است.
           </div>
           <div className="flex flex-wrap items-center gap-5">
             <button

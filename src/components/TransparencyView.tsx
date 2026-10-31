@@ -10,15 +10,18 @@ import {
   sha256Hex,
 } from '../utils/provablyFair.ts';
 import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
+import { tr } from '../utils/i18n.ts';
 
 export const TransparencyView: React.FC = () => {
   const {
+    lang,
     formatAmount,
     navigateTo,
     provablyFairSeeds,
     drawHistory,
     updateProvablyFairClientSeed,
     rotateProvablyFairServerSeed,
+    adminTonWalletAddress,
   } = useLottery();
 
   const [ticketCount, setTicketCount] = useState<number>(10);
@@ -71,7 +74,20 @@ export const TransparencyView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 px-3 pt-2 pb-24">
+    <div className="w-full max-w-[440px] mx-auto space-y-4 px-3 pt-2 pb-24">
+      {/* Sticky Back Header */}
+      <div className="flex items-center justify-between p-2.5 rounded-2xl bg-[#110C22]/90 border border-white/10 backdrop-blur-xl">
+        <button
+          onClick={() => navigateTo('lobby')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
+        >
+          {tr(lang, '← بازگشت به لابی', '← Back to Lobby')}
+        </button>
+        <span className="text-xs font-black text-[#00F5D4]">
+          {tr(lang, 'اثبات عدالت (Provably Fair)', 'Provably Fair Verifier')}
+        </span>
+      </div>
+
       {/* Studio Header */}
       <div className="relative rounded-2xl overflow-hidden studio-arena-frame p-4">
         <img
@@ -95,7 +111,11 @@ export const TransparencyView: React.FC = () => {
                 <span>LUCKYDROP • POST-DRAW VERIFIER (52-BIT)</span>
               </div>
               <h1 className="text-base font-black text-white">
-                مرکز راستی‌آزمایی پس از قرعه‌کشی و بازی‌ها (LuckyDrop)
+                {tr(
+                  lang,
+                  'مرکز راستی‌آزمایی پس از قرعه‌کشی و بازی‌ها (LuckyDrop)',
+                  'LuckyDrop 52-Bit HMAC-SHA256 Fairness Verifier'
+                )}
               </h1>
             </div>
           </div>
@@ -452,16 +472,14 @@ export const TransparencyView: React.FC = () => {
           <div className="space-y-2.5">
             {[
               {
-                title: 'خزانه اصلی جوایز شبکه تون (LuckyDrop TON Multi-Sig Vault)',
-                balance: '50,000.00 TON',
-                address: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
-                explorer: 'https://tonviewer.com/UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
-              },
-              {
-                title: 'خزانه پشتیبان ستاره‌های تلگرام (LuckyDrop Stars Reserve)',
-                balance: '12,500,000 ⭐',
-                address: 'UQB9xV7kM2nPqR8tW4yZ1cF5hJ6kL0mN3pQ_StarsPool',
-                explorer: 'https://tonviewer.com/UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
+                title: tr(
+                  lang,
+                  'خزانه رسمی شبکه تون (PUBLIC_TON_TREASURY_WALLET)',
+                  'Official TON Treasury Vault (PUBLIC_TON_TREASURY_WALLET)'
+                ),
+                balance: tr(lang, 'آن‌چین (Tonviewer)', 'On-Chain Verified'),
+                address: adminTonWalletAddress,
+                explorer: `https://tonviewer.com/${encodeURIComponent(adminTonWalletAddress)}`,
               },
             ].map((vault) => (
               <div

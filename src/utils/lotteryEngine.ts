@@ -27,7 +27,7 @@ export const DEFAULT_FX_RATES: ExchangeRates = {
   CNY: 6.68,
   USD: 1,
   BTC: 81344,
-  TON: 1.6,
+  TON: DEFAULT_TON_USD_RATE,
   TRX: 0.3283,
   BNB: 731.07,
 };
@@ -53,6 +53,22 @@ export interface WaterfallBreakdown {
 export function toPersianDigits(input: string | number): string {
   const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
   return String(input).replace(/\d/g, (d) => persianDigits[Number(d)]);
+}
+
+export function formatCountdownHMS(totalSeconds: number): {
+  hours: string;
+  minutes: string;
+  seconds: string;
+} {
+  const safe = Math.max(0, Math.floor(totalSeconds || 0));
+  const hrs = Math.floor(safe / 3600);
+  const mins = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+  return {
+    hours: String(hrs).padStart(2, '0'),
+    minutes: String(mins).padStart(2, '0'),
+    seconds: String(secs).padStart(2, '0'),
+  };
 }
 
 export function calculateWaterfallCashflow(

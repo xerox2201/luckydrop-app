@@ -19,6 +19,27 @@ import {
 // 1. STRICT PER-USER ACCOUNT ISOLATION (ZERO PRE-POPULATED DEMO DATA)
 // ============================================================================
 
+export interface ActiveGameSessionState {
+  sessionId: string;
+  gameId: 'MINES' | 'TOWER_3D';
+  currency: 'TON' | 'STARS';
+  betAmountUsdt: number;
+  debitTransactionUuid: string;
+  roundId: string;
+  serverSeed: string;
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: number;
+  minesCount?: number;
+  mineIndices?: number[];
+  revealedTiles?: number[];
+  towerDifficulty?: TowerDifficulty;
+  trapColumnsPerFloor?: number[];
+  colsCount?: number;
+  selectedColumns?: number[];
+  startedAt: string;
+}
+
 export interface IsolatedUserAccountRecord {
   telegramUserId: string;
   displayName: string;
@@ -41,6 +62,7 @@ export interface IsolatedUserAccountRecord {
   claimedTicketCodes: string[];
   lastDailyCheckInDate: string | null;
   connectedTonWallet: string;
+  activeGameSession?: ActiveGameSessionState | null;
   pamState: PAMPlayerState;
   createdAt: string;
   updatedAt: string;
@@ -184,6 +206,7 @@ export function createCleanZeroUserProfile(
     claimedTicketCodes: [],
     lastDailyCheckInDate: null,
     connectedTonWallet: '',
+    activeGameSession: null,
     pamState,
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -563,9 +586,13 @@ export interface ServerAuthoritativeGameInput {
   plinkoRisk?: PlinkoRiskLevel;
   minesCount?: number;
   minesRevealedSafeCount?: number;
+  selectedTiles?: number[];
   towerDifficulty?: TowerDifficulty;
   towerFloorsCleared?: number;
+  selectedColumns?: number[];
   wheelRisk?: 'LOW' | 'MEDIUM' | 'HIGH';
+  hiloChoice?: 'HIGHER' | 'LOWER' | 'SAME';
+  hiloBaseCard?: number;
   // Any spoofed client outcome fields passed in rawBody will be ignored
   [key: string]: unknown;
 }
@@ -617,14 +644,25 @@ export function computeServerAuthoritativeGameOutcome(
     minesCount: typeof raw.minesCount === 'number' ? raw.minesCount : 3,
     minesRevealedSafeCount:
       typeof raw.minesRevealedSafeCount === 'number' ? raw.minesRevealedSafeCount : 1,
+    selectedTiles: Array.isArray(raw.selectedTiles)
+      ? raw.selectedTiles.map(Number)
+      : undefined,
     towerDifficulty:
       raw.towerDifficulty === 'EASY' || raw.towerDifficulty === 'HARD'
         ? raw.towerDifficulty
         : 'MEDIUM',
     towerFloorsCleared:
       typeof raw.towerFloorsCleared === 'number' ? raw.towerFloorsCleared : 1,
+    selectedColumns: Array.isArray(raw.selectedColumns)
+      ? raw.selectedColumns.map(Number)
+      : undefined,
     wheelRisk:
       raw.wheelRisk === 'LOW' || raw.wheelRisk === 'HIGH' ? raw.wheelRisk : 'MEDIUM',
+    hiloChoice:
+      raw.hiloChoice === 'LOWER' || raw.hiloChoice === 'SAME'
+        ? raw.hiloChoice
+        : 'HIGHER',
+    hiloBaseCard: typeof raw.hiloBaseCard === 'number' ? raw.hiloBaseCard : undefined,
   });
 
   return {
@@ -722,3 +760,513 @@ export const globalMutationRateLimiter = new SlidingWindowRateLimiter({
   windowMs: 10_000,
   maxRequests: 30,
 });
+
+// ============================================================================
+// 5. ON-CHAIN TON BOC & TRANSACTION VERIFIER (TONAPI + TON CENTER + BOC CELL)
+// ============================================================================
+
+/**
+ * Computes CRC16-CCITT (XMODEM, poly 0x1021) used by TON user-friendly addresses (EQ... / UQ...).
+ */
+export function crc16Ton(data: Uint8Array): number {
+  let crc = 0;
+  for (let i = 0; i < data.length; i++) {
+    crc ^= data[i] << 8;
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = ((crc << 1) ^ 0x1021) & 0xffff;
+      } else {
+        crc = (crc << 1) & 0xffff;
+      }
+    }
+  }
+  return crc & 0xffff;
+}
+
+/**
+ * Normalizes any TON address (`UQ...`, `EQ...`, `kQ...`, `0Q...`, or raw `0:<64-hex>`)
+ * into its canonical `<workchain>:<64-lowercase-hex>` representation and verifies CRC16 checksums.
+ * Returns `null` if the address is malformed or fails CRC16 verification.
+ */
+export function normalizeTonAddressToRaw(address: string): string | null {
+  const clean = String(address || '').trim();
+  if (!clean) return null;
+
+  // Case 1: Raw format "<workchain>:<64-hex>"
+  const rawMatch = /^(-?\d+):([0-9a-fA-F]{64})$/.exec(clean);
+  if (rawMatch) {
+    return `${Number(rawMatch[1])}:${rawMatch[2].toLowerCase()}`;
+  }
+
+  // Case 2: 48-character user-friendly base64 / base64url format (EQ..., UQ..., kQ..., 0Q...)
+  if (/^[A-Za-z0-9+/_-]{48}$/.test(clean)) {
+    try {
+      const stdBase64 = clean.replace(/-/g, '+').replace(/_/g, '/');
+      const buf = Buffer.from(stdBase64, 'base64');
+      if (buf.length !== 36) return null;
+
+      const tag = buf[0];
+      // Valid TON address tags: 0x11 (EQ), 0x51 (UQ), 0x91 (kQ testnet), 0xd1 (0Q testnet)
+      if (tag !== 0x11 && tag !== 0x51 && tag !== 0x91 && tag !== 0xd1) {
+        return null;
+      }
+
+      const expectedCrc = crc16Ton(buf.subarray(0, 34));
+      const actualCrc = (buf[34] << 8) | buf[35];
+      if (expectedCrc !== actualCrc) {
+        return null;
+      }
+
+      const workchain = buf.readInt8(1);
+      const accountHex = buf.subarray(2, 34).toString('hex').toLowerCase();
+      return `${workchain}:${accountHex}`;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+export interface ParsedTonBocResult {
+  valid: boolean;
+  bocHashHex: string;
+  cellCount: number;
+  rootCount: number;
+  byteLength: number;
+  error?: string;
+}
+
+/**
+ * Validates binary TON Bag-of-Cells (BOC) structure (magic prefix `0xb5ee9c72`).
+ * Rejects arbitrary/fake strings that are not authentic TON BOC cells.
+ */
+export function parseAndValidateTonBoc(bocInput: string): ParsedTonBocResult {
+  const clean = String(bocInput || '').trim();
+  if (!clean || clean.length < 16) {
+    return {
+      valid: false,
+      bocHashHex: '',
+      cellCount: 0,
+      rootCount: 0,
+      byteLength: 0,
+      error: 'BOC_TOO_SHORT — داده BOC ارسال‌شده کوتاه‌تر از حد مجاز است.',
+    };
+  }
+
+  // Reject strings with characters outside base64/base64url/hex
+  if (!/^[A-Za-z0-9+/=_-]+$/.test(clean)) {
+    return {
+      valid: false,
+      bocHashHex: '',
+      cellCount: 0,
+      rootCount: 0,
+      byteLength: 0,
+      error: 'INVALID_BOC_ENCODING — فرمت Base64 بسته BOC نامعتبر است.',
+    };
+  }
+
+  let buf: Buffer;
+  try {
+    const isHex = /^(0x)?[0-9a-fA-F]+$/.test(clean) && clean.length % 2 === 0 && clean.toLowerCase().startsWith('b5ee9c72');
+    if (isHex) {
+      buf = Buffer.from(clean.replace(/^0x/i, ''), 'hex');
+    } else {
+      const normalizedB64 = clean.replace(/-/g, '+').replace(/_/g, '/');
+      buf = Buffer.from(normalizedB64, 'base64');
+    }
+  } catch {
+    return {
+      valid: false,
+      bocHashHex: '',
+      cellCount: 0,
+      rootCount: 0,
+      byteLength: 0,
+      error: 'BOC_DECODE_FAILED — رمزگشایی بسته BOC ناموفق بود.',
+    };
+  }
+
+  // Standard serialized TON BOC magic prefix: 0xb5ee9c72 (4 bytes) + at least 6 bytes header + cell payload
+  if (
+    buf.length < 12 ||
+    buf[0] !== 0xb5 ||
+    buf[1] !== 0xee ||
+    buf[2] !== 0x9c ||
+    buf[3] !== 0x72
+  ) {
+    return {
+      valid: false,
+      bocHashHex: '',
+      cellCount: 0,
+      rootCount: 0,
+      byteLength: buf.length,
+      error: 'INVALID_BOC_MAGIC — هدر باینری BOC (0xb5ee9c72) معتبر نیست.',
+    };
+  }
+
+  const flagsAndSize = buf[4];
+  const sizeBytes = flagsAndSize & 0x07;
+  const offBytes = buf[5];
+  if (sizeBytes < 1 || sizeBytes > 4 || offBytes < 1 || offBytes > 8) {
+    return {
+      valid: false,
+      bocHashHex: '',
+      cellCount: 0,
+      rootCount: 0,
+      byteLength: buf.length,
+      error: 'INVALID_BOC_HEADER_PARAMS — پارامترهای سلول BOC نامعتبر است.',
+    };
+  }
+
+  const minHeaderLen = 6 + 3 * sizeBytes + offBytes;
+  if (buf.length < minHeaderLen) {
+    return {
+      valid: false,
+      bocHashHex: '',
+      cellCount: 0,
+      rootCount: 0,
+      byteLength: buf.length,
+      error: 'TRUNCATED_BOC_CELL — ساختار سلول BOC ناقص است.',
+    };
+  }
+
+  const cellCount = buf.readUIntBE(6, sizeBytes);
+  const rootCount = buf.readUIntBE(6 + sizeBytes, sizeBytes);
+  if (cellCount < 1 || rootCount < 1 || rootCount > cellCount) {
+    return {
+      valid: false,
+      bocHashHex: '',
+      cellCount,
+      rootCount,
+      byteLength: buf.length,
+      error: 'INVALID_BOC_CELL_COUNTS — تعداد سلول‌های ریشه BOC نامعتبر است.',
+    };
+  }
+
+  const bocHashHex = crypto.createHash('sha256').update(buf).digest('hex');
+  return {
+    valid: true,
+    bocHashHex,
+    cellCount,
+    rootCount,
+    byteLength: buf.length,
+  };
+}
+
+export interface OnChainTonVerificationResult {
+  verified: boolean;
+  status: 200 | 400 | 422 | 502;
+  onChainTxHash: string;
+  verifiedNanoTon: string;
+  verifiedAmountTon: number;
+  destinationAddress: string;
+  senderAddress: string;
+  provider: 'TONAPI' | 'TONCENTER' | 'NONE';
+  error?: string;
+}
+
+/**
+ * Verifies a TON deposit transaction on-chain via TonAPI (`tonapi.io`) and TON Center (`toncenter.com`).
+ * Strictly enforces:
+ * 1. Valid 64-char hex transaction hash OR structurally valid TON BOC cell (`0xb5ee9c72`) broadcast/confirmed on-chain.
+ * 2. On-chain transaction `success === true` and `aborted === false`.
+ * 3. On-chain destination address strictly matches `expectedDestinationWallet` (`PUBLIC_TON_TREASURY_WALLET`).
+ * 4. On-chain transferred value in nanoTON is `>= expectedNanoTon` (`Math.round(expectedAmountTon * 1e9)`).
+ */
+export async function verifyOnChainTonTransaction(params: {
+  bocOrTxHash?: string;
+  boc?: string;
+  txHash?: string;
+  expectedDestinationWallet: string;
+  expectedAmountTon: number;
+  senderWallet?: string;
+  tonApiKey?: string;
+  toncenterApiKey?: string;
+  fetchImpl?: typeof fetch;
+}): Promise<OnChainTonVerificationResult> {
+  const fetchFn = params.fetchImpl || fetch;
+  const cleanInput = String(params.bocOrTxHash || params.boc || params.txHash || '').trim();
+  const expectedTreasuryRaw = normalizeTonAddressToRaw(params.expectedDestinationWallet);
+
+  if (!expectedTreasuryRaw) {
+    return {
+      verified: false,
+      status: 400,
+      onChainTxHash: '',
+      verifiedNanoTon: '0',
+      verifiedAmountTon: 0,
+      destinationAddress: params.expectedDestinationWallet,
+      senderAddress: params.senderWallet || '',
+      provider: 'NONE',
+      error:
+        'INVALID_TREASURY_WALLET_CONFIG — آدرس خزانه مقصد (PUBLIC_TON_TREASURY_WALLET) در سرور معتبر نیست.',
+    };
+  }
+
+  const amountCheck = validateStrictFinancialAmount({
+    rawAmount: params.expectedAmountTon,
+    currency: 'TON',
+    minAmount: 0.01,
+  });
+  if (!amountCheck.valid) {
+    return {
+      verified: false,
+      status: 400,
+      onChainTxHash: '',
+      verifiedNanoTon: '0',
+      verifiedAmountTon: 0,
+      destinationAddress: params.expectedDestinationWallet,
+      senderAddress: params.senderWallet || '',
+      provider: 'NONE',
+      error: amountCheck.error,
+    };
+  }
+
+  const expectedNanoTon = BigInt(Math.round(amountCheck.roundedAmount * 1e9));
+  const isHexTxHash = /^(0x)?[0-9a-fA-F]{64}$/.test(cleanInput);
+  let candidateTxHash = isHexTxHash ? cleanInput.replace(/^0x/i, '').toLowerCase() : '';
+
+  if (!isHexTxHash) {
+    const bocValidation = parseAndValidateTonBoc(cleanInput);
+    if (!bocValidation.valid) {
+      return {
+        verified: false,
+        status: 400,
+        onChainTxHash: '',
+        verifiedNanoTon: '0',
+        verifiedAmountTon: 0,
+        destinationAddress: params.expectedDestinationWallet,
+        senderAddress: params.senderWallet || '',
+        provider: 'NONE',
+        error:
+          bocValidation.error ||
+          'INVALID_TON_BOC_OR_TXHASH — تراکنش ارسالی یک BOC معتبر یا هش تراکنش ۶۴ کاراکتری شبکه TON نیست.',
+      };
+    }
+
+    // Broadcast signed BOC via TON Center `sendBocReturnHash` to obtain/verify its on-chain hash
+    try {
+      const tcHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (params.toncenterApiKey) {
+        tcHeaders['X-API-Key'] = params.toncenterApiKey;
+      }
+      const sendRes = await fetchFn('https://toncenter.com/api/v2/sendBocReturnHash', {
+        method: 'POST',
+        headers: tcHeaders,
+        body: JSON.stringify({ boc: cleanInput }),
+      });
+      if (sendRes.ok) {
+        const sendData: any = await sendRes.json();
+        const rawHash = String(sendData?.result?.hash || '').trim();
+        if (rawHash) {
+          candidateTxHash = /^[0-9a-fA-F]{64}$/.test(rawHash)
+            ? rawHash.toLowerCase()
+            : Buffer.from(rawHash, 'base64').toString('hex').toLowerCase();
+        }
+      }
+    } catch {
+      // Proceed to direct transaction lookup on TonAPI / TON Center
+    }
+
+    if (!candidateTxHash) {
+      candidateTxHash = bocValidation.bocHashHex;
+    }
+  }
+
+  const tonApiHeaders: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  if (params.tonApiKey) {
+    tonApiHeaders['Authorization'] = `Bearer ${params.tonApiKey}`;
+  }
+
+  // Step 1: Query TonAPI for the specific transaction hash
+  try {
+    const txRes = await fetchFn(
+      `https://tonapi.io/v2/blockchain/transactions/${encodeURIComponent(candidateTxHash)}`,
+      { headers: tonApiHeaders }
+    );
+    if (txRes.ok) {
+      const txData: any = await txRes.json();
+      const txSuccess = txData?.success !== false && txData?.aborted !== true;
+      if (!txSuccess) {
+        return {
+          verified: false,
+          status: 422,
+          onChainTxHash: candidateTxHash,
+          verifiedNanoTon: '0',
+          verifiedAmountTon: 0,
+          destinationAddress: params.expectedDestinationWallet,
+          senderAddress: params.senderWallet || '',
+          provider: 'TONAPI',
+          error: 'ONCHAIN_TX_ABORTED — تراکنش در بلاکچین TON ناموفق (Aborted) بوده است.',
+        };
+      }
+
+      // Inspect in_msg and out_msgs for a transfer into expectedTreasuryRaw
+      const candidateMessages: Array<{ dest: string; source: string; valueNano: bigint }> = [];
+      if (txData?.in_msg?.destination) {
+        const destAddr =
+          typeof txData.in_msg.destination === 'string'
+            ? txData.in_msg.destination
+            : txData.in_msg.destination?.address || '';
+        const srcAddr =
+          typeof txData.in_msg.source === 'string'
+            ? txData.in_msg.source
+            : txData.in_msg.source?.address || '';
+        const val = BigInt(String(txData.in_msg.value ?? '0'));
+        candidateMessages.push({ dest: destAddr, source: srcAddr, valueNano: val });
+      }
+      if (Array.isArray(txData?.out_msgs)) {
+        for (const msg of txData.out_msgs) {
+          const destAddr =
+            typeof msg?.destination === 'string'
+              ? msg.destination
+              : msg?.destination?.address || '';
+          const srcAddr =
+            typeof msg?.source === 'string' ? msg.source : msg?.source?.address || '';
+          const val = BigInt(String(msg?.value ?? '0'));
+          candidateMessages.push({ dest: destAddr, source: srcAddr, valueNano: val });
+        }
+      }
+
+      const matchingTransfer = candidateMessages.find(
+        (m) => normalizeTonAddressToRaw(m.dest) === expectedTreasuryRaw
+      );
+
+      if (!matchingTransfer) {
+        return {
+          verified: false,
+          status: 400,
+          onChainTxHash: candidateTxHash,
+          verifiedNanoTon: '0',
+          verifiedAmountTon: 0,
+          destinationAddress: params.expectedDestinationWallet,
+          senderAddress: params.senderWallet || '',
+          provider: 'TONAPI',
+          error:
+            'DESTINATION_ADDRESS_MISMATCH — آدرس مقصد تراکنش در بلاکچین با آدرس خزانه رسمی سایت (PUBLIC_TON_TREASURY_WALLET) مطابقت ندارد.',
+        };
+      }
+
+      if (matchingTransfer.valueNano < expectedNanoTon) {
+        return {
+          verified: false,
+          status: 400,
+          onChainTxHash: candidateTxHash,
+          verifiedNanoTon: matchingTransfer.valueNano.toString(),
+          verifiedAmountTon: Number(matchingTransfer.valueNano) / 1e9,
+          destinationAddress: params.expectedDestinationWallet,
+          senderAddress: matchingTransfer.source || params.senderWallet || '',
+          provider: 'TONAPI',
+          error: `NANOTON_AMOUNT_MISMATCH — مبلغ واقعی تراکنش در بلاکچین (${(
+            Number(matchingTransfer.valueNano) / 1e9
+          ).toFixed(4)} TON) کمتر از مبلغ ادعاشده (${amountCheck.roundedAmount} TON) است.`,
+        };
+      }
+
+      const canonicalHash = String(txData?.hash || candidateTxHash)
+        .replace(/^0x/i, '')
+        .toLowerCase();
+
+      return {
+        verified: true,
+        status: 200,
+        onChainTxHash: `0x${canonicalHash}`,
+        verifiedNanoTon: matchingTransfer.valueNano.toString(),
+        verifiedAmountTon: roundTonClean(Number(matchingTransfer.valueNano) / 1e9),
+        destinationAddress: params.expectedDestinationWallet,
+        senderAddress: matchingTransfer.source || params.senderWallet || '',
+        provider: 'TONAPI',
+      };
+    }
+  } catch {
+    // Fall through to TON Center v2 verification
+  }
+
+  // Step 2: Query TON Center v2 for transactions on the treasury address matching hash + nanoTON
+  try {
+    const tcHeaders: Record<string, string> = { Accept: 'application/json' };
+    if (params.toncenterApiKey) {
+      tcHeaders['X-API-Key'] = params.toncenterApiKey;
+    }
+    const tcUrl = `https://toncenter.com/api/v2/getTransactions?address=${encodeURIComponent(
+      params.expectedDestinationWallet
+    )}&limit=25`;
+    const tcRes = await fetchFn(tcUrl, { headers: tcHeaders });
+    if (tcRes.ok) {
+      const tcData: any = await tcRes.json();
+      const txList: any[] = Array.isArray(tcData?.result) ? tcData.result : [];
+      for (const tx of txList) {
+        const rawB64Hash = String(tx?.transaction_id?.hash || '').trim();
+        const txHexHash = rawB64Hash
+          ? /^[0-9a-fA-F]{64}$/.test(rawB64Hash)
+            ? rawB64Hash.toLowerCase()
+            : Buffer.from(rawB64Hash, 'base64').toString('hex').toLowerCase()
+          : '';
+
+        if (txHexHash && txHexHash === candidateTxHash) {
+          const inMsg = tx?.in_msg || {};
+          const destRaw = normalizeTonAddressToRaw(String(inMsg.destination || ''));
+          const valNano = BigInt(String(inMsg.value ?? '0'));
+
+          if (destRaw !== expectedTreasuryRaw) {
+            return {
+              verified: false,
+              status: 400,
+              onChainTxHash: txHexHash,
+              verifiedNanoTon: valNano.toString(),
+              verifiedAmountTon: Number(valNano) / 1e9,
+              destinationAddress: params.expectedDestinationWallet,
+              senderAddress: String(inMsg.source || params.senderWallet || ''),
+              provider: 'TONCENTER',
+              error:
+                'DESTINATION_ADDRESS_MISMATCH — آدرس مقصد تراکنش در TON Center با خزانه سایت مطابقت ندارد.',
+            };
+          }
+
+          if (valNano < expectedNanoTon) {
+            return {
+              verified: false,
+              status: 400,
+              onChainTxHash: txHexHash,
+              verifiedNanoTon: valNano.toString(),
+              verifiedAmountTon: Number(valNano) / 1e9,
+              destinationAddress: params.expectedDestinationWallet,
+              senderAddress: String(inMsg.source || params.senderWallet || ''),
+              provider: 'TONCENTER',
+              error: `NANOTON_AMOUNT_MISMATCH — مقدار nanoTON تراکنش در TON Center (${valNano.toString()}) کمتر از مقدار مورد انتظار (${expectedNanoTon.toString()}) است.`,
+            };
+          }
+
+          return {
+            verified: true,
+            status: 200,
+            onChainTxHash: `0x${txHexHash}`,
+            verifiedNanoTon: valNano.toString(),
+            verifiedAmountTon: roundTonClean(Number(valNano) / 1e9),
+            destinationAddress: params.expectedDestinationWallet,
+            senderAddress: String(inMsg.source || params.senderWallet || ''),
+            provider: 'TONCENTER',
+          };
+        }
+      }
+    }
+  } catch {
+    // Fall through to unverified rejection
+  }
+
+  return {
+    verified: false,
+    status: 422,
+    onChainTxHash: candidateTxHash ? `0x${candidateTxHash}` : '',
+    verifiedNanoTon: '0',
+    verifiedAmountTon: 0,
+    destinationAddress: params.expectedDestinationWallet,
+    senderAddress: params.senderWallet || '',
+    provider: 'NONE',
+    error:
+      'ONCHAIN_VERIFICATION_FAILED — تراکنش در بلاکچین TON (TonAPI / TON Center) یافت نشد یا هنوز به آدرس خزانه رسمی سایت نهایی (Confirmed) نشده است.',
+  };
+}
+

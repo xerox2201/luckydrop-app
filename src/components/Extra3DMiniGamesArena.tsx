@@ -31,13 +31,15 @@ export const Tower3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
     starsBalance,
     tonUsdRate,
     starsUsdRate,
-    provablyFairSeeds,
-    playInstantMiniGame,
+    startGameSession,
+    revealGameSessionStep,
+    cashoutGameSession,
   } = useLottery();
 
   const [betAmount, setBetAmount] = useState<number>(activeTmaCurrency === 'TON' ? 0.5 : 50);
   const [difficulty, setDifficulty] = useState<TowerDifficulty>('MEDIUM');
   const [roundActive, setRoundActive] = useState<boolean>(false);
+  const [busyStep, setBusyStep] = useState<boolean>(false);
   const [currentFloor, setCurrentFloor] = useState<number>(0);
   const [trapColsPerRow, setTrapColsPerRow] = useState<number[]>([]);
   const [pickedCols, setPickedCols] = useState<Record<number, number>>({});
@@ -54,10 +56,12 @@ export const Tower3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
     currentFloor > 0 ? calculateTowerStepMultiplier(difficulty, currentFloor) : 1.0;
   const nextMult = calculateTowerStepMultiplier(difficulty, Math.min(8, currentFloor + 1));
 
-  const handleStartTower = () => {
+  const handleStartTower = async () => {
+    if (busyStep) return;
     setErrorMsg(null);
     setCashedOutBanner(null);
     setExplodedFloor(null);
+    setTrapColsPerRow([]);
 
     const minBet = activeTmaCurrency === 'TON' ? 0.01 : 1;
     const cleanBet = Math.max(minBet, betAmount);
@@ -67,14 +71,23 @@ export const Tower3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
       return;
     }
 
+    const wagerUsdt = tmaCurrencyToUsdt(cleanBet, activeTmaCurrency, tonUsdRate, starsUsdRate);
+
     HapticEngine.impactOccurred('medium');
-    const board = deriveProvablyFairTowerBoard({
-      serverSeed: provablyFairSeeds.serverSeed,
-      clientSeed: provablyFairSeeds.clientSeed,
-      nonce: provablyFairSeeds.nonce,
-      difficulty,
+    setBusyStep(true);
+    const startRes = await startGameSession({
+      gameId: 'TOWER_3D',
+      betAmountUsdt: wagerUsdt,
+      towerDifficulty: difficulty,
     });
-    setTrapColsPerRow(board.trapColumnsPerFloor);
+    setBusyStep(false);
+
+    if (!startRes.ok) {
+      HapticEngine.notificationOccurred('error');
+      setErrorMsg(startRes.error || 'خطا در شروع برج سه‌بعدی در سرور');
+      return;
+    }
+
     setPickedCols({});
     setCurrentFloor(0);
     setRoundActive(true);
@@ -82,88 +95,103 @@ export const Tower3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
   };
 
   const handleSelectTile = async (floorIdx: number, colIdx: number) => {
-    if (!roundActive || floorIdx !== currentFloor) return;
+    if (!roundActive || busyStep || floorIdx !== currentFloor) return;
 
     const nextPicked = { ...pickedCols, [floorIdx]: colIdx };
     setPickedCols(nextPicked);
 
-    const trapCol = trapColsPerRow[floorIdx] ?? 0;
-    const isHitTrap =
-      difficulty === 'HARD' ? colIdx === trapCol : colIdx === trapCol;
+    setBusyStep(true);
+    const revealRes = await revealGameSessionStep({ colIndex: colIdx });
+    setBusyStep(false);
 
-    if (isHitTrap) {
+    if (!revealRes.ok) {
+      HapticEngine.notificationOccurred('error');
+      setErrorMsg(revealRes.error || 'خطا در بررسی طبقه در سرور');
+      return;
+    }
+
+    if (revealRes.status === 'TRAP_HIT' || revealRes.hitTrap) {
       HapticEngine.notificationOccurred('error');
       plinkoSoundEngine.playBucketLand(0.2, false);
-      setExplodedFloor(floorIdx);
+      setExplodedFloor(revealRes.explodedFloor ?? floorIdx);
+      if (Array.isArray(revealRes.trapColumnsPerFloor)) {
+        setTrapColsPerRow(revealRes.trapColumnsPerFloor);
+      }
       setRoundActive(false);
 
-      const wagerUsdt = tmaCurrencyToUsdt(
-        Math.max(activeTmaCurrency === 'TON' ? 0.01 : 1, betAmount),
-        activeTmaCurrency,
-        tonUsdRate,
-        starsUsdRate
-      );
-      const res = await playInstantMiniGame({
-        gameId: 'TOWER_3D',
-        betAmountUsdt: wagerUsdt,
-        towerDifficulty: difficulty,
-        towerFloorsCleared: floorIdx,
-        towerHitTrap: true,
-      });
-      if (res.evaluation && onRoundSettled) {
-        onRoundSettled(res.evaluation, res.debitTransactionUuid || '');
+      if (revealRes.evaluation && onRoundSettled) {
+        onRoundSettled(revealRes.evaluation, revealRes.debitTransactionUuid || '');
       }
       return;
     }
 
-    // Cleared floor!
-    const clearedSteps = floorIdx + 1;
+    // Cleared floor confirmed by server!
+    const clearedSteps = revealRes.clearedFloors ?? floorIdx + 1;
     HapticEngine.impactOccurred('light');
     plinkoSoundEngine.playPegHit(clearedSteps * 2, 16);
     setCurrentFloor(clearedSteps);
 
-    if (clearedSteps >= 8) {
-      await handleCashoutTower(clearedSteps);
-    }
-  };
-
-  const handleCashoutTower = async (stepsOverride?: number) => {
-    const steps = stepsOverride ?? currentFloor;
-    if (!roundActive || steps <= 0) return;
-
-    HapticEngine.notificationOccurred('success');
-    const mult = calculateTowerStepMultiplier(difficulty, steps);
-    plinkoSoundEngine.playBucketLand(mult, mult >= 10);
-    setRoundActive(false);
-
-    const wagerUsdt = tmaCurrencyToUsdt(
-      Math.max(activeTmaCurrency === 'TON' ? 0.01 : 1, betAmount),
-      activeTmaCurrency,
-      tonUsdRate,
-      starsUsdRate
-    );
-    const res = await playInstantMiniGame({
-      gameId: 'TOWER_3D',
-      betAmountUsdt: wagerUsdt,
-      towerDifficulty: difficulty,
-      towerFloorsCleared: steps,
-      towerHitTrap: false,
-    });
-
-    if (res.ok && res.evaluation) {
+    if (revealRes.status === 'AUTO_CASHED_OUT') {
+      HapticEngine.notificationOccurred('success');
+      const mult = revealRes.currentMultiplier || calculateTowerStepMultiplier(difficulty, clearedSteps);
+      plinkoSoundEngine.playBucketLand(mult, mult >= 10);
+      setRoundActive(false);
+      if (Array.isArray(revealRes.trapColumnsPerFloor)) {
+        setTrapColsPerRow(revealRes.trapColumnsPerFloor);
+      }
       const wonCurr = usdtToTmaCurrency(
-        res.evaluation.payoutUsdt,
+        revealRes.payoutUsdt || 0,
         activeTmaCurrency,
         tonUsdRate,
         starsUsdRate
       );
       setCashedOutBanner(
-        `🏰 برداشت موفق در طبقه ${steps}/8 با ضریب ${mult.toFixed(2)}x (+${formatTmaCurrency(
+        `🏰 فتح کامل برج کریستالی (طبقه 8/8) با ضریب ${mult.toFixed(2)}x (+${formatTmaCurrency(
           wonCurr,
           activeTmaCurrency
         )})`
       );
-      onRoundSettled?.(res.evaluation, res.debitTransactionUuid || '');
+      if (revealRes.evaluation && onRoundSettled) {
+        onRoundSettled(revealRes.evaluation, revealRes.debitTransactionUuid || '');
+      }
+    }
+  };
+
+  const handleCashoutTower = async () => {
+    if (!roundActive || currentFloor <= 0 || busyStep) return;
+
+    setBusyStep(true);
+    const res = await cashoutGameSession();
+    setBusyStep(false);
+
+    if (!res.ok) {
+      HapticEngine.notificationOccurred('error');
+      setErrorMsg(res.error || 'خطا در برداشت سود برج');
+      return;
+    }
+
+    HapticEngine.notificationOccurred('success');
+    const mult = res.multiplier || calculateTowerStepMultiplier(difficulty, currentFloor);
+    plinkoSoundEngine.playBucketLand(mult, mult >= 10);
+    setRoundActive(false);
+    if (Array.isArray(res.trapColumnsPerFloor)) {
+      setTrapColsPerRow(res.trapColumnsPerFloor);
+    }
+
+    const wonCurr = usdtToTmaCurrency(
+      res.payoutUsdt || res.evaluation?.payoutUsdt || 0,
+      activeTmaCurrency,
+      tonUsdRate,
+      starsUsdRate
+    );
+    setCashedOutBanner(
+      `🏰 برداشت موفق در طبقه ${currentFloor}/8 با ضریب ${mult.toFixed(2)}x (+${formatTmaCurrency(
+        wonCurr,
+        activeTmaCurrency
+      )})`
+    );
+    if (res.evaluation && onRoundSettled) {
+      onRoundSettled(res.evaluation, res.debitTransactionUuid || '');
     }
   };
 
@@ -631,7 +659,7 @@ export const Wheel3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
                   : 'text-purple-300/60 hover:text-white'
               }`}
             >
-              {rLevel === 'LOW' ? 'Low (Max 2x)' : rLevel === 'MEDIUM' ? 'Med (Max 10x)' : 'High (Max 50x)'}
+              {rLevel === 'LOW' ? 'Low (Max 2x)' : rLevel === 'MEDIUM' ? 'Med (Max 3x)' : 'High (Max 12x)'}
             </button>
           ))}
         </div>
@@ -709,11 +737,13 @@ export const HiLo3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) =
     );
 
     const targetMult =
-      guess === 'SAME' ? 12.74 : guess === 'HIGHER' ? higherMult : lowerMult;
+      guess === 'SAME' ? 12.68 : guess === 'HIGHER' ? higherMult : lowerMult;
 
     const res = await playInstantMiniGame({
       gameId: 'HILO_3D',
       betAmountUsdt: wagerUsdt,
+      hiloChoice: guess,
+      hiloBaseCard: baseCard,
       hiloMultiplier: targetMult,
       hiloSummaryLabel: `Cyber Hi-Lo 3D (${guess} from #${baseCard})`,
     });
@@ -825,7 +855,7 @@ export const HiLo3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) =
             className="h-12 rounded-xl bg-amber-500/25 hover:bg-amber-500/40 border border-[#fbbf24]/50 text-xs font-bold text-white flex flex-col items-center justify-center cursor-pointer"
           >
             <span>🎯 Exact Same</span>
-            <span className="text-[10px] font-mono text-[#fbbf24]">12.74x</span>
+            <span className="text-[10px] font-mono text-[#fbbf24]">12.68x</span>
           </button>
           <button
             type="button"

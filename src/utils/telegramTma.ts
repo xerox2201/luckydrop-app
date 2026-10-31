@@ -294,6 +294,7 @@ export function initTelegramMiniAppSdk(): TelegramWebAppUser {
     try {
       twa.ready?.();
       twa.expand?.();
+      twa.disableVerticalSwipes?.();
       twa.setHeaderColor?.('#070510');
       twa.setBackgroundColor?.('#070510');
       twa.enableClosingConfirmation?.();

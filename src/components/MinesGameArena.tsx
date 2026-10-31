@@ -25,7 +25,9 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
     tonUsdRate,
     starsUsdRate,
     provablyFairSeeds,
-    playInstantMiniGame,
+    startGameSession,
+    revealGameSessionStep,
+    cashoutGameSession,
   } = useLottery();
 
   const [betAmountCurrency, setBetAmountCurrency] = useState<number>(
@@ -33,6 +35,7 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
   );
   const [minesCount, setMinesCount] = useState<number>(3);
   const [roundActive, setRoundActive] = useState<boolean>(false);
+  const [busyStep, setBusyStep] = useState<boolean>(false);
   const [revealedTiles, setRevealedTiles] = useState<number[]>([]);
   const [mineIndices, setMineIndices] = useState<number[]>([]);
   const [explodedTile, setExplodedTile] = useState<number | null>(null);
@@ -56,11 +59,13 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
   );
   const currentPayoutCurrency = Number((betAmountCurrency * currentMultiplier).toFixed(2));
 
-  const startMinesRound = () => {
+  const startMinesRound = async () => {
+    if (busyStep) return;
     HapticEngine.impactOccurred('medium');
     setStatusMsg(null);
     setCashedOutWin(null);
     setExplodedTile(null);
+    setMineIndices([]);
 
     const available = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
     if (betAmountCurrency > available) {
@@ -71,89 +76,79 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
       return;
     }
 
-    // Derive deterministic 5x5 board from active Provably Fair seeds
-    const board = deriveProvablyFairMinesBoard({
-      serverSeed: provablyFairSeeds.serverSeed,
-      clientSeed: provablyFairSeeds.clientSeed,
-      nonce: provablyFairSeeds.nonce,
-      minesCount,
-    });
-
-    setMineIndices(board.mineIndices);
-    setRevealedTiles([]);
-    setRoundActive(true);
-    plinkoSoundEngine.playPegHit(3, 12);
-  };
-
-  const handleTileTap = async (tileIndex: number) => {
-    if (!roundActive) return;
-    if (revealedTiles.includes(tileIndex)) return;
-
-    const isMine = mineIndices.includes(tileIndex);
-    if (isMine) {
-      // Hit a bomb! Settle losing round in PAM ledger
-      HapticEngine.notificationOccurred('error');
-      plinkoSoundEngine.playBucketLand(0.2, false);
-      setExplodedTile(tileIndex);
-      setRoundActive(false);
-
-      const betUsdt = tmaCurrencyToUsdt(
-        betAmountCurrency,
-        activeTmaCurrency,
-        tonUsdRate,
-        starsUsdRate
-      );
-      const res = await playInstantMiniGame({
-        gameId: 'MINES',
-        betAmountUsdt: betUsdt,
-        minesCount,
-        minesRevealedSafeCount: revealedTiles.length,
-        minesHitBomb: true,
-      });
-      if (res.evaluation && onRoundSettled) {
-        onRoundSettled(res.evaluation, res.debitTransactionUuid || '');
-      }
-      return;
-    }
-
-    // Safe diamond tile!
-    HapticEngine.impactOccurred('light');
-    plinkoSoundEngine.playPegHit(revealedTiles.length + 4, 16);
-    const nextRevealed = [...revealedTiles, tileIndex];
-    setRevealedTiles(nextRevealed);
-
-    // Auto-cashout if all safe tiles are uncovered
-    if (nextRevealed.length >= 25 - minesCount) {
-      await settleCashout(nextRevealed.length);
-    }
-  };
-
-  const settleCashout = async (safeCountOverride?: number) => {
-    const safeCount = safeCountOverride ?? revealedTiles.length;
-    if (!roundActive || safeCount <= 0) return;
-
-    HapticEngine.notificationOccurred('success');
-    const mult = calculateMinesMultiplier(minesCount, safeCount);
-    plinkoSoundEngine.playBucketLand(mult, mult >= 10);
-    setRoundActive(false);
-
     const betUsdt = tmaCurrencyToUsdt(
       betAmountCurrency,
       activeTmaCurrency,
       tonUsdRate,
       starsUsdRate
     );
-    const res = await playInstantMiniGame({
+
+    setBusyStep(true);
+    const startRes = await startGameSession({
       gameId: 'MINES',
       betAmountUsdt: betUsdt,
       minesCount,
-      minesRevealedSafeCount: safeCount,
-      minesHitBomb: false,
     });
+    setBusyStep(false);
 
-    if (res.ok && res.evaluation) {
+    if (!startRes.ok) {
+      HapticEngine.notificationOccurred('error');
+      setStatusMsg(startRes.error || 'خطا در شروع بازی در سرور');
+      return;
+    }
+
+    setRevealedTiles([]);
+    setRoundActive(true);
+    plinkoSoundEngine.playPegHit(3, 12);
+  };
+
+  const handleTileTap = async (tileIndex: number) => {
+    if (!roundActive || busyStep) return;
+    if (revealedTiles.includes(tileIndex)) return;
+
+    setBusyStep(true);
+    const revealRes = await revealGameSessionStep({ tileIndex });
+    setBusyStep(false);
+
+    if (!revealRes.ok) {
+      HapticEngine.notificationOccurred('error');
+      setStatusMsg(revealRes.error || 'خطا در بررسی خانه در سرور');
+      return;
+    }
+
+    if (revealRes.status === 'BOMB_HIT' || revealRes.hitBomb) {
+      HapticEngine.notificationOccurred('error');
+      plinkoSoundEngine.playBucketLand(0.2, false);
+      setExplodedTile(revealRes.explodedTile ?? tileIndex);
+      if (Array.isArray(revealRes.mineIndices)) {
+        setMineIndices(revealRes.mineIndices);
+      }
+      setRoundActive(false);
+
+      if (revealRes.evaluation && onRoundSettled) {
+        onRoundSettled(revealRes.evaluation, revealRes.debitTransactionUuid || '');
+      }
+      return;
+    }
+
+    // Safe diamond tile confirmed by server!
+    HapticEngine.impactOccurred('light');
+    const nextRevealed = Array.isArray(revealRes.revealedTiles)
+      ? revealRes.revealedTiles
+      : [...revealedTiles, tileIndex];
+    plinkoSoundEngine.playPegHit(nextRevealed.length + 3, 16);
+    setRevealedTiles(nextRevealed);
+
+    if (revealRes.status === 'AUTO_CASHED_OUT') {
+      HapticEngine.notificationOccurred('success');
+      const mult = revealRes.currentMultiplier || calculateMinesMultiplier(minesCount, nextRevealed.length);
+      plinkoSoundEngine.playBucketLand(mult, mult >= 10);
+      setRoundActive(false);
+      if (Array.isArray(revealRes.mineIndices)) {
+        setMineIndices(revealRes.mineIndices);
+      }
       const payoutCurr = usdtToTmaCurrency(
-        res.evaluation.payoutUsdt,
+        revealRes.payoutUsdt || 0,
         activeTmaCurrency,
         tonUsdRate,
         starsUsdRate
@@ -162,9 +157,45 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
         multiplier: mult,
         payoutCurrency: payoutCurr,
       });
-      if (onRoundSettled) {
-        onRoundSettled(res.evaluation, res.debitTransactionUuid || '');
+      if (revealRes.evaluation && onRoundSettled) {
+        onRoundSettled(revealRes.evaluation, revealRes.debitTransactionUuid || '');
       }
+    }
+  };
+
+  const settleCashout = async () => {
+    if (!roundActive || revealedTiles.length <= 0 || busyStep) return;
+
+    setBusyStep(true);
+    const res = await cashoutGameSession();
+    setBusyStep(false);
+
+    if (!res.ok) {
+      HapticEngine.notificationOccurred('error');
+      setStatusMsg(res.error || 'خطا در برداشت سود');
+      return;
+    }
+
+    HapticEngine.notificationOccurred('success');
+    const mult = res.multiplier || calculateMinesMultiplier(minesCount, revealedTiles.length);
+    plinkoSoundEngine.playBucketLand(mult, mult >= 10);
+    setRoundActive(false);
+    if (Array.isArray(res.mineIndices)) {
+      setMineIndices(res.mineIndices);
+    }
+
+    const payoutCurr = usdtToTmaCurrency(
+      res.payoutUsdt || res.evaluation?.payoutUsdt || 0,
+      activeTmaCurrency,
+      tonUsdRate,
+      starsUsdRate
+    );
+    setCashedOutWin({
+      multiplier: mult,
+      payoutCurrency: payoutCurr,
+    });
+    if (res.evaluation && onRoundSettled) {
+      onRoundSettled(res.evaluation, res.debitTransactionUuid || '');
     }
   };
 

@@ -93,6 +93,12 @@ import {
   HapticEngine,
 } from '../utils/telegramTma.ts';
 
+import {
+  detectInitialLanguage,
+  persistLanguageSelection,
+  tr,
+} from '../utils/i18n.ts';
+
 export type AppRoute =
   | 'lobby'
   | 'play'
@@ -103,6 +109,8 @@ export type AppRoute =
   | 'withdraw'
   | 'my-tickets'
   | 'user-panel'
+  | 'winners'
+  | 'how-it-works'
   | 'status'
   | 'transparency'
   | 'cockpit'
@@ -239,6 +247,8 @@ export interface ReferralEventItem {
 export interface TelegramBotAlertConfig {
   botToken: string;
   adminChatId: string;
+  botUsername?: string;
+  officialChannelUrl?: string;
   enabled: boolean;
   notifyOnDeposit?: boolean;
   notifyOnWithdrawal?: boolean;
@@ -368,10 +378,14 @@ interface LotteryContextType {
     minesCount?: number;
     minesRevealedSafeCount?: number;
     minesHitBomb?: boolean;
+    selectedTiles?: number[];
     towerDifficulty?: TowerDifficulty;
     towerFloorsCleared?: number;
     towerHitTrap?: boolean;
+    selectedColumns?: number[];
     wheelRisk?: 'LOW' | 'MEDIUM' | 'HIGH';
+    hiloChoice?: 'HIGHER' | 'LOWER' | 'SAME';
+    hiloBaseCard?: number;
     hiloMultiplier?: number;
     hiloWon?: boolean;
     hiloSummaryLabel?: string;
@@ -384,6 +398,54 @@ interface LotteryContextType {
     debitTransactionUuid?: string;
     tonBalance: number;
     starsBalance: number;
+  }>;
+  startGameSession: (params: {
+    gameId: 'MINES' | 'TOWER_3D';
+    betAmountUsdt: number;
+    minesCount?: number;
+    towerDifficulty?: TowerDifficulty;
+  }) => Promise<{
+    ok: boolean;
+    error?: string;
+    session?: any;
+    debitTransactionUuid?: string;
+    tonBalance: number;
+    starsBalance: number;
+  }>;
+  revealGameSessionStep: (params: {
+    tileIndex?: number;
+    colIndex?: number;
+  }) => Promise<{
+    ok: boolean;
+    error?: string;
+    status?: 'SAFE_GEM' | 'BOMB_HIT' | 'SAFE_STEP' | 'TRAP_HIT' | 'AUTO_CASHED_OUT';
+    hitBomb?: boolean;
+    hitTrap?: boolean;
+    explodedTile?: number;
+    explodedFloor?: number;
+    mineIndices?: number[];
+    revealedTiles?: number[];
+    trapColumnsPerFloor?: number[];
+    selectedColumns?: number[];
+    clearedFloors?: number;
+    currentMultiplier?: number;
+    nextMultiplier?: number;
+    payoutUsdt?: number;
+    evaluation?: MiniGameEvaluationResult;
+    debitTransactionUuid?: string;
+  }>;
+  cashoutGameSession: () => Promise<{
+    ok: boolean;
+    error?: string;
+    status?: 'CASHED_OUT';
+    mineIndices?: number[];
+    revealedTiles?: number[];
+    trapColumnsPerFloor?: number[];
+    selectedColumns?: number[];
+    multiplier?: number;
+    payoutUsdt?: number;
+    evaluation?: MiniGameEvaluationResult;
+    debitTransactionUuid?: string;
   }>;
   // Telegram Mini App (TMA) Dual-Currency, Quests & Admin ID Lock
   activeTmaCurrency: ActiveTmaCurrency;
@@ -616,6 +678,8 @@ const resolveInitialRoute = (): AppRoute => {
   if (path.startsWith('/wallet')) return 'wallet';
   if (path.startsWith('/mini-games') || path.startsWith('/instant')) return 'mini-games';
   if (path.startsWith('/user-panel') || path.startsWith('/profile')) return 'user-panel';
+  if (path.startsWith('/winners')) return 'winners';
+  if (path.startsWith('/how-it-works') || path.startsWith('/guide')) return 'how-it-works';
   if (path.startsWith('/terms') || path.startsWith('/rules')) return 'terms';
   if (path === '/admin' || path.startsWith('/404')) return '404';
   if (path.startsWith('/transparency') || path.startsWith('/verifier')) return 'transparency';
@@ -637,6 +701,8 @@ const ROUTE_TO_PATH: Record<AppRoute, string> = {
   withdraw: '/withdraw',
   'my-tickets': '/my-tickets',
   'user-panel': '/user-panel',
+  winners: '/winners',
+  'how-it-works': '/how-it-works',
   status: '/status/tx',
   transparency: '/transparency',
   cockpit: '/ops-k82-cockpit',
@@ -701,8 +767,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const [activeRoute, setActiveRoute] = useState<AppRoute>(resolveInitialRoute);
   const [stealthCookieAuthorized, setStealthCookieAuthorized] = useState<boolean>(false);
-  const [lang, setLangState] = useState<CurrencyLang>('FA');
+  const [lang, setLangState] = useState<CurrencyLang>(detectInitialLanguage);
   const [walletDrawerOpen, setWalletDrawerOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    persistLanguageSelection(lang);
+  }, [lang]);
 
   // Local PAM Seamless Wallet Engine Fallback & IndexedDB Synchronizer (Zero-Balance Clean Init)
   const localPamEngineRef = useRef<PAMSeamlessWalletEngine>(
@@ -932,10 +1002,17 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   ): { ok: boolean; message: string } => {
     const existingQuest = tmaQuests.find((q) => q.id === questId);
     if (existingQuest?.claimed) {
-      return { ok: false, message: 'ℹ️ این ماموریت قبلاً دریافت شده است.' };
+      return {
+        ok: false,
+        message: tr(
+          lang,
+          'ℹ️ این ماموریت قبلاً دریافت شده است.',
+          'ℹ️ This quest reward has already been claimed.'
+        ),
+      };
     }
 
-    // Trigger real server-authoritative quest verification (/api/quests/verify) which checks getChatMember for channel quests
+    // Trigger real server-authoritative quest verification & claim (/api/quests/claim)
     (async () => {
       try {
         const headers: Record<string, string> = {
@@ -946,7 +1023,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
               : '',
           'X-Telegram-User-Id': String(telegramUser.id),
         };
-        const res = await fetch('/api/quests/verify', {
+        const res = await fetch('/api/quests/claim', {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -961,8 +1038,18 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           if (typeof data.freePlinkoDrops === 'number') setFreePlinkoDrops(data.freePlinkoDrops);
           if (typeof data.freeScratchCards === 'number') setFreeScratchCards(data.freeScratchCards);
           if (typeof data.freeLotteryTickets === 'number') setFreeLotteryTickets(data.freeLotteryTickets);
-          if (Array.isArray(data.tickets)) setTickets(data.tickets);
-          if (Array.isArray(data.completedQuests)) {
+          if (data.bonusTicketAwarded) {
+            setTickets((prev) => [data.bonusTicketAwarded, ...prev]);
+          }
+          if (Array.isArray(data.quests)) {
+            setTmaQuests(data.quests);
+            try {
+              localStorage.setItem(
+                getScopedStorageKey(telegramUser.id, 'luckydrop_tma_quests_v3'),
+                JSON.stringify(data.quests)
+              );
+            } catch {}
+          } else if (Array.isArray(data.completedQuests)) {
             setTmaQuests((prev) => {
               const next = prev.map((q) =>
                 data.completedQuests.includes(q.id)
@@ -986,16 +1073,24 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     })();
 
-    if (questId === 'JOIN_OFFICIAL_CHANNEL') {
+    if (questId === 'JOIN_TELEGRAM_CHANNEL') {
       return {
         ok: true,
-        message: '🔍 درخواست بررسی عضویت در کانال رسمی تلگرام به سرور ارسال شد (در صورت تایید عضویت، پاداش اعمال می‌شود).',
+        message: tr(
+          lang,
+          '🔍 درخواست بررسی عضویت در کانال رسمی تلگرام به سرور ارسال شد (در صورت تایید عضویت، پاداش اعمال می‌شود).',
+          '🔍 Channel membership verification sent to server (reward credits once confirmed).'
+        ),
       };
     }
 
     return {
       ok: true,
-      message: '✅ درخواست تایید ماموریت به سرور ارسال شد.',
+      message: tr(
+        lang,
+        '✅ ماموریت در سرور ثبت و پاداش به حساب شما افزوده شد!',
+        '✅ Quest verified on server and reward credited to your account!'
+      ),
     };
   };
 
@@ -1044,6 +1139,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [telegramBotConfig, setTelegramBotConfig] = useState<TelegramBotAlertConfig>({
     botToken: '',
     adminChatId: '',
+    botUsername: 'LuckyDrop_TON_Bot',
+    officialChannelUrl: 'https://t.me/LuckyDrop_TON_Official',
     enabled: true,
     notifyOnDeposit: true,
     notifyOnWithdrawal: true,
@@ -1059,7 +1156,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Multi-Lottery Concurrent State & Dynamic Active Round Selection
   const [activeLotteryId, setActiveLotteryIdState] = useState<LotteryTypeId>('MEGA_WEEKLY');
-  const [activeRoundCode, setActiveRoundCodeState] = useState<string>('#ZRN-8493');
+  const [activeRoundCode, setActiveRoundCodeState] = useState<string>('#LDR-8493');
   const [autoWithdrawLimitTon, setAutoWithdrawLimitTonState] = useState<number>(50);
   const [lotteryTimers, setLotteryTimers] = useState<Record<LotteryTypeId, number>>(() => ({
     MEGA_WEEKLY: MULTI_LOTTERY_SPECS[0].initialCountdownSec,
@@ -1785,9 +1882,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const setLang = (nextLang: CurrencyLang) => {
+    HapticEngine.selectionChanged();
     setLangState(nextLang);
-    document.documentElement.dir = nextLang === 'FA' ? 'rtl' : 'ltr';
-    document.documentElement.lang = nextLang === 'FA' ? 'fa' : nextLang === 'ZH' ? 'zh' : 'en';
+    persistLanguageSelection(nextLang);
   };
 
   const navigateTo = (target: AppRoute | 'admin_unauthorized') => {
@@ -1977,7 +2074,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           id: Date.now(),
           ticketCode,
           userUid: localPamEngineRef.current.getState().playerId,
-          roundCode: '#ZRN-8493',
+          roundCode: '#LDR-8493',
           mainNumbers: JSON.stringify([5, 12, 23, 34, 48]),
           goldenBall: 5,
           costUsdt: '0.00',
@@ -2152,10 +2249,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     minesCount?: number;
     minesRevealedSafeCount?: number;
     minesHitBomb?: boolean;
+    selectedTiles?: number[];
     towerDifficulty?: TowerDifficulty;
     towerFloorsCleared?: number;
     towerHitTrap?: boolean;
+    selectedColumns?: number[];
     wheelRisk?: 'LOW' | 'MEDIUM' | 'HIGH';
+    hiloChoice?: 'HIGHER' | 'LOWER' | 'SAME';
+    hiloBaseCard?: number;
     hiloMultiplier?: number;
     hiloWon?: boolean;
     hiloSummaryLabel?: string;
@@ -2239,9 +2340,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           plinkoRisk: params.plinkoRisk,
           minesCount: params.minesCount,
           minesRevealedSafeCount: params.minesRevealedSafeCount,
+          selectedTiles: params.selectedTiles,
           towerDifficulty: params.towerDifficulty,
           towerFloorsCleared: params.towerFloorsCleared,
+          selectedColumns: params.selectedColumns,
           wheelRisk: params.wheelRisk,
+          hiloChoice: params.hiloChoice,
+          hiloBaseCard: params.hiloBaseCard,
+          hiloSummaryLabel: params.hiloSummaryLabel,
         }),
       });
       const data = await res.json();
@@ -2308,6 +2414,121 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         error: err?.message || 'خطا در ارتباط با سرور RNG (/api/pam/mini-game/play)',
         tonBalance,
         starsBalance,
+      };
+    }
+  };
+
+  const startGameSession = async (params: {
+    gameId: 'MINES' | 'TOWER_3D';
+    betAmountUsdt: number;
+    minesCount?: number;
+    towerDifficulty?: TowerDifficulty;
+  }) => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/games/session/start', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          gameId: params.gameId,
+          currency: activeTmaCurrency,
+          betAmountUsdt: Number(params.betAmountUsdt.toFixed(4)),
+          minesCount: params.minesCount,
+          towerDifficulty: params.towerDifficulty,
+          transaction_uuid: generateDeterministicUuid('sess_debit'),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.pamState) {
+          syncPamStateEverywhere(data.pamState);
+        }
+        if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+        if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
+        return {
+          ok: true,
+          session: data.session,
+          debitTransactionUuid: data.debitTransactionUuid,
+          tonBalance: data.tonBalance ?? tonBalance,
+          starsBalance: data.starsBalance ?? starsBalance,
+        };
+      }
+      return {
+        ok: false,
+        error: data.error || 'خطا در شروع نشست بازی در سرور',
+        tonBalance: data.tonBalance ?? tonBalance,
+        starsBalance: data.starsBalance ?? starsBalance,
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'خطا در ارتباط با سرور (/api/games/session/start)',
+        tonBalance,
+        starsBalance,
+      };
+    }
+  };
+
+  const revealGameSessionStep = async (params: { tileIndex?: number; colIndex?: number }) => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/games/session/reveal', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.pamState) {
+          syncPamStateEverywhere(data.pamState);
+        }
+        if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+        if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
+        return {
+          ok: true,
+          ...data,
+        };
+      }
+      return {
+        ok: false,
+        error: data.error || 'خطا در بررسی انتخاب در سرور',
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'خطا در ارتباط با سرور (/api/games/session/reveal)',
+      };
+    }
+  };
+
+  const cashoutGameSession = async () => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/games/session/cashout', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.pamState) {
+          syncPamStateEverywhere(data.pamState);
+        }
+        if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+        if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
+        return {
+          ok: true,
+          ...data,
+        };
+      }
+      return {
+        ok: false,
+        error: data.error || 'خطا در تسویه جایزه در سرور',
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'خطا در ارتباط با سرور (/api/games/session/cashout)',
       };
     }
   };
@@ -2711,7 +2932,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           slipIndex: 1,
           mainNumbers: selectedMainBalls,
           goldenBall: selectedGoldenBall,
-          clientSeed: pamState.seeds.clientSeed || `zarrin-vip-${Math.random().toString(16).slice(2, 10)}`,
+          clientSeed: pamState.seeds.clientSeed || `luckydrop-vip-${Math.random().toString(16).slice(2, 10)}`,
         },
       ],
       activeLotterySpec.roundCode,
@@ -2804,7 +3025,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       syncPamStateEverywhere(localPamEngineRef.current.getState());
       const fallbackTickets: TicketItem[] = slips.map((slip, idx) => {
-        const ticketCode = `ZRN-${Math.floor(100000 + Math.random() * 900000)}`;
+        const ticketCode = `LDR-${Math.floor(100000 + Math.random() * 900000)}`;
         const txHash = `0x${sha256Hex(`${txUuid}:${ticketCode}:${idx}`)}`;
         return {
           id: Date.now() + idx,
@@ -3153,7 +3374,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch {
       // Local fallback if offline
     }
-    const fallbackCode = `#ZRN-${Math.floor(1000 + Math.random() * 9000)}`;
+    const fallbackCode = `#LDR-${Math.floor(1000 + Math.random() * 9000)}`;
     const newSeed = generateCryptographicServerSeed();
     const poolSplit = calculateDynamicPariMutuelPool(seedUsdt, 15);
     const mCount = input.mainCount || 5;
@@ -3814,6 +4035,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateProvablyFairClientSeed,
         rotateProvablyFairServerSeed,
         playInstantMiniGame,
+        startGameSession,
+        revealGameSessionStep,
+        cashoutGameSession,
         activeTmaCurrency,
         setActiveTmaCurrency,
         tonBalance,

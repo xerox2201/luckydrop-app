@@ -96,7 +96,7 @@ export function saveLocalState(state: PersistentLocalState, userId?: string | nu
   }
 }
 
-export const SUPABASE_SQL_SCHEMA_DDL = `-- LuckyDrop (زرین لاتاری VIP) — Supabase Production Schema & RLS
+export const SUPABASE_SQL_SCHEMA_DDL = `-- LuckyDrop Web3 TMA VIP — Supabase Production Schema & RLS
 CREATE TABLE IF NOT EXISTS public.users (
   id BIGSERIAL PRIMARY KEY,
   uid TEXT NOT NULL UNIQUE,

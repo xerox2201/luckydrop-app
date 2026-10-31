@@ -8,9 +8,20 @@ import {
   verifyAndRecordDepositIdempotency,
   computeServerAuthoritativeGameOutcome,
   SlidingWindowRateLimiter,
+  normalizeTonAddressToRaw,
+  parseAndValidateTonBoc,
+  verifyOnChainTonTransaction,
   type IsolatedUserAccountRecord,
 } from './securityGuard.ts';
 import { PAMSeamlessWalletEngine } from './pamWalletEngine.ts';
+import { DEFAULT_FX_RATES } from '../utils/lotteryEngine.ts';
+import { DEFAULT_TON_USD_RATE } from '../utils/telegramTma.ts';
+import {
+  WHEEL_SEGMENTS_16,
+  calculateTowerStepMultiplier,
+  deriveProvablyFairMinesBoard,
+  deriveProvablyFairTowerBoard,
+} from '../utils/provablyFair.ts';
 
 test('1. Strict Per-User Account Isolation: new user starts with 100% clean zero state', () => {
   const userA = createCleanZeroUserProfile({
@@ -121,6 +132,8 @@ test('5. Server-Authoritative Game RNG ignores client-spoofed outcomes and multi
     serverSeed: fixedSeed,
     clientSeed: 'player_seed',
     nonce: 1,
+    hiloChoice: 'HIGHER',
+    hiloBaseCard: 7,
     // Spoofed fields sent by an attacker:
     hiloWon: true,
     hiloMultiplier: 999999,
@@ -129,7 +142,7 @@ test('5. Server-Authoritative Game RNG ignores client-spoofed outcomes and multi
     payoutUsdt: 9999990,
   });
 
-  assert.ok(result.multiplier <= 2.45, 'Server must ignore spoofed 999999x multiplier');
+  assert.ok(result.multiplier <= 12.74, 'Server must ignore spoofed 999999x multiplier');
   assert.equal(result.serverHmacVerified.length, 64);
 });
 
@@ -185,3 +198,196 @@ test('7. Sliding-Window Rate Limiter blocks burst spam with Retry-After', () => 
   assert.equal(blocked.allowed, false);
   assert.ok(blocked.retryAfterSec >= 1);
 });
+
+test('8. On-Chain TON Deposit Verifier rejects fake BOC strings, mismatched destination, and insufficient nanoTON', async () => {
+  const treasuryFriendly = 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ';
+  const treasuryRaw = '0:0000000000000000000000000000000000000000000000000000000000000000';
+
+  assert.equal(normalizeTonAddressToRaw(treasuryFriendly), treasuryRaw);
+  assert.equal(normalizeTonAddressToRaw(treasuryRaw), treasuryRaw);
+  assert.equal(normalizeTonAddressToRaw('UQ_INVALID_ADDRESS'), null);
+
+  // Fake non-empty BOC string must fail binary BOC validation
+  const fakeBocCheck = parseAndValidateTonBoc('boc_fake_non_empty_string_1234567890');
+  assert.equal(fakeBocCheck.valid, false);
+
+  const fakeDepositAttempt = await verifyOnChainTonTransaction({
+    boc: 'boc_fake_non_empty_string_1234567890',
+    expectedDestinationWallet: treasuryFriendly,
+    expectedAmountTon: 5,
+  });
+  assert.equal(fakeDepositAttempt.verified, false);
+  assert.equal(fakeDepositAttempt.status, 400);
+
+  const validTxHash = 'a'.repeat(64);
+
+  // Mismatched destination wallet on-chain must be rejected
+  const wrongDestAttempt = await verifyOnChainTonTransaction({
+    txHash: validTxHash,
+    expectedDestinationWallet: treasuryFriendly,
+    expectedAmountTon: 5,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          hash: validTxHash,
+          success: true,
+          aborted: false,
+          in_msg: {
+            destination: { address: '0:' + 'f'.repeat(64) },
+            source: { address: '0:' + '1'.repeat(64) },
+            value: '5000000000',
+          },
+          out_msgs: [],
+        }),
+        { status: 200 }
+      ),
+  });
+  assert.equal(wrongDestAttempt.verified, false);
+  assert.ok(String(wrongDestAttempt.error || '').includes('DESTINATION_ADDRESS_MISMATCH'));
+
+  // Insufficient nanoTON amount on-chain (e.g. sent 0.5 TON but claimed 5 TON) must be rejected
+  const underpaidAttempt = await verifyOnChainTonTransaction({
+    txHash: validTxHash,
+    expectedDestinationWallet: treasuryFriendly,
+    expectedAmountTon: 5,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          hash: validTxHash,
+          success: true,
+          aborted: false,
+          in_msg: {
+            destination: { address: treasuryRaw },
+            source: { address: '0:' + '1'.repeat(64) },
+            value: '500000000', // 0.5 TON in nanoTON instead of 5 TON (5_000_000_000)
+          },
+          out_msgs: [],
+        }),
+        { status: 200 }
+      ),
+  });
+  assert.equal(underpaidAttempt.verified, false);
+  assert.ok(String(underpaidAttempt.error || '').includes('NANOTON_AMOUNT_MISMATCH'));
+
+  // Authentic on-chain transaction matching destination and exact nanoTON value succeeds
+  const validOnChainAttempt = await verifyOnChainTonTransaction({
+    txHash: validTxHash,
+    expectedDestinationWallet: treasuryFriendly,
+    expectedAmountTon: 5,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          hash: validTxHash,
+          success: true,
+          aborted: false,
+          in_msg: {
+            destination: { address: treasuryRaw },
+            source: { address: '0:' + '2'.repeat(64) },
+            value: '5000000000', // 5.000000000 TON
+          },
+          out_msgs: [],
+        }),
+        { status: 200 }
+      ),
+  });
+  assert.equal(validOnChainAttempt.verified, true);
+  assert.equal(validOnChainAttempt.status, 200);
+  assert.equal(validOnChainAttempt.verifiedNanoTon, '5000000000');
+  assert.equal(validOnChainAttempt.verifiedAmountTon, 5);
+});
+
+test('9. Phase 1 RTP Math Calibration: Wheel 3D (98%), Tower HARD (98%), Unified TON=5.0', () => {
+  assert.equal(DEFAULT_TON_USD_RATE, 5.0);
+  assert.equal(DEFAULT_FX_RATES.TON, 5.0);
+
+  for (const risk of ['LOW', 'MEDIUM', 'HIGH'] as const) {
+    const segments = WHEEL_SEGMENTS_16[risk];
+    assert.equal(segments.length, 16);
+    const sum = Number(segments.reduce((acc, v) => acc + v, 0).toFixed(2));
+    assert.equal(sum, 15.68, `Wheel 3D ${risk} must sum to 15.68 (98.0% RTP)`);
+  }
+
+  // Tower HARD: 2 columns (1 safe, 1 trap) -> stepRatio = 2 -> 2^1 * 0.98 = 1.96x
+  assert.equal(calculateTowerStepMultiplier('HARD', 1), 1.96);
+  assert.equal(calculateTowerStepMultiplier('HARD', 2), 3.92);
+});
+
+test('10. Deterministic Mines & Tower Sequence Verification blocks bomb/trap picks from paying out', () => {
+  const serverSeed = 'b1c2d3e4f5a60718293a4b5c6d7e8f90b1c2d3e4f5a60718293a4b5c6d7e8f90';
+  const clientSeed = 'audit_player';
+  const nonce = 42;
+
+  const minesBoard = deriveProvablyFairMinesBoard({
+    serverSeed,
+    clientSeed,
+    nonce,
+    minesCount: 5,
+  });
+  const bombIndex = minesBoard.mineIndices[0];
+  const safeIndices = Array.from({ length: 25 }, (_, i) => i).filter(
+    (i) => !minesBoard.mineIndices.includes(i)
+  );
+
+  // Attempting to claim cashout with a bomb tile in selectedTiles must result in 0 payout
+  const bombAttempt = computeServerAuthoritativeGameOutcome({
+    gameId: 'MINES',
+    betAmountUsdt: 10,
+    serverSeed,
+    clientSeed,
+    nonce,
+    minesCount: 5,
+    selectedTiles: [safeIndices[0], bombIndex],
+  });
+  assert.equal(bombAttempt.won, false);
+  assert.equal(bombAttempt.payoutUsdt, 0);
+
+  // Valid safe tiles sequence succeeds
+  const safeAttempt = computeServerAuthoritativeGameOutcome({
+    gameId: 'MINES',
+    betAmountUsdt: 10,
+    serverSeed,
+    clientSeed,
+    nonce,
+    minesCount: 5,
+    selectedTiles: [safeIndices[0], safeIndices[1]],
+  });
+  assert.equal(safeAttempt.won, true);
+  assert.ok(safeAttempt.payoutUsdt > 10);
+
+  // Tower HARD deterministic column check
+  const towerBoard = deriveProvablyFairTowerBoard({
+    serverSeed,
+    clientSeed,
+    nonce,
+    difficulty: 'HARD',
+  });
+  const floor0TrapCol = towerBoard.trapColumnsPerFloor[0];
+  const floor0SafeCol = floor0TrapCol === 0 ? 1 : 0;
+
+  const towerTrapAttempt = computeServerAuthoritativeGameOutcome({
+    gameId: 'TOWER_3D',
+    betAmountUsdt: 10,
+    serverSeed,
+    clientSeed,
+    nonce,
+    towerDifficulty: 'HARD',
+    selectedColumns: [floor0TrapCol],
+  });
+  assert.equal(towerTrapAttempt.won, false);
+  assert.equal(towerTrapAttempt.payoutUsdt, 0);
+
+  const towerSafeAttempt = computeServerAuthoritativeGameOutcome({
+    gameId: 'TOWER_3D',
+    betAmountUsdt: 10,
+    serverSeed,
+    clientSeed,
+    nonce,
+    towerDifficulty: 'HARD',
+    selectedColumns: [floor0SafeCol],
+  });
+  assert.equal(towerSafeAttempt.won, true);
+  assert.equal(towerSafeAttempt.multiplier, 1.96);
+  assert.equal(towerSafeAttempt.payoutUsdt, 19.6);
+});
+
+

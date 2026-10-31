@@ -1,66 +1,80 @@
 import React, { useState } from 'react';
-import { useLottery } from '../context/LotteryContext.tsx';
 import {
-  convertUsdtToCrypto,
-  getCnyToTomanRate,
-  toPersianDigits,
-  evaluateZeroLossLoyaltyChest,
-} from '../utils/lotteryEngine.ts';
-import { LUXURY_IMAGES, PageHeroBanner } from './PageHeroBanner.tsx';
+  User,
+  Wallet,
+  ShieldCheck,
+  Sparkles,
+  Copy,
+  CheckCircle2,
+  Ticket,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Send,
+  Link2,
+  Users,
+  Gift,
+  Coins,
+  ArrowLeft,
+} from 'lucide-react';
+import { useLottery } from '../context/LotteryContext';
+import { evaluateZeroLossLoyaltyChest } from '../utils/lotteryEngine';
+import { HapticEngine } from '../utils/telegramTma';
+import { tr } from '../utils/i18n';
 
 export const UserPanelView: React.FC = () => {
   const {
+    lang,
+    navigateTo,
+    telegramUser,
     displayName,
     vipTier,
+    tonBalance,
+    starsBalance,
     balanceUsdt,
-    fxRates,
     formatAmount,
+    formatCurrency,
     tickets,
     withdrawals,
-    claimedTicketCodes,
-    claimTicketPrize,
-    navigateTo,
-    setDepositModalOpen,
-    firebaseUser,
-    signInWithGoogle,
-    signOutUser,
-    stealthCookieAuthorized,
-    setStealthCookieAuthorized,
-    connectedWeb3Wallet,
-    connectedWalletProvider,
-    connectWeb3Wallet,
-    disconnectWeb3Wallet,
+    deposits,
+    connectedTonWallet,
+    connectTonWalletOneTap,
+    disconnectTonWallet,
     telegramUsername,
-    connectTelegramAccount,
     referralCode,
     referredByCode,
     applyReferralCode,
-    generateAndSaveReferralLink,
     claimReferralEarningsToWallet,
-    simulateReferredTicketPurchase,
     referralEarningsTon,
     referredTicketsCount,
     referralEvents,
     rolloverReservePoolUsdt,
     chestsClaimedCount,
     openLoyaltyChest,
-    setViralCardTicket,
-    firestoreConnected,
-    isTelegramAdmin,
+    telegramBotConfig,
   } = useLottery();
 
-  const [securityBanner, setSecurityBanner] = useState<string | null>(null);
-  const [claimingCode, setClaimingCode] = useState<string | null>(null);
-  const [openingChest, setOpeningChest] = useState<boolean>(false);
-  const [telegramInput, setTelegramInput] = useState<string>(telegramUsername || '@Kamran_VIP777');
-  const [referrerInput, setReferrerInput] = useState<string>(referredByCode || '');
-  const [customAliasInput, setCustomAliasInput] = useState<string>('KAMRAN');
-  const [copiedRef, setCopiedRef] = useState<boolean>(false);
+  const [referralInput, setReferralInput] = useState(referredByCode || '');
+  const [statusToast, setStatusToast] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const cryptoEq = convertUsdtToCrypto(balanceUsdt, fxRates);
-  const cnyToman = getCnyToTomanRate(fxRates);
-  const totalWonUsdt = tickets.reduce((acc, t) => acc + (parseFloat(t.prizeWonUsdt) || 0), 0);
-  const totalSpentUsdt = tickets.reduce((acc, t) => acc + (parseFloat(t.costUsdt) || 5), 0);
+  const showToast = (msg: string) => {
+    setStatusToast(msg);
+    setTimeout(() => setStatusToast(null), 4000);
+  };
+
+  const handleCopy = (key: string, text: string) => {
+    HapticEngine.impactOccurred('light');
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const botUsernameClean = (
+    telegramBotConfig?.botUsername || 'LuckyDrop_TON_Bot'
+  ).replace(/^@/, '');
+  const myReferralShareUrl = `https://t.me/${botUsernameClean}/app?startapp=ref_${telegramUser.id}`;
+
+  const totalSpentUsdt = tickets.reduce((s, t) => s + (parseFloat(t.costUsdt) || 0), 0);
   const chestReport = evaluateZeroLossLoyaltyChest({
     totalTicketsPurchased: tickets.length,
     totalSpentUsdt,
@@ -68,853 +82,354 @@ export const UserPanelView: React.FC = () => {
     availableRolloverReservePoolUsdt: rolloverReservePoolUsdt,
     ticketsPerChest: 3,
   });
-  const referralInviteUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://luckydrop.vip'}/?ref=${referralCode}`;
-
-  const handleQuickClaim = async (ticketCode: string, prizeUsdt: number, net: string) => {
-    setClaimingCode(ticketCode);
-    await claimTicketPrize(ticketCode, prizeUsdt, net);
-    setClaimingCode(null);
-    setSecurityBanner(
-      `🎉 جایزه کوپن ${ticketCode} به مبلغ $${prizeUsdt.toLocaleString('en-US')} USDT به صورت آنی به کیف پول شما واریز شد!`
-    );
-  };
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 lg:px-8 py-7 space-y-8 pb-24 lg:pb-14">
-      {/* 1. GRAPHICAL VIP USER PANEL HERO BANNER */}
-      <PageHeroBanner
-        badgeFa="پنل کاربری اختصاصی و مدیریت دارایی • VIP SOVEREIGN ACCOUNT"
-        titleFa={`خوش آمدید، ${firebaseUser?.displayName || displayName}`}
-        subtitleFa="مدیریت یکپارچه کیف پول چندارزی، پیگیری بلیت‌های فعال، دریافت آنی جوایز، تنظیمات امنیتی ۲ مرحله‌ای و درگاه امن اپراتور ارشد."
-        imageUrl={LUXURY_IMAGES.vaultHero}
-        rightContent={
-          <div className="luxury-marble-card rounded-3xl p-5 flex items-center gap-4 border border-amber-400/50 min-w-[290px]">
-            <img
-              src={LUXURY_IMAGES.vipAvatar}
-              alt="VIP Avatar"
-              referrerPolicy="no-referrer"
-              className="w-16 h-16 rounded-2xl object-cover border-2 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.45)]"
-            />
-            <div className="space-y-1">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-black">
-                👑 {vipTier}
-              </span>
-              <div className="text-lg font-black text-white">سطح طلایی VIP (۸۶٪)</div>
-              <div className="text-xs text-emerald-400 font-bold">۵٪ کش‌بک آنی خرید دسته‌ای</div>
-            </div>
-          </div>
-        }
-      />
-
-      {securityBanner && (
-        <div
-          data-testid="user-panel-banner"
-          className="p-4 rounded-2xl bg-emerald-500/20 border border-emerald-400 text-emerald-100 text-sm font-bold flex items-center justify-between gap-4 shadow-lg"
+    <main
+      data-testid="user-panel-view"
+      className="w-full max-w-[440px] mx-auto px-3 pt-2 pb-24 space-y-3.5 select-none"
+    >
+      {/* Sticky Back Header */}
+      <div className="flex items-center justify-between p-2.5 rounded-2xl bg-[#110C22]/90 border border-white/10 backdrop-blur-xl">
+        <button
+          type="button"
+          data-testid="back-to-lobby-from-profile"
+          onClick={() => {
+            HapticEngine.selectionChanged();
+            navigateTo('lobby');
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-bold text-slate-200 cursor-pointer"
         >
-          <span>{securityBanner}</span>
-          <button
-            type="button"
-            onClick={() => setSecurityBanner(null)}
-            className="text-xs text-emerald-300 underline cursor-pointer shrink-0"
-          >
-            بستن
-          </button>
+          <ArrowLeft className="w-3.5 h-3.5" />
+          {tr(lang, 'بازگشت به لابی', 'Back to Lobby')}
+        </button>
+        <div className="flex items-center gap-1.5">
+          <User className="w-4 h-4 text-[#FFE066]" />
+          <span className="text-xs font-black text-white">
+            {tr(lang, 'پروفایل VIP و صندوقچه وفاداری', 'VIP Profile & Loyalty Chest')}
+          </span>
+        </div>
+      </div>
+
+      {statusToast && (
+        <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 text-xs font-bold text-center">
+          {statusToast}
         </div>
       )}
 
-      {/* 2. MULTI-CURRENCY WALLET PORTFOLIO & QUICK ACTIONS */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        {/* Main Balance & Live Conversions Card */}
-        <div className="lg:col-span-7 luxury-marble-card rounded-3xl p-6 sm:p-7 relative overflow-hidden flex flex-col justify-between space-y-6">
-          <img
-            src={LUXURY_IMAGES.goldCoins}
-            alt=""
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            className="absolute inset-0 w-full h-full object-cover opacity-15 pointer-events-none"
-          />
-          <div className="relative z-10 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
-                  <span className="material-symbols-outlined text-2xl">account_balance_wallet</span>
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-amber-300 block">
-                    موجودی قابل برداشت کیف پول (Live Multi-Currency Wallet)
-                  </span>
-                  <h2 className="text-xl sm:text-2xl font-black text-white">
-                    خزانه شخصی و معادل لحظه‌ای ارزها
-                  </h2>
-                </div>
-              </div>
-              <span className="px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-mono font-bold">
-                ● متصل به اوراکل ۱۵ ثانیه‌ای
-              </span>
+      {/* 1. USER PROFILE & BALANCE CARD */}
+      <section className="rounded-3xl p-4 bg-gradient-to-br from-[#16102C] via-[#0E091E] to-[#080512] border border-[#FFD700]/30 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FFE066] to-[#B8860B] flex items-center justify-center text-slate-950 font-black text-base shrink-0">
+              {displayName ? displayName.slice(0, 1).toUpperCase() : 'V'}
             </div>
-
-            {/* Primary Balance Readout */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#080b12]/90 border border-amber-500/30 rounded-2xl p-5">
-              <div>
-                <span className="text-xs font-bold text-slate-300 block">موجودی پایه تتر (USDT):</span>
-                <div
-                  data-testid="user-panel-balance-usdt"
-                  className="text-3xl sm:text-4xl font-black text-amber-300 font-mono mt-1"
-                  dir="ltr"
-                >
-                  ${balanceUsdt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </div>
-                <span className="text-xs text-emerald-400 font-bold mt-1 block">
-                  انتخاب فعلی شما: {formatAmount(balanceUsdt)}
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-black text-white truncate">{displayName}</span>
+                <span className="px-2 py-0.5 rounded-full bg-[#FFD700]/15 border border-[#FFD700]/40 text-[9px] font-mono font-black text-[#FFE066]">
+                  {vipTier}
                 </span>
               </div>
-              <div className="space-y-1.5 border-t sm:border-t-0 sm:border-r border-white/10 pt-3 sm:pt-0 sm:pr-4 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300">معادل دقیق تومانی:</span>
-                  <strong className="font-mono font-black text-white">
-                    {toPersianDigits(cryptoEq.toman.toLocaleString('en-US'))} تومان
-                  </strong>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300">معادل یوآن چین (CNY):</span>
-                  <strong className="font-mono font-black text-emerald-300" dir="ltr">
-                    ¥{(balanceUsdt * fxRates.CNY).toLocaleString('en-US', { maximumFractionDigits: 1 })}
-                  </strong>
-                </div>
-                <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                  <span>نرخ ۱ یوآن به تومان:</span>
-                  <span className="font-mono text-amber-300">
-                    {toPersianDigits(cnyToman.toLocaleString('en-US'))} تومان
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 4 Crypto Equivalent Mini Boxes */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" dir="ltr">
-              {[
-                { label: 'TON Network', val: `${cryptoEq.ton} TON`, color: 'text-sky-300' },
-                { label: 'TRON (TRX)', val: `${cryptoEq.trx} TRX`, color: 'text-rose-300' },
-                { label: 'Bitcoin (BTC)', val: `${cryptoEq.btc} BTC`, color: 'text-amber-300' },
-                {
-                  label: 'BNB (BEP-20)',
-                  val: `${(balanceUsdt / (fxRates.BNB || 610)).toFixed(3)} BNB`,
-                  color: 'text-yellow-300',
-                },
-              ].map((c) => (
-                <div
-                  key={c.label}
-                  className="bg-[#090d16]/90 border border-white/10 rounded-2xl p-3 text-center"
-                >
-                  <span className="text-[11px] font-bold text-slate-400 block">{c.label}</span>
-                  <strong className={`text-sm font-black font-mono mt-1 block ${c.color}`}>
-                    {c.val}
-                  </strong>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setDepositModalOpen(true)}
-              className="py-3.5 px-4 rounded-2xl emerald-gradient-cta font-black text-sm flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 transition-all"
-            >
-              <span className="material-symbols-outlined text-lg">add_card</span>
-              <span>شارژ آنی کیف پول</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateTo('withdraw')}
-              className="py-3.5 px-4 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 font-black text-sm flex items-center justify-center gap-2 cursor-pointer transition-all"
-            >
-              <span className="material-symbols-outlined text-lg">payments</span>
-              <span>برداشت آنی رمزارز</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateTo('play')}
-              className="py-3.5 px-4 rounded-2xl gold-gradient-cta font-black text-sm flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 transition-all"
-            >
-              <span className="material-symbols-outlined text-lg">confirmation_number</span>
-              <span>خرید بلیت جدید</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Right 5 Cols: VIP Stats & Account Security Summary */}
-        <div className="lg:col-span-5 luxury-marble-card rounded-3xl p-6 sm:p-7 flex flex-col justify-between space-y-5">
-          <div className="space-y-4">
-            <h3 className="text-lg sm:text-xl font-black text-white border-b border-white/10 pb-3">
-              خلاصه عملکرد و امتیازات VIP شما
-            </h3>
-
-            <div className="grid grid-cols-2 gap-3.5">
-              <div className="bg-[#090d16] border border-white/10 rounded-2xl p-4">
-                <span className="text-xs text-slate-400 block">کل بلیت‌های شما</span>
-                <strong className="text-2xl font-black text-white font-mono mt-1 block">
-                  {toPersianDigits(tickets.length)} کوپن
-                </strong>
-              </div>
-              <div className="bg-[#090d16] border border-emerald-500/30 rounded-2xl p-4">
-                <span className="text-xs text-slate-400 block">مجموع جوایز برنده شده</span>
-                <strong className="text-2xl font-black text-emerald-400 font-mono mt-1 block" dir="ltr">
-                  ${totalWonUsdt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </strong>
-              </div>
-              <div className="bg-[#090d16] border border-white/10 rounded-2xl p-4">
-                <span className="text-xs text-slate-400 block">درخواست‌های برداشت</span>
-                <strong className="text-xl font-black text-amber-300 font-mono mt-1 block">
-                  {toPersianDigits(withdrawals.length)} تراکنش
-                </strong>
-              </div>
-              <div className="bg-[#090d16] border border-amber-500/30 rounded-2xl p-4">
-                <span className="text-xs text-slate-400 block">وضعیت احراز ۲ مرحله‌ای</span>
-                <strong className="text-base font-black text-emerald-400 mt-1 block">
-                  ✓ فعال (TOTP 2FA)
-                </strong>
-              </div>
-            </div>
-
-            {/* VIP Level Progress */}
-            <div className="bg-[#090d16] border border-white/10 rounded-2xl p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold">
-                <span className="text-amber-300">پیشرفت تا سطح Sovereign Royal (۱۰٪ کش‌بک):</span>
-                <span className="font-mono text-white">86%</span>
-              </div>
-              <div className="w-full h-3 rounded-full bg-black/80 border border-white/10 overflow-hidden p-0.5">
-                <div className="h-full w-[86%] rounded-full gold-gradient-cta" />
+              <div className="text-[10px] font-mono text-slate-400 mt-0.5 truncate" dir="ltr">
+                TG ID: #{telegramUser.id} • {telegramUsername}
               </div>
             </div>
           </div>
 
-          <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => (firebaseUser ? signOutUser() : signInWithGoogle())}
-              className="flex-1 py-3 px-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/15 text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-lg text-amber-300">account_circle</span>
-              <span>{firebaseUser ? 'خروج از حساب گوگل VIP' : 'اتصال حساب رسمی گوگل VIP'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigateTo('my-tickets')}
-              className="py-3 px-4 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-xs sm:text-sm font-black text-amber-300 cursor-pointer"
-            >
-              همه بلیت‌ها ←
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* 2.5 UNIFIED VIP AUTHENTICATION HUB (TELEGRAM + GOOGLE + WEB3 WALLET + CLOUD DB SYNC) */}
-      <section
-        data-testid="unified-vip-auth-hub"
-        className="luxury-marble-card rounded-3xl p-6 sm:p-8 space-y-6 border border-amber-500/35"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
-          <div>
-            <span className="text-xs font-bold text-amber-300 font-mono">
-              UNIFIED VIP IDENTITY & CLOUD PERSISTENCE ({firestoreConnected ? 'CLOUD FIRESTORE SYNCED' : 'CLOUD READY'})
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black text-white mt-0.5">
-              احراز هویت یکپارچه VIP (تلگرام + گوگل + اتصال کیف پول Web3)
-            </h2>
-            <p className="text-xs text-slate-300 mt-1">
-              اطلاعات حساب، بلیت‌ها و موجودی شما به صورت دائمی در دیتابیس ابری ذخیره شده و با اکانت تلگرام، گوگل و آدرس کیف پول شما همگام‌سازی می‌شود.
-            </p>
-          </div>
-          <span className="px-3.5 py-1.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-black self-start">
-            ✓ ذخیره‌سازی ابری دائمی فعال
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-[10px] font-black text-emerald-300 shrink-0">
+            <ShieldCheck className="w-3 h-3" />
+            {tr(lang, 'حساب تلگرام تاییدشده', 'Telegram Verified')}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Card 1: Telegram Unified Login */}
-          <div className="bg-[#090d16] border border-sky-500/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-sky-300 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-base">send</span>
-                  <span>۱. اتصال یکپارچه اکانت تلگرام</span>
-                </span>
-                <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 text-[10px] font-bold">
-                  {telegramUsername ? 'متصل' : 'آماده اتصال'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                همگام‌سازی مستقیم با مینی‌اپ تلگرام و ربات اطلاع‌رسانی آنی برنده شدن قرعه‌کشی.
-              </p>
-              <input
-                type="text"
-                dir="ltr"
-                value={telegramInput}
-                onChange={(e) => setTelegramInput(e.target.value)}
-                placeholder="@YourTelegramID"
-                className="w-full px-3 py-2 rounded-xl bg-[#111726] border border-white/15 text-xs font-mono text-sky-200"
-              />
+        {/* Real Wallet Balances */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="p-2.5 rounded-2xl bg-black/40 border border-white/10">
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'موجودی TON', 'TON Balance')}
             </div>
-            <button
-              type="button"
-              data-testid="connect-telegram-btn"
-              onClick={() => {
-                connectTelegramAccount(telegramInput);
-                setSecurityBanner(`✅ اکانت تلگرام ${telegramInput} با موفقیت به پرونده ابری VIP شما متصل شد.`);
-              }}
-              className="w-full py-2.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-black text-xs cursor-pointer transition-all"
-            >
-              {telegramUsername ? `بروزرسانی آیدی (${telegramUsername})` : 'اتصال آنی اکانت تلگرام'}
-            </button>
+            <div className="text-sm font-mono font-black text-[#00F5D4] mt-0.5" dir="ltr">
+              {formatCurrency(tonBalance, 'TON')}
+            </div>
           </div>
+          <div className="p-2.5 rounded-2xl bg-black/40 border border-white/10">
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'موجودی ستاره‌ها', 'Stars Balance')}
+            </div>
+            <div className="text-sm font-mono font-black text-[#FFE066] mt-0.5" dir="ltr">
+              {formatCurrency(starsBalance, 'STARS')}
+            </div>
+          </div>
+        </div>
 
-          {/* Card 2: Google Cloud Account */}
-          <div className="bg-[#090d16] border border-amber-500/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-base">verified_user</span>
-                  <span>۲. حساب رسمی گوگل (OAuth 2.0)</span>
-                </span>
-                <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-bold">
-                  {firebaseUser ? 'تایید شده' : 'وب / موبایل'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                پشتیبان‌گیری ابری از تمام کوپن‌ها و تاریخچه تراکنش‌ها در Firebase Cloud Firestore.
-              </p>
-              <div className="px-3 py-2 rounded-xl bg-[#111726] border border-white/10 text-xs font-mono text-slate-300 truncate" dir="ltr">
-                {firebaseUser?.email || 'VIP Sovereign Cloud Session Active'}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => (firebaseUser ? signOutUser() : signInWithGoogle())}
-              className="w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 font-black text-xs cursor-pointer transition-all"
-            >
-              {firebaseUser ? 'خروج از حساب گوگل' : 'ورود یکپارچه با گوگل (Google Sign-In)'}
-            </button>
-          </div>
-
-          {/* Card 3: Web3 Non-Custodial Wallet Connect */}
-          <div className="bg-[#090d16] border border-emerald-500/30 rounded-2xl p-5 flex flex-col justify-between space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-emerald-300 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-base">account_balance_wallet</span>
-                  <span>۳. اتصال مستقیم کیف پول Web3</span>
-                </span>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-bold">
-                  {connectedWeb3Wallet ? connectedWalletProvider : 'Multi-Chain'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                اتصال مستقیم TronLink، TON Keeper یا MetaMask برای تایید اتوماتیک واریز و برداشت آنی.
-              </p>
-              <div className="px-3 py-2 rounded-xl bg-[#111726] border border-white/10 text-xs font-mono text-emerald-300 truncate" dir="ltr">
-                {connectedWeb3Wallet || 'No Web3 Wallet Connected Yet'}
-              </div>
-            </div>
-            {connectedWeb3Wallet ? (
-              <button
-                type="button"
-                onClick={disconnectWeb3Wallet}
-                className="w-full py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 font-black text-xs cursor-pointer"
-              >
-                قطع اتصال کیف پول ({connectedWalletProvider})
-              </button>
-            ) : (
-              <div className="grid grid-cols-3 gap-1.5">
-                <button
-                  type="button"
-                  data-testid="connect-tronlink-btn"
-                  onClick={() => connectWeb3Wallet('TRONLINK')}
-                  className="py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 font-black text-[11px] cursor-pointer"
-                >
-                  TronLink
-                </button>
-                <button
-                  type="button"
-                  data-testid="connect-tonwallet-btn"
-                  onClick={() => connectWeb3Wallet('TON')}
-                  className="py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-black text-[11px] cursor-pointer"
-                >
-                  TON Wallet
-                </button>
-                <button
-                  type="button"
-                  data-testid="connect-metamask-btn"
-                  onClick={() => connectWeb3Wallet('METAMASK')}
-                  className="py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 font-black text-[11px] cursor-pointer"
-                >
-                  MetaMask
-                </button>
-              </div>
-            )}
-          </div>
+        {/* Deposit / Withdraw Quick Triggers */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => navigateTo('wallet')}
+            className="py-2.5 rounded-xl bg-[#00F5D4] text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <ArrowDownLeft className="w-4 h-4" />
+            {tr(lang, 'شارژ آنی کیف پول', 'Deposit Now')}
+          </button>
+          <button
+            onClick={() => navigateTo('wallet')}
+            className="py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <ArrowUpRight className="w-4 h-4 text-[#FFE066]" />
+            {tr(lang, 'برداشت جوایز', 'Withdraw')}
+          </button>
         </div>
       </section>
 
-      {/* 2.8 ZERO-LOSS VIP REFERRAL & AFFILIATE SYSTEM (FIRESTORE UNIQUE LINKS + 2% DEDUCTED STRICTLY FROM 10% NET LOTTERY PROFIT) */}
-      <section
-        data-testid="vip-referral-hub"
-        className="luxury-marble-card rounded-3xl p-6 sm:p-8 space-y-6 border border-emerald-500/40"
-      >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-4">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-emerald-400 font-mono">
-                FIRESTORE REFERRAL ENGINE • /referrals/{referralCode}
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/35 text-amber-300 text-[11px] font-bold">
-                کسر خودکار فقط از ۱۰٪ سود خالص لاتاری (ضرر سایت = $0.00)
-              </span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-black text-white">
-              سیستم ارجاع (Referral) یکپارچه با دیتابیس Firestore و موتور مالی ضدضرر
+      {/* 2. REAL TON CONNECT 2.0 WALLET STATUS */}
+      <section className="rounded-2xl p-3.5 bg-[#110C22]/90 border border-white/10 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Wallet className="w-4 h-4 text-[#0098EA]" />
+            <h2 className="text-xs font-black text-white">
+              {tr(lang, 'وضعیت کیف پول غیرحضانتی TON Connect', 'TON Connect 2.0 Wallet Status')}
             </h2>
-            <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
-              لینک یکتای شما در کالکشن <code>/referrals/{referralCode}</code> دیتابیس ابری Firestore ذخیره می‌شود. با هر خرید بلیت توسط زیرمجموعه، <strong>۸۵٪ استخر جایزه دست‌نخورده می‌ماند</strong> و پورسانت ۲٪ شما <strong>صرفاً و به‌صورت خودکار از محل ۱۰٪ سود خالص لاتاری کسر می‌گردد</strong> (۸٪ سود خالص قطعی برای سایت باقی می‌ماند تا سایت هرگز حتی ۱ سنت متضرر نشود).
-            </p>
           </div>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+              connectedTonWallet
+                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/30'
+                : 'bg-white/5 text-slate-400 border border-white/10'
+            }`}
+          >
+            {connectedTonWallet
+              ? tr(lang, 'متصل (Connected)', 'Connected')
+              : tr(lang, 'متصل نیست', 'Disconnected')}
+          </span>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
-            <div className="bg-[#090d16] border border-emerald-500/40 rounded-2xl px-4 py-3 text-center">
-              <span className="text-[11px] text-slate-400 block">پورسانت قابل برداشت شما</span>
-              <strong
-                data-testid="referral-earnings-ton"
-                className="text-xl font-black text-emerald-400 font-mono"
-                dir="ltr"
-              >
-                💎 {referralEarningsTon.toFixed(2)} TON
-              </strong>
-            </div>
-            <div className="bg-[#090d16] border border-amber-500/40 rounded-2xl px-4 py-3 text-center">
-              <span className="text-[11px] text-slate-400 block">بلیت‌های زیرمجموعه</span>
-              <strong className="text-xl font-black text-amber-300 font-mono">
-                {toPersianDigits(referredTicketsCount)} بلیت
-              </strong>
+        {connectedTonWallet ? (
+          <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/25 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] text-emerald-300 font-bold">
+                {connectedTonWallet.provider}
+              </div>
+              <div className="text-[11px] font-mono text-white truncate" dir="ltr">
+                {connectedTonWallet.address}
+              </div>
             </div>
             <button
-              type="button"
-              data-testid="claim-referral-to-wallet-btn"
-              onClick={async () => {
-                const res = await claimReferralEarningsToWallet();
-                setSecurityBanner(res.message);
-              }}
-              className="px-4 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all cursor-pointer shadow-lg"
+              onClick={disconnectTonWallet}
+              className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-400/30 text-[10px] font-bold text-rose-300 cursor-pointer shrink-0"
             >
-              💸 انتقال پورسانت به کیف پول اصلی
+              {tr(lang, 'قطع اتصال', 'Disconnect')}
             </button>
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left 7 Cols: Unique Referral Link & Firestore Generator */}
-          <div className="lg:col-span-7 bg-[#090d16] border border-white/10 rounded-2xl p-5 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="font-bold text-amber-300">
-                لینک یکتای ثبت‌شده در دیتابیس ابری Firestore:
-              </span>
-              <span
-                data-testid="active-referral-code-badge"
-                className="font-mono font-black text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 rounded-lg"
-              >
-                {referralCode}
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <code
-                dir="ltr"
-                data-testid="referral-invite-url-code"
-                className="flex-1 bg-[#111726] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs font-mono text-amber-200 truncate select-all"
-              >
-                {referralInviteUrl}
-              </code>
-              <button
-                type="button"
-                data-testid="copy-referral-link-btn"
-                onClick={() => {
-                  navigator.clipboard?.writeText(referralInviteUrl);
-                  setCopiedRef(true);
-                  setTimeout(() => setCopiedRef(false), 2000);
-                }}
-                className="px-4 py-2.5 rounded-xl gold-gradient-cta text-[#241300] font-black text-xs cursor-pointer shrink-0"
-              >
-                {copiedRef ? '✅ لینک دعوت کپی شد!' : 'کپی لینک دعوت یکتا'}
-              </button>
-            </div>
-
-            {/* Generate / Customize Unique Firestore Referral Code */}
-            <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <input
-                type="text"
-                dir="ltr"
-                value={customAliasInput}
-                onChange={(e) => setCustomAliasInput(e.target.value)}
-                placeholder="پیشوند دلخواه (مثلاً: ROYAL یا نام شما)"
-                className="flex-1 bg-[#111726] border border-white/15 rounded-xl px-3.5 py-2 text-xs font-mono text-white"
-              />
-              <button
-                type="button"
-                data-testid="generate-firestore-referral-btn"
-                onClick={async () => {
-                  const res = await generateAndSaveReferralLink(customAliasInput);
-                  setSecurityBanner(res.message);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 font-black text-xs cursor-pointer shrink-0"
-              >
-                ⚡ تولید لینک یکتا و ذخیره در Firestore
-              </button>
-              <button
-                type="button"
-                data-testid="simulate-referred-purchase-btn"
-                onClick={async () => {
-                  const res = await simulateReferredTicketPurchase(25);
-                  setSecurityBanner(res.message);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/50 text-sky-200 font-black text-xs cursor-pointer shrink-0"
-                title="تست کسر خودکار ۲٪ پورسانت از ۱۰٪ سود خالص لاتاری و ثبت در Firestore"
-              >
-                🧪 تست خرید زیرمجموعه ($25)
-              </button>
-            </div>
-          </div>
-
-          {/* Right 5 Cols: Register Inviter Code + Zero-Loss Mathematical Proof */}
-          <div className="lg:col-span-5 bg-[#090d16] border border-white/10 rounded-2xl p-5 space-y-4">
-            <label className="block text-xs font-bold text-slate-300">
-              ثبت کد معرف (اگر با لینک یکی از اعضای VIP وارد شده‌اید):
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                dir="ltr"
-                value={referrerInput}
-                onChange={(e) => setReferrerInput(e.target.value)}
-                placeholder="مثلاً: VIP-ROYAL-7A9C"
-                className="flex-1 bg-[#111726] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white"
-              />
-              <button
-                type="button"
-                data-testid="apply-referral-code-btn"
-                onClick={() => {
-                  const res = applyReferralCode(referrerInput);
-                  setSecurityBanner(res.message);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 font-black text-xs cursor-pointer shrink-0"
-              >
-                ثبت کد معرف
-              </button>
-            </div>
-            {referredByCode && (
-              <div className="text-[11px] text-emerald-400 font-bold">
-                ✓ کد معرف ثبت‌شده روی حساب شما: <span className="font-mono">{referredByCode}</span>
-              </div>
+        ) : (
+          <button
+            onClick={async () => {
+              const res = await connectTonWalletOneTap('Tonkeeper');
+              showToast(res.message);
+            }}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#0098EA] to-[#00F5D4] text-slate-950 font-black text-xs cursor-pointer"
+          >
+            {tr(
+              lang,
+              '💎 اتصال ۱-کلیکی کیف پول TON (Tonkeeper / MyTonWallet)',
+              '💎 1-Tap Connect TON Wallet (Tonkeeper / MyTonWallet)'
             )}
-
-            {/* Mathematical Zero-Loss Breakdown Box */}
-            <div className="bg-[#111726] border border-emerald-500/30 rounded-xl p-3.5 space-y-1.5 text-[11px]">
-              <div className="font-black text-emerald-300">
-                🛡️ فرمول ریاضی محافظت از سود سایت در هر خرید بلیت:
-              </div>
-              <div className="grid grid-cols-2 gap-1 text-slate-300">
-                <span>• استخر جوایز (دست‌نخورده): <strong className="text-white font-mono">85%</strong></span>
-                <span>• سود ناخالص خانه: <strong className="text-amber-300 font-mono">10%</strong></span>
-                <span>• پورسانت معرف (از سود): <strong className="text-emerald-300 font-mono">-2%</strong></span>
-                <span>• سود خالص قطعی سایت: <strong className="text-emerald-400 font-mono">+8%</strong></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Live Firestore Referral Commission Ledger */}
-        {referralEvents.length > 0 && (
-          <div className="bg-[#090d16] border border-white/10 rounded-2xl p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-black text-amber-300">
-                دفترکل زنده پورسانت‌های کسرشده از سود خالص لاتاری (Firestore: /referralCommissions):
-              </span>
-              <span className="text-[11px] font-mono text-emerald-400">
-                PLATFORM LOSS = $0.00 (100% SOLVENT)
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {referralEvents.slice(0, 4).map((ev) => (
-                <div
-                  key={ev.id}
-                  data-testid={`referral-ledger-item-${ev.id}`}
-                  className="bg-[#131926] border border-white/10 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
-                >
-                  <div>
-                    <span className="font-bold text-white">{ev.buyerDisplayName}</span>
-                    <span className="text-slate-400 mx-1.5">• کد:</span>
-                    <span className="font-mono text-amber-300">{ev.referrerCode}</span>
-                    <span className="text-[11px] text-slate-400 block mt-0.5">
-                      خرید بلیت: ${ev.ticketAmountUsdt} | سود ۱۰٪ لاتاری: $
-                      {(ev.grossLotteryProfit10Usdt ?? ev.ticketAmountUsdt * 0.1).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="text-left font-mono text-[11px] space-y-0.5 shrink-0" dir="ltr">
-                    <div className="text-emerald-300 font-black">
-                      Ref Cut (2%): +${ev.referralCommission2Usdt.toFixed(2)} USDT
-                    </div>
-                    <div className="text-amber-300">
-                      Net House (8%): +${ev.netHouseProfit8Usdt.toFixed(2)} USDT
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          </button>
         )}
       </section>
 
-      {/* 2.9 ZERO-LOSS VIP LOYALTY CHEST (100% FUNDED BY 3% ROLLOVER RESERVE) */}
-      <section
-        data-testid="vip-loyalty-chest-section"
-        className="luxury-marble-card rounded-3xl p-6 sm:p-8 space-y-6 border border-amber-500/45 relative overflow-hidden"
-      >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-4">
-          <div className="space-y-1">
-            <span className="text-xs font-bold text-amber-300 font-mono">
-              ZERO-LOSS VIP LOYALTY CHEST • 100% FUNDED FROM 3% ROLLOVER RESERVE
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black text-white">
-              🎁 صندوقچه وفاداری طلایی VIP (پاداش نقدی آنی از محل ۳٪ ذخیره سرریز)
-            </h2>
-            <p className="text-xs text-slate-300 leading-relaxed max-w-3xl">
-              به ازای هر <strong>۳ بلیت واقعی</strong> که خریداری می‌کنید، ۱ صندوقچه وفاداری طلایی برایتان باز می‌شود. جایزه این صندوقچه صرفاً از محل <strong>۳٪ ذخیره سرریز (Rollover Reserve)</strong> تامین شده و هیچ‌گاه از ۸۵٪ جایزه یا سود خالص سایت کسر نمی‌گردد (تضمین ریاضی بدون ۱ سنت ضرر).
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="bg-[#090d16] border border-amber-500/40 rounded-2xl px-4 py-3 text-center">
-              <span className="text-[11px] text-slate-400 block">موجودی استخر ۳٪ ذخیره سرریز</span>
-              <strong
-                data-testid="rollover-reserve-pool-usdt"
-                className="text-xl font-black text-amber-300 font-mono"
-                dir="ltr"
-              >
-                ${chestReport.availableRolloverReservePoolUsdt.toFixed(2)} USDT
-              </strong>
+      {/* 3. ZERO-LOSS VIP LOYALTY CHEST (3% ROLLOVER RESERVE) */}
+      <section className="rounded-3xl p-4 bg-gradient-to-br from-[#1B1308] via-[#110C22] to-[#080512] border border-[#FFD700]/35 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Gift className="w-5 h-5 text-[#FFE066]" />
+            <div>
+              <h2 className="text-xs font-black text-white">
+                {tr(lang, 'صندوقچه وفاداری طلایی (Loyalty Chest)', 'Golden VIP Loyalty Chest')}
+              </h2>
+              <p className="text-[10px] text-slate-400">
+                {tr(
+                  lang,
+                  'هر ۳ بلیت خریداری‌شده = ۱ کلید بازگشایی صندوقچه از محل ۳٪ ذخیره سرریز',
+                  'Every 3 lottery tickets purchased unlocks 1 Loyalty Chest from the 3% reserve'
+                )}
+              </p>
             </div>
-            <div className="bg-[#090d16] border border-emerald-500/40 rounded-2xl px-4 py-3 text-center">
-              <span className="text-[11px] text-slate-400 block">صندوقچه‌های آماده بازگشایی</span>
-              <strong
-                data-testid="available-loyalty-chests-count"
-                className="text-xl font-black text-emerald-400 font-mono"
-              >
-                {toPersianDigits(chestReport.chestsAvailableToOpen)} صندوقچه
-              </strong>
+          </div>
+          <span className="font-mono text-xs font-black text-[#FFE066]" dir="ltr">
+            {tickets.length % 3} / 3 🎟️
+          </span>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="w-full h-2.5 rounded-full bg-black/50 border border-white/10 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-[#FFE066] to-[#00F5D4] transition-all duration-300"
+            style={{ width: `${chestReport.progressToNextChestPercent}%` }}
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+            <div className="text-[9px] text-slate-400">
+              {tr(lang, 'صندوقچه آماده', 'Available Chests')}
+            </div>
+            <div className="text-xs font-mono font-black text-[#FFE066] mt-0.5">
+              {chestReport.chestsAvailableToOpen}
+            </div>
+          </div>
+          <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+            <div className="text-[9px] text-slate-400">
+              {tr(lang, 'ذخیره استخر ۳٪', '3% Reserve Pool')}
+            </div>
+            <div className="text-xs font-mono font-black text-[#00F5D4] mt-0.5" dir="ltr">
+              {formatAmount(rolloverReservePoolUsdt)}
+            </div>
+          </div>
+          <div className="p-2 rounded-xl bg-black/40 border border-white/10">
+            <div className="text-[9px] text-slate-400">
+              {tr(lang, 'صندوقچه‌های بازشده', 'Chests Claimed')}
+            </div>
+            <div className="text-xs font-mono font-black text-white mt-0.5">
+              {chestsClaimedCount}
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-          <div className="lg:col-span-7 bg-[#090d16] border border-white/10 rounded-2xl p-5 space-y-3">
-            <div className="flex items-center justify-between text-xs font-bold">
-              <span className="text-slate-300">
-                پیشرفت خرید بلیت برای صندوقچه بعدی ({toPersianDigits(chestReport.totalTicketsPurchased)} بلیت خریداری‌شده):
-              </span>
-              <span className="font-mono text-amber-300">
-                {chestReport.progressToNextChestPercent}%
-              </span>
-            </div>
-            <div className="w-full h-3.5 rounded-full bg-black/80 border border-white/10 overflow-hidden p-0.5">
-              <div
-                className="h-full rounded-full gold-gradient-cta transition-all duration-500"
-                style={{ width: `${chestReport.progressToNextChestPercent}%` }}
-              />
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-1">
-              <span>
-                سهم ۳٪ ایجادشده توسط خریدهای شما:{' '}
-                <strong className="text-emerald-300 font-mono">
-                  ${chestReport.userGeneratedRollover3PctUsdt.toFixed(2)} USDT
-                </strong>
-              </span>
-              <span>
-                صندوقچه‌های دریافت‌شده تاکنون:{' '}
-                <strong className="text-white font-mono">
-                  {toPersianDigits(chestReport.chestsClaimedCount)}
-                </strong>
-              </span>
-            </div>
-          </div>
-
-          <div className="lg:col-span-5 flex flex-col gap-3">
-            <button
-              type="button"
-              disabled={openingChest || chestReport.chestsAvailableToOpen <= 0}
-              data-testid="open-loyalty-chest-btn"
-              onClick={async () => {
-                setOpeningChest(true);
-                const res = await openLoyaltyChest();
-                setOpeningChest(false);
-                setSecurityBanner(res.message);
-              }}
-              className={`w-full py-4 px-5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-xl ${
-                chestReport.chestsAvailableToOpen > 0
-                  ? 'gold-gradient-cta text-[#241300] cursor-pointer hover:brightness-110'
-                  : 'bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed'
-              }`}
-            >
-              <span className="material-symbols-outlined text-xl">redeem</span>
-              <span>
-                {openingChest
-                  ? 'در حال بازگشایی صندوقچه طلایی...'
-                  : chestReport.chestsAvailableToOpen > 0
-                  ? `بازگشایی آنی صندوقچه و دریافت +$${chestReport.safeRewardUsdt.toFixed(2)} USDT`
-                  : `${toPersianDigits(chestReport.ticketsUntilNextChest)} بلیت دیگر تا باز شدن صندوقچه بعدی`}
-              </span>
-            </button>
-          </div>
-        </div>
+        <button
+          onClick={async () => {
+            const res = await openLoyaltyChest();
+            showToast(res.message);
+          }}
+          disabled={chestReport.chestsAvailableToOpen <= 0}
+          className={`w-full py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+            chestReport.chestsAvailableToOpen > 0
+              ? 'bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 shadow-lg'
+              : 'bg-white/5 border border-white/10 text-slate-500 cursor-not-allowed'
+          }`}
+        >
+          {chestReport.chestsAvailableToOpen > 0
+            ? tr(lang, '🎁 باز کردن صندوقچه طلایی و دریافت جایزه', '🎁 Open Golden Chest & Claim Bonus')
+            : tr(
+                lang,
+                `🔒 ${chestReport.ticketsUntilNextChest} بلیت دیگر تا باز شدن صندوقچه بعدی`,
+                `🔒 Buy ${chestReport.ticketsUntilNextChest} more ticket(s) to unlock next chest`
+              )}
+        </button>
       </section>
 
-      {/* 3. ACTIVE TICKETS & INSTANT CLAIM CENTER INSIDE USER PANEL */}
-      <section className="luxury-marble-card rounded-3xl p-6 sm:p-8 space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-          <div>
-            <span className="text-xs font-bold text-emerald-400 block">
-              MY ACTIVE COUPONS & INSTANT WIN CLAIM
-            </span>
-            <h2 className="text-xl sm:text-2xl font-black text-white mt-0.5">
-              کوپن‌های بلیت شما، دریافت جایزه و دانلود کارت تصویری استوری
+      {/* 4. AFFILIATE REFERRAL & INVITER CODE BINDING */}
+      <section className="rounded-3xl p-4 bg-[#110C22]/90 border border-white/10 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Users className="w-4 h-4 text-[#00F5D4]" />
+            <h2 className="text-xs font-black text-white">
+              {tr(lang, 'سیستم دعوت و کد معرف (Anti-Sybil)', 'Affiliate & Referral Binding')}
             </h2>
           </div>
+          <span className="font-mono text-[10px] text-[#00F5D4] font-bold">{referralCode}</span>
+        </div>
+
+        {/* Share Link Copy */}
+        <div className="p-2.5 rounded-xl bg-black/50 border border-white/10 flex items-center justify-between gap-2">
+          <span className="font-mono text-[10px] text-[#38BDF8] truncate" dir="ltr">
+            {myReferralShareUrl}
+          </span>
           <button
-            type="button"
-            onClick={() => navigateTo('my-tickets')}
-            className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs sm:text-sm font-bold text-amber-300 cursor-pointer"
+            onClick={() => handleCopy('ref_link', myReferralShareUrl)}
+            className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-[10px] font-bold text-white shrink-0 cursor-pointer"
           >
-            مدیریت کامل بلیت‌ها ←
+            {copiedKey === 'ref_link'
+              ? tr(lang, 'کپی شد', 'Copied')
+              : tr(lang, 'کپی لینک', 'Copy')}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {tickets.slice(0, 3).map((t) => {
-            const prize = parseFloat(t.prizeWonUsdt) || 0;
-            const isClaimed = Boolean(t.claimed) || claimedTicketCodes.includes(t.ticketCode);
-            const balls = t.mainNumbers
-              .replace(/[\[\]]/g, '')
-              .split(',')
-              .map((x) => x.trim());
-
-            return (
-              <div
-                key={t.ticketCode}
-                className="bg-[#090d16] border border-white/10 rounded-2xl p-5 flex flex-col justify-between space-y-4"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-black text-sm text-amber-300">{t.ticketCode}</span>
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        isClaimed
-                          ? 'bg-sky-500/20 text-sky-300'
-                          : prize > 0
-                          ? 'bg-emerald-500/20 text-emerald-300'
-                          : 'bg-white/10 text-slate-300'
-                      }`}
-                    >
-                      {isClaimed ? 'تسویه شد' : prize > 0 ? `برنده $${prize}` : 'فعال'}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 flex-wrap" dir="ltr">
-                    {balls.map((b, idx) => (
-                      <span
-                        key={idx}
-                        className="w-8 h-8 rounded-full lottery-ball-gold text-slate-950 font-mono font-black text-xs flex items-center justify-center"
-                      >
-                        {String(b).padStart(2, '0')}
-                      </span>
-                    ))}
-                    {t.goldenBall > 0 && (
-                      <span className="w-8 h-8 rounded-full lottery-ball-purple text-white font-mono font-black text-xs flex items-center justify-center">
-                        ★{String(t.goldenBall).padStart(2, '0')}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="text-xs text-slate-400 flex items-center justify-between pt-1">
-                    <span>دور: {t.roundCode}</span>
-                    <span>{t.currencyNetwork}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {prize > 0 && !isClaimed ? (
-                    <button
-                      type="button"
-                      disabled={claimingCode === t.ticketCode}
-                      onClick={() => handleQuickClaim(t.ticketCode, prize, t.currencyNetwork)}
-                      className="w-full py-2.5 rounded-xl emerald-gradient-cta font-black text-xs cursor-pointer"
-                    >
-                      {claimingCode === t.ticketCode
-                        ? 'در حال واریز...'
-                        : `دریافت آنی جایزه ($${prize} USDT)`}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => navigateTo('status')}
-                      className="w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-slate-300 cursor-pointer"
-                    >
-                      استعلام هش در بلاکچین
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    data-testid={`open-viral-card-${t.ticketCode}`}
-                    onClick={() => setViralCardTicket(t)}
-                    className="w-full py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-amber-200 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
-                  >
-                    <span className="material-symbols-outlined text-base">share_reviews</span>
-                    <span>📸 کارت تصویری استوری (با کد معرف من)</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        {/* Bind Inviter Code */}
+        <div className="flex gap-1.5">
+          <input
+            type="text"
+            value={referralInput}
+            onChange={(e) => setReferralInput(e.target.value)}
+            placeholder={tr(lang, 'کد معرف (مثلاً ref_1001)', 'Enter inviter code (e.g. ref_1001)')}
+            disabled={Boolean(referredByCode)}
+            className="flex-1 bg-black/40 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-[#00F5D4]"
+            dir="ltr"
+          />
+          <button
+            onClick={() => {
+              const res = applyReferralCode(referralInput);
+              showToast(res.message);
+            }}
+            disabled={Boolean(referredByCode)}
+            className="px-3.5 py-2 rounded-xl bg-[#00F5D4]/20 border border-[#00F5D4]/40 text-[#00F5D4] text-xs font-black cursor-pointer disabled:opacity-50"
+          >
+            {referredByCode ? tr(lang, 'ثبت شده', 'Bound') : tr(lang, 'ثبت کد', 'Bind')}
+          </button>
         </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="p-2.5 rounded-xl bg-black/40 border border-white/10">
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'زیرمجموعه‌های فعال', 'Active Referrals')}
+            </div>
+            <div className="text-xs font-mono font-black text-white mt-0.5">
+              {referredTicketsCount}
+            </div>
+          </div>
+          <div className="p-2.5 rounded-xl bg-black/40 border border-white/10">
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'کمیسیون قابل برداشت', 'Claimable Commission')}
+            </div>
+            <div className="text-xs font-mono font-black text-[#00F5D4] mt-0.5" dir="ltr">
+              {formatCurrency(referralEarningsTon, 'TON')}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={async () => {
+            const res = await claimReferralEarningsToWallet();
+            showToast(res.message);
+          }}
+          className="w-full py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 font-black text-xs cursor-pointer"
+        >
+          {tr(lang, '💸 انتقال کمیسیون به موجودی اصلی', '💸 Claim Commission to Wallet')}
+        </button>
       </section>
 
-      {/* 4. SERVER-VERIFIED ADMIN GATEWAY (Strictly rendered ONLY when backend verifies user.id in ADMIN_TELEGRAM_USER_IDS) */}
-      {isTelegramAdmin && (
-        <section
-          id="admin-security-gateway"
-          data-testid="admin-security-gateway"
-          className="relative rounded-3xl overflow-hidden border-2 border-amber-500/45 bg-gradient-to-br from-[#141022] via-[#0b0f19] to-[#191209] p-6 sm:p-8 shadow-2xl space-y-6"
+      {/* 5. ACCOUNT SUMMARY STATS */}
+      <section className="grid grid-cols-3 gap-2 text-center">
+        <div
+          onClick={() => navigateTo('my-tickets')}
+          className="p-2.5 rounded-2xl bg-[#110C22]/90 border border-white/10 cursor-pointer"
         >
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-5">
-            <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-black">
-                <span className="material-symbols-outlined text-base">shield_lock</span>
-                <span>تایید شده توسط سرور • SERVER-VERIFIED ADMIN SESSION</span>
-              </div>
-              <h2 className="text-xl sm:text-3xl font-black text-white">
-                درگاه فرماندهی اپراتور ارشد (کاکپیت مدیریت)
-              </h2>
-            </div>
-            <button
-              type="button"
-              data-testid="enter-admin-cockpit-btn"
-              onClick={() => navigateTo('cockpit')}
-              className="py-3 px-5 rounded-xl gold-gradient-cta font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-base">shield_lock</span>
-              <span>ورود به کاکپیت ادمین</span>
-            </button>
+          <Ticket className="w-4 h-4 text-[#FFE066] mx-auto mb-1" />
+          <div className="text-xs font-mono font-black text-white">{tickets.length}</div>
+          <div className="text-[10px] text-slate-400">
+            {tr(lang, 'کل بلیت‌ها', 'Total Tickets')}
           </div>
-        </section>
-      )}
-    </div>
+        </div>
+        <div
+          onClick={() => navigateTo('wallet')}
+          className="p-2.5 rounded-2xl bg-[#110C22]/90 border border-white/10 cursor-pointer"
+        >
+          <Coins className="w-4 h-4 text-[#00F5D4] mx-auto mb-1" />
+          <div className="text-xs font-mono font-black text-white">{deposits.length}</div>
+          <div className="text-[10px] text-slate-400">
+            {tr(lang, 'واریزهای موفق', 'Deposits')}
+          </div>
+        </div>
+        <div
+          onClick={() => navigateTo('wallet')}
+          className="p-2.5 rounded-2xl bg-[#110C22]/90 border border-white/10 cursor-pointer"
+        >
+          <Send className="w-4 h-4 text-purple-400 mx-auto mb-1" />
+          <div className="text-xs font-mono font-black text-white">{withdrawals.length}</div>
+          <div className="text-[10px] text-slate-400">
+            {tr(lang, 'برداشت‌ها', 'Withdrawals')}
+          </div>
+        </div>
+      </section>
+    </main>
   );
 };

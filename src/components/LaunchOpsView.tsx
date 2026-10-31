@@ -107,7 +107,7 @@ export const LaunchOpsView: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          roundCode: '#ZRN-8493',
+          roundCode: '#LD-8493',
           mainNumbers: [7, 14, 21, 33, 49],
           goldenBall: 9,
           costUsdt: 2,

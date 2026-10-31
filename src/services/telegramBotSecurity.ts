@@ -476,7 +476,7 @@ export function buildLiveChannelBroadcastPayload(
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         })} TON`
-      : `${((params.amountUsdt || 0) / 5.2).toFixed(2)} TON`;
+      : `${((params.amountUsdt || 0) / 5.0).toFixed(2)} TON`;
 
   let header = '📣 <b>گزارش زنده شبکه LuckyDrop</b>';
   const lines: string[] = [];
@@ -521,12 +521,16 @@ export function buildLiveChannelBroadcastPayload(
       lines.push(`🔐 <b>هش تایید دوره:</b> <code>${params.seedHash.replace(/^0x/, '')}</code>`);
     }
   } else if (params.eventType === 'HIGH_VALUE_WITHDRAWAL') {
-    header = '🛡️ <b>درخواست برداشت مبلغ بالا — نیازمند تایید ادمین</b>';
+    header = '🛡️ <b>درخواست برداشت وجه — نیازمند تایید و تسویه ادمین</b>';
     lines.push(`🆔 <b>کد برداشت:</b> <code>${params.withdrawalCode || 'WD-000'}</code>`);
     lines.push(`👤 <b>کاربر:</b> ${safeUser}`);
-    lines.push(`💎 <b>مبلغ خالص:</b> <code>${tonStr}</code>`);
+    lines.push(
+      `💎 <b>مبلغ خالص:</b> <code>${
+        params.amountStars ? `${params.amountStars} ⭐` : tonStr
+      }</code>`
+    );
     if (params.destinationAddress) {
-      lines.push(`📬 <b>مقصد TON:</b> <code>${params.destinationAddress}</code>`);
+      lines.push(`📬 <b>مقصد:</b> <code>${params.destinationAddress}</code>`);
     }
   } else {
     header = '✅ <b>تست اتصال ربات و کانال نوتیفیکیشن LuckyDrop</b>';
@@ -535,32 +539,71 @@ export function buildLiveChannelBroadcastPayload(
 
   const text = `${header}\n\n${lines.join('\n')}`;
 
-  // For High-Value Withdrawals, attach Approve / Reject inline callback buttons for the Admin!
+  // For Withdrawals, attach 1-Click Tonkeeper Payout URL + Approve / Reject inline callback buttons for the Admin!
   if (params.eventType === 'HIGH_VALUE_WITHDRAWAL' && params.withdrawalCode) {
+    const netNanoTon = Math.max(
+      10_000_000,
+      Math.round(
+        ((typeof params.amountTon === 'number'
+          ? params.amountTon
+          : (params.amountUsdt || 0) / 5.0) -
+          0.02) *
+          1e9
+      )
+    );
+    const tonkeeperDeepLink =
+      params.destinationAddress && !params.amountStars
+        ? `https://app.tonkeeper.com/transfer/${encodeURIComponent(
+            params.destinationAddress
+          )}?amount=${netNanoTon}&text=${encodeURIComponent(
+            `LuckyDrop_Payout_${params.withdrawalCode}`
+          )}`
+        : null;
+
+    const keyboardRows: Array<
+      Array<{
+        text: string;
+        web_app?: { url: string };
+        url?: string;
+        callback_data?: string;
+      }>
+    > = [];
+
+    if (tonkeeperDeepLink) {
+      keyboardRows.push([
+        {
+          text: `💎 پرداخت ۱-کلیکی با Tonkeeper (${params.withdrawalCode})`,
+          url: tonkeeperDeepLink,
+        },
+      ]);
+    }
+
+    keyboardRows.push(
+      [
+        {
+          text: `✅ تایید نهایی پرداخت (${params.withdrawalCode})`,
+          callback_data: `approve_wd:${params.withdrawalCode}`,
+        },
+        {
+          text: `❌ رد و برگشت وجه به کاربر`,
+          callback_data: `reject_wd:${params.withdrawalCode}`,
+        },
+      ],
+      [
+        {
+          text: '🔐 باز کردن پنل ادمین مینی‌اپ',
+          web_app: { url: `${cleanDomain}/?vault=sovereign-gate-777` },
+        },
+      ]
+    );
+
     return {
       chat_id: params.chatId,
       text,
       parse_mode: 'HTML',
       disable_web_page_preview: true,
       reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: `✅ تایید و ارسال TON (${params.withdrawalCode})`,
-              callback_data: `approve_wd:${params.withdrawalCode}`,
-            },
-            {
-              text: `❌ رد و برگشت وجه`,
-              callback_data: `reject_wd:${params.withdrawalCode}`,
-            },
-          ],
-          [
-            {
-              text: '🔐 باز کردن پنل ادمین مینی‌اپ',
-              web_app: { url: `${cleanDomain}/?vault=sovereign-gate-777` },
-            },
-          ],
-        ],
+        inline_keyboard: keyboardRows,
       },
     };
   }

@@ -250,9 +250,9 @@ export async function createLotteryRound(params: {
 }) {
   try {
     const roundNum = Math.floor(8500 + Math.random() * 900);
-    const roundCode = `#ZRN-${roundNum}`;
+    const roundCode = `#LD-${roundNum}`;
     const serverSeedHash = computeDeterministicHash('server-master', roundCode, Date.now());
-    const clientSeed = `zarrin-block-seed-${roundNum}`;
+    const clientSeed = `luckydrop-block-seed-${roundNum}`;
     const derived = deriveProvablyFairBalls(serverSeedHash, clientSeed, roundNum);
 
     const inserted = await db

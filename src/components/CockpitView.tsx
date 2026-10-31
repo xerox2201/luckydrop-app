@@ -151,7 +151,7 @@ export const CockpitView: React.FC = () => {
 
   // Draw execution state
   const [selectedRoundForDraw, setSelectedRoundForDraw] = useState<string>(
-    rounds[0]?.roundCode || '#ZRN-8493'
+    rounds[0]?.roundCode || '#LD-8493'
   );
   const [drawing, setDrawing] = useState<boolean>(false);
   const [drawnResult, setDrawnResult] = useState<{
@@ -178,8 +178,25 @@ export const CockpitView: React.FC = () => {
   const [newBallFormat, setNewBallFormat] = useState<'5_50' | '5_40' | '5_35' | '4_25'>('5_50');
   const [creatingRound, setCreatingRound] = useState<boolean>(false);
 
-  // Live VIP Customer Chat Console state
-  const [activeSessionCode, setActiveSessionCode] = useState<string>('VIP-KAMRAN');
+  // Live VIP Customer Chat Console state (dynamically populated from supportMessages)
+  const dynamicSupportSessions = React.useMemo(() => {
+    const codes = Array.from(
+      new Set(
+        supportMessages
+          .map((m) => m.sessionCode)
+          .filter((c): c is string => Boolean(c && c.trim()))
+      )
+    );
+    const currentTgCode = `TG-${telegramUser.id}`;
+    if (!codes.includes(currentTgCode)) {
+      codes.unshift(currentTgCode);
+    }
+    return codes;
+  }, [supportMessages, telegramUser.id]);
+
+  const [activeSessionCode, setActiveSessionCode] = useState<string>(
+    () => dynamicSupportSessions[0] || `TG-${telegramUser.id}`
+  );
   const [operatorReply, setOperatorReply] = useState<string>('');
   const [sendingReply, setSendingReply] = useState<boolean>(false);
 
@@ -1247,13 +1264,13 @@ export const CockpitView: React.FC = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5" dir="ltr">
-              {['VIP-KAMRAN', 'VIP-NASTARAN', 'VIP-AMIR'].map((code) => (
+            <div className="flex flex-wrap gap-1.5" dir="ltr">
+              {dynamicSupportSessions.map((code) => (
                 <button
                   key={code}
                   type="button"
                   onClick={() => setActiveSessionCode(code)}
-                  className={`h-8 rounded-lg text-[10px] font-mono font-bold border cursor-pointer ${
+                  className={`h-8 px-2.5 rounded-lg text-[10px] font-mono font-bold border cursor-pointer ${
                     activeSessionCode === code
                       ? 'bg-purple-600/35 border-[#fbbf24] text-[#fbbf24]'
                       : 'bg-[#090612] border-purple-500/20 text-purple-300/60'
@@ -1265,25 +1282,31 @@ export const CockpitView: React.FC = () => {
             </div>
 
             <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
-              {sessionMessages.map((msg) => {
-                const isOperator = msg.senderRole === 'OPERATOR';
-                return (
-                  <div
-                    key={msg.id}
-                    className={`p-2.5 rounded-xl border text-[11px] space-y-1 ${
-                      isOperator
-                        ? 'bg-[#fbbf24]/10 border-[#fbbf24]/35 text-amber-100'
-                        : 'bg-[#090612] border-purple-500/20 text-purple-100'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between font-bold">
-                      <span>{msg.senderName}</span>
-                      <span className="text-[9px] font-mono text-[#fbbf24]">{msg.vipLevel}</span>
+              {sessionMessages.length === 0 ? (
+                <div className="p-3 rounded-xl bg-[#090612] border border-purple-500/15 text-[11px] text-purple-300/70 text-center">
+                  هنوز پیامی در سشن <span className="font-mono text-[#fbbf24]">{activeSessionCode}</span> ثبت نشده است.
+                </div>
+              ) : (
+                sessionMessages.map((msg) => {
+                  const isOperator = msg.senderRole === 'OPERATOR';
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`p-2.5 rounded-xl border text-[11px] space-y-1 ${
+                        isOperator
+                          ? 'bg-[#fbbf24]/10 border-[#fbbf24]/35 text-amber-100'
+                          : 'bg-[#090612] border-purple-500/20 text-purple-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-bold">
+                        <span>{msg.senderName}</span>
+                        <span className="text-[9px] font-mono text-[#fbbf24]">{msg.vipLevel}</span>
+                      </div>
+                      <p className="leading-relaxed">{msg.message}</p>
                     </div>
-                    <p className="leading-relaxed">{msg.message}</p>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
 
             <form onSubmit={handleSendOperatorReply} className="space-y-2">

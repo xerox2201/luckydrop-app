@@ -18,13 +18,16 @@ import {
 } from './Extra3DMiniGamesArena.tsx';
 import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 import { HapticEngine } from '../utils/telegramTma.ts';
+import { tr } from '../utils/i18n.ts';
 
 interface GameCardSpec {
   id: InstantMiniGameId;
   badge: string;
   label: string;
   titleFa: string;
+  titleEn: string;
   descFa: string;
+  descEn: string;
   rtp: string;
   maxWin: string;
   accentGradient: string;
@@ -33,8 +36,10 @@ interface GameCardSpec {
 interface GameCategorySpec {
   categoryId: string;
   titleFa: string;
+  titleEn: string;
   subtitleEn: string;
   descFa: string;
+  descEn: string;
   bannerTheme: 'ARCADE' | 'STRATEGY' | 'WHEEL' | 'HOLO';
   games: GameCardSpec[];
 }
@@ -43,8 +48,10 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
   {
     categoryId: 'ARCADE_3D',
     titleFa: '۱. بازی‌های فیزیکی و موشکی سه‌بعدی',
+    titleEn: '1. 3D Physics & Rocket Arcade',
     subtitleEn: '3D Physics & Exponential Arcade',
     descFa: 'موتور فیزیک ۶۰ فریم بر ثانیه با ضرایب تا 1000x و بلیت رایگان در اسلات‌های طلایی',
+    descEn: '60 FPS physics engine with up to 1000x multipliers and golden free-ticket slots',
     bannerTheme: 'ARCADE',
     games: [
       {
@@ -52,7 +59,9 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '🟢',
         label: 'Plinko',
         titleFa: 'پلینکو سه‌بعدی (Plinko 3D)',
+        titleEn: 'Plinko 3D Pyramid',
         descFa: 'هرم ۸ تا ۱۶ ردیفه با برخوردهای واقعی و ضریب تا 1000x',
+        descEn: '8 to 16 row pyramid with real pin collisions & up to 1000x',
         rtp: '99.0%',
         maxWin: '1,000x',
         accentGradient: 'from-emerald-500/30 via-purple-600/25 to-indigo-900/40',
@@ -62,7 +71,9 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '🚀',
         label: 'Crash',
         titleFa: 'انفجار کوانتومی (Crash X 3D)',
+        titleEn: 'Quantum Crash X 3D',
         descFa: 'پرواز موشک سه‌بعدی با نمایش زنده شرط و برداشت تمام بازیکنان',
+        descEn: '3D rocket ascent with instant cashout before the crash point',
         rtp: '99.0%',
         maxWin: '10,000x',
         accentGradient: 'from-rose-500/30 via-amber-500/25 to-purple-900/40',
@@ -72,8 +83,10 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
   {
     categoryId: 'STRATEGY_3D',
     titleFa: '۲. بازی‌های استراتژیک و برج کریستالی',
+    titleEn: '2. Strategy Vaults & Crystal Tower',
     subtitleEn: '3D Tactical Vaults & Crystal Tower',
     descFa: 'انتخاب مرحله‌به‌مرحله با امکان برداشت آنی (Cash Out) در هر قدم',
+    descEn: 'Step-by-step tactical reveals with instant Cash Out after every safe pick',
     bannerTheme: 'STRATEGY',
     games: [
       {
@@ -81,7 +94,9 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '💣',
         label: 'Mines',
         titleFa: 'میدان مین و الماس (Mines 5×5)',
+        titleEn: 'Mines & Diamonds (5×5)',
         descFa: 'کشف الماس‌های سه‌بعدی در شبکه ۲۵ خانه‌ای با تنظیم ۱ تا ۱۶ مین',
+        descEn: 'Uncover 3D diamonds on a 25-tile grid with 1 to 16 configurable mines',
         rtp: '98.0%',
         maxWin: '24.5x+',
         accentGradient: 'from-cyan-500/30 via-emerald-600/25 to-slate-900/40',
@@ -91,7 +106,9 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '🏰',
         label: 'Tower 3D',
         titleFa: 'برج کریستالی ۸ طبقه (Tower Rush 3D)',
+        titleEn: '8-Floor Crystal Tower 3D',
         descFa: 'صعود سه‌بعدی از ۸ طبقه کریستالی در ۳ سطح آسان، متوسط و سخت',
+        descEn: 'Climb 8 crystal floors across Easy, Medium, and Hard difficulty modes',
         rtp: '98.0%',
         maxWin: '250.8x',
         accentGradient: 'from-purple-500/35 via-fuchsia-600/25 to-indigo-950/40',
@@ -101,8 +118,10 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
   {
     categoryId: 'WHEEL_DICE_3D',
     titleFa: '۳. گردونه رویال و تاس ۵۲ بیتی سه‌بعدی',
+    titleEn: '3. Royale Wheel & 52-Bit Quantum Dice',
     subtitleEn: '3D Wheel of Fortune & 52-Bit Quantum Dice',
     descFa: 'تنظیم دقیق شانس برد و گردونه ۱۶ سگمنتی نئونی با جک‌پات 77.77',
+    descEn: 'Precision win-chance slider & 16-segment neon wheel with 77.77 jackpot',
     bannerTheme: 'WHEEL',
     games: [
       {
@@ -110,9 +129,11 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '🎡',
         label: 'Wheel 3D',
         titleFa: 'گردونه شانس رویال (Wheel Royale 3D)',
+        titleEn: 'Wheel Royale 3D',
         descFa: 'چرخ سه‌بعدی ۱۶ سگمنتی با ۳ سطح ریسک و ضریب تا 50x',
+        descEn: '16-segment 3D wheel with 3 risk levels and calibrated 98% RTP',
         rtp: '98.0%',
-        maxWin: '50.0x',
+        maxWin: '15.68x',
         accentGradient: 'from-amber-500/35 via-purple-600/25 to-slate-950/40',
       },
       {
@@ -120,7 +141,9 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '🎲',
         label: '52-Bit Dice',
         titleFa: 'تاس کوانتومی ۵۲ بیتی (52-Bit Dice)',
+        titleEn: '52-Bit Quantum Dice',
         descFa: 'اسلایدر سه‌بعدی با دقت ۰.۰۱ و بلیت رایگان لاتاری روی عدد 77.77',
+        descEn: '0.01 precision slider with free lottery ticket bonus on roll 77.77',
         rtp: '99.0%',
         maxWin: '9,900x',
         accentGradient: 'from-emerald-500/30 via-teal-600/25 to-purple-950/40',
@@ -130,8 +153,10 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
   {
     categoryId: 'CARDS_COIN_3D',
     titleFa: '۴. کارت‌های هولوگرافیک و سکه طلایی TON',
+    titleEn: '4. Holographic Cards & Golden TON Coin',
     subtitleEn: '3D Holographic Cards & Golden Coin',
     descFa: 'بازی‌های فوق‌سریع با انیمیشن چرخش سه‌بعدی کارت و سکه طلایی',
+    descEn: 'Ultra-fast instant games with 3D holographic cards and golden coin flip',
     bannerTheme: 'HOLO',
     games: [
       {
@@ -139,7 +164,9 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '🃏',
         label: 'Hi-Lo 3D',
         titleFa: 'کارت سایبری بالاتر/پایین‌تر (Hi-Lo 3D)',
+        titleEn: 'Cyber Hi-Lo Cards 3D',
         descFa: 'پیش‌بینی کارت بعدی با ضرایب پویا بر اساس احتمال دقیق ریاضی',
+        descEn: 'Predict Higher, Lower, or Same with dynamic mathematical odds',
         rtp: '98.0%',
         maxWin: '12.74x',
         accentGradient: 'from-indigo-500/35 via-purple-600/25 to-slate-950/40',
@@ -149,7 +176,9 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '✨',
         label: 'Scratch',
         titleFa: 'کارت اسکرچ هولوگرافیک (Scratch 3×3)',
+        titleEn: 'Holographic Scratch 3×3',
         descFa: 'تراشیدن فویل نئونی ۳×۳ با شانس تطابق ۳ نماد و ضریب 100x',
+        descEn: 'Scratch 3×3 neon foil to match 3 symbols up to 100x',
         rtp: '97.5%',
         maxWin: '100x',
         accentGradient: 'from-fuchsia-500/35 via-purple-600/25 to-indigo-950/40',
@@ -159,7 +188,9 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
         badge: '🪙',
         label: 'Coin 3D',
         titleFa: 'پرتاب سکه طلایی (Golden Coin 3D)',
+        titleEn: 'Golden TON Coin Flip 3D',
         descFa: 'چرخش سه‌بعدی سکه طلایی TON (شیر یا خط) با ضریب دقیق 1.96x',
+        descEn: '3D Golden TON Coin Flip (Heads or Tails) with exact 1.96x payout',
         rtp: '98.0%',
         maxWin: '1.96x',
         accentGradient: 'from-yellow-500/35 via-amber-600/25 to-slate-950/40',
@@ -205,6 +236,7 @@ export const InstantMiniGamesView: React.FC = () => {
     tmaXpPoints,
     tickets,
     tonUsdRate,
+    lang,
   } = useLottery();
 
   const [activeGame, setActiveGame] = useState<InstantMiniGameId>('PLINKO');
@@ -234,7 +266,11 @@ export const InstantMiniGamesView: React.FC = () => {
     });
     if (rbRes.ok) {
       setStatusBanner(
-        `↩️ دور ${lastResult.roundId} باطل و مبلغ شرط از طریق PAM Rollback مسترد شد!`
+        tr(
+          lang,
+          `↩️ دور ${lastResult.roundId} باطل و مبلغ شرط از طریق PAM Rollback مسترد شد!`,
+          `↩️ Round ${lastResult.roundId} voided and refunded via PAM Rollback!`
+        )
       );
       setLastDebitUuid(null);
     }
@@ -273,7 +309,9 @@ export const InstantMiniGamesView: React.FC = () => {
         <div className="absolute inset-0 bg-gradient-to-l from-[#090514]/90 via-[#130d24]/82 to-[#090514]/90 pointer-events-none" />
         <div className="relative z-10 min-w-0">
           <div className="text-xs font-extrabold text-white flex items-center gap-1.5 flex-wrap">
-            <span className="whitespace-nowrap">🎮 آرنا سه‌بعدی LuckyDrop</span>
+            <span className="whitespace-nowrap">
+              {tr(lang, '🎮 آرنا سه‌بعدی LuckyDrop', '🎮 LuckyDrop 3D Arena')}
+            </span>
             <span
               dir="ltr"
               className="px-1.5 py-0.5 rounded-md bg-[#00f59b]/15 border border-[#00f59b]/30 text-[10px] font-mono text-[#00f59b] whitespace-nowrap shrink-0"
@@ -299,7 +337,11 @@ export const InstantMiniGamesView: React.FC = () => {
               : 'bg-purple-600/45 text-white border-amber-400/40 hover:bg-purple-600/60'
           }`}
         >
-          <span>{showCategoryCatalog ? '🎯 بازگشت به بازی' : '🗂️ دسته‌بندی (۹ بازی)'}</span>
+          <span>
+            {showCategoryCatalog
+              ? tr(lang, '🎯 بازگشت به بازی', '🎯 Back to Game')
+              : tr(lang, '🗂️ دسته‌بندی (۹ بازی)', '🗂️ All 9 Games')}
+          </span>
         </button>
       </div>
 
@@ -371,11 +413,15 @@ export const InstantMiniGamesView: React.FC = () => {
                     {cat.subtitleEn}
                   </div>
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#090612] via-[#090612]/85 to-transparent px-3 py-1.5 flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-white">{cat.titleFa}</span>
+                    <span className="text-xs font-extrabold text-white">
+                      {tr(lang, cat.titleFa, cat.titleEn)}
+                    </span>
                   </div>
                 </div>
 
-                <p className="text-[11px] text-purple-200/80 leading-relaxed">{cat.descFa}</p>
+                <p className="text-[11px] text-purple-200/80 leading-relaxed">
+                  {tr(lang, cat.descFa, cat.descEn)}
+                </p>
 
                 {/* Games Grid inside Category Frame */}
                 <div className="grid grid-cols-1 gap-2.5">
@@ -402,10 +448,10 @@ export const InstantMiniGamesView: React.FC = () => {
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-extrabold text-white truncate">
-                              {gm.titleFa}
+                              {tr(lang, gm.titleFa, gm.titleEn)}
                             </div>
                             <div className="text-[11px] text-purple-200/75 truncate mt-0.5">
-                              {gm.descFa}
+                              {tr(lang, gm.descFa, gm.descEn)}
                             </div>
                             <div className="flex items-center gap-2 mt-1 text-[10px] font-mono" dir="ltr">
                               <span className="text-[#00f59b]">RTP {gm.rtp}</span>
@@ -421,7 +467,7 @@ export const InstantMiniGamesView: React.FC = () => {
                           type="button"
                           className="h-8 px-3 rounded-lg bg-[#00f59b] text-[#041f14] font-bold text-[11px] shrink-0 cursor-pointer"
                         >
-                          ورود ↗
+                          {tr(lang, 'ورود ↗', 'Play ↗')}
                         </button>
                       </motion.div>
                     );
@@ -481,7 +527,11 @@ export const InstantMiniGamesView: React.FC = () => {
         <div className="rounded-xl bg-[#090612]/90 border border-purple-500/20 p-2.5 space-y-1.5">
           <div className="flex items-center justify-between text-[11px]">
             <span className="font-bold text-[#fbbf24]">
-              🎟️ پاداش وفاداری LuckyDrop (بلیت رایگان لاتاری)
+              {tr(
+                lang,
+                '🎟️ پاداش وفاداری LuckyDrop (بلیت رایگان لاتاری)',
+                '🎟️ LuckyDrop Loyalty Reward (Free Lottery Ticket)'
+              )}
             </span>
             <span className="font-mono text-[10px] text-[#00f59b]" dir="ltr">
               {xpProgressInCurrentCycle} / 100 XP
@@ -494,13 +544,21 @@ export const InstantMiniGamesView: React.FC = () => {
             />
           </div>
           <p className="text-[10px] text-purple-200/75 leading-relaxed">
-            با هر دور بازی امتیاز XP دریافت می‌کنید و با رسیدن به ۱۰۰ XP یک کوپن رایگان قرعه‌کشی به حساب شما اضافه می‌شود. (1 TON = ${tonUsdRate.toFixed(2)})
+            {tr(
+              lang,
+              `با هر دور بازی امتیاز XP دریافت می‌کنید و با رسیدن به ۱۰۰ XP یک کوپن رایگان قرعه‌کشی به حساب شما اضافه می‌شود. (1 TON = $${tonUsdRate.toFixed(2)})`,
+              `Earn XP on every mini-game wager; reaching 100 XP automatically awards a free lottery ticket. (1 TON = $${tonUsdRate.toFixed(2)})`
+            )}
           </p>
         </div>
 
-        <div className="flex items-center justify-between gap-2" dir="rtl">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] text-purple-200/80">
-            🔒 کد هش (<code className="font-mono text-[#fbbf24]">hash</code>) پس از پایان هر دست بازی نمایش داده می‌شود.
+            {tr(
+              lang,
+              '🔒 کد هش (hash) پس از پایان هر دست بازی نمایش داده می‌شود.',
+              '🔒 Round HMAC-SHA256 hash is revealed immediately after each bet.'
+            )}
           </span>
 
           <div className="flex items-center gap-1 shrink-0" dir="ltr">
@@ -596,3 +654,4 @@ export const InstantMiniGamesView: React.FC = () => {
     </div>
   );
 };
+

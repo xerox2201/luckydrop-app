@@ -23,7 +23,16 @@ export class CrashSoundEngine {
   private isFlying: boolean = false;
 
   constructor(initialMuted = false) {
-    this.muted = initialMuted;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem('luckydrop_audio_muted');
+        this.muted = stored !== null ? stored === 'true' : initialMuted;
+      } catch {
+        this.muted = initialMuted;
+      }
+    } else {
+      this.muted = initialMuted;
+    }
   }
 
   private getAudioContext(): AudioContext | null {
@@ -51,18 +60,35 @@ export class CrashSoundEngine {
   }
 
   public isMuted(): boolean {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem('luckydrop_audio_muted');
+        if (stored !== null) {
+          this.muted = stored === 'true';
+        }
+      } catch {
+        // ignore
+      }
+    }
     return this.muted;
   }
 
   public setMuted(mute: boolean): void {
     this.muted = mute;
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem('luckydrop_audio_muted', String(mute));
+      } catch {
+        // ignore
+      }
+    }
     if (mute) {
       this.stopFlightSound();
     }
   }
 
   public toggleMute(): boolean {
-    this.setMuted(!this.muted);
+    this.setMuted(!this.isMuted());
     return this.muted;
   }
 

@@ -22,8 +22,15 @@ import {
   deriveProvablyFairLotteryDraw,
   evaluateTicketPrizeTier,
   evaluateProvablyFairMiniGame,
+  deriveProvablyFairMinesBoard,
+  deriveProvablyFairTowerBoard,
+  calculateMinesMultiplier,
+  calculateTowerStepMultiplier,
+  DICE_TREASURY_MAX_PAYOUT_USDT,
   type InstantMiniGameId,
+  type TowerDifficulty,
   type VerifiableDrawHistoryRecord,
+  type MiniGameEvaluationResult,
 } from './src/utils/provablyFair.ts';
 import {
   PAMSeamlessWalletEngine,
@@ -50,6 +57,7 @@ import {
   bindUserReferralAntiSybil,
   computeServerAuthoritativeGameOutcome,
   computeServerAuthoritativeLotteryDraw,
+  verifyOnChainTonTransaction,
   roundTonClean,
   roundStarsClean,
   type IsolatedUserAccountRecord,
@@ -58,10 +66,14 @@ import {
 const app = express();
 app.use(express.json({ limit: '256kb' }));
 
-// Production Web3 Security Headers
+// Production Web3 Security Headers (Compatible with Telegram Web/Desktop & AI Studio Preview iframe)
 app.use((_req, res, next) => {
+  res.removeHeader('X-Frame-Options');
+  res.setHeader(
+    'Content-Security-Policy',
+    "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://aistudio.google.com https://*.google.com https://*.run.app *;"
+  );
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
@@ -194,6 +206,7 @@ interface ServerWithdrawalItem {
   twoFactorVerified: boolean;
   status: 'pending_review' | 'broadcasting' | 'completed' | 'rejected';
   txHash: string;
+  tonkeeperPayUrl?: string;
   createdAt: string;
 }
 
@@ -215,6 +228,8 @@ interface ServerReferralEventItem {
 interface TelegramBotAlertConfig {
   botToken: string;
   adminChatId: string;
+  botUsername?: string;
+  officialChannelUrl?: string;
   enabled: boolean;
   notifyOnDeposit: boolean;
   notifyOnWithdrawal: boolean;
@@ -353,6 +368,9 @@ function buildDefaultDatabase(): PersistentDatabaseSchema {
     telegramBotConfig: {
       botToken: '',
       adminChatId: '',
+      botUsername: process.env.TELEGRAM_BOT_USERNAME || 'LuckyDrop_TON_Bot',
+      officialChannelUrl:
+        process.env.TELEGRAM_OFFICIAL_CHANNEL_URL || 'https://t.me/LuckyDrop_TON_Official',
       enabled: true,
       notifyOnDeposit: true,
       notifyOnWithdrawal: true,
@@ -431,17 +449,35 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
   return initial;
 }
 
-function savePersistentDatabase(dbState: PersistentDatabaseSchema): void {
+function savePersistentDatabaseSync(stateToSave: PersistentDatabaseSchema): void {
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
     const tmpPath = `${PERSISTENT_DB_PATH}.tmp`;
-    fs.writeFileSync(tmpPath, JSON.stringify(dbState, null, 2), 'utf-8');
+    fs.writeFileSync(tmpPath, JSON.stringify(stateToSave, null, 2), 'utf-8');
     fs.renameSync(tmpPath, PERSISTENT_DB_PATH);
   } catch (err) {
-    console.error('Failed to persist database state to disk:', err);
+    console.error('Failed to persist database state to disk synchronously:', err);
   }
+}
+
+async function savePersistentDatabaseAsync(stateToSave: PersistentDatabaseSchema): Promise<void> {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      await fs.promises.mkdir(DATA_DIR, { recursive: true });
+    }
+    const tmpPath = `${PERSISTENT_DB_PATH}.tmp`;
+    const serialized = JSON.stringify(stateToSave, null, 2);
+    await fs.promises.writeFile(tmpPath, serialized, 'utf-8');
+    await fs.promises.rename(tmpPath, PERSISTENT_DB_PATH);
+  } catch (err) {
+    console.error('Failed to persist database state to disk asynchronously:', err);
+  }
+}
+
+function savePersistentDatabase(stateToSave: PersistentDatabaseSchema): void {
+  savePersistentDatabaseSync(stateToSave);
 }
 
 const dbState = loadPersistentDatabase();
@@ -456,10 +492,56 @@ const processedDepositTxHashes = new Set<string>(dbState.processedTxHashes);
 const processedStarsChargeIds = new Set<string>(dbState.processedStarsChargeIds);
 let baseIdempotentCount = 128;
 
-function persistAll(): void {
+// High-Concurrency Asynchronous Debounced Write-Behind Queue (Flushes at most once every 1500ms)
+let persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let persistInFlightPromise: Promise<void> | null = null;
+let persistDirty = false;
+
+function schedulePersistAll(): void {
+  persistDirty = true;
+  if (persistDebounceTimer) return;
+  persistDebounceTimer = setTimeout(() => {
+    persistDebounceTimer = null;
+    if (!persistDirty) return;
+    persistDirty = false;
+    dbState.processedTxHashes = Array.from(processedDepositTxHashes);
+    dbState.processedStarsChargeIds = Array.from(processedStarsChargeIds);
+    const runWrite = async () => {
+      await savePersistentDatabaseAsync(dbState);
+    };
+    persistInFlightPromise = (persistInFlightPromise || Promise.resolve()).then(
+      runWrite,
+      runWrite
+    );
+  }, 1500);
+}
+
+function flushDatabaseSync(): void {
+  if (persistDebounceTimer) {
+    clearTimeout(persistDebounceTimer);
+    persistDebounceTimer = null;
+  }
+  if (!persistDirty) return;
+  persistDirty = false;
   dbState.processedTxHashes = Array.from(processedDepositTxHashes);
   dbState.processedStarsChargeIds = Array.from(processedStarsChargeIds);
-  savePersistentDatabase(dbState);
+  savePersistentDatabaseSync(dbState);
+}
+
+process.on('SIGINT', () => {
+  flushDatabaseSync();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  flushDatabaseSync();
+  process.exit(0);
+});
+process.on('beforeExit', () => {
+  flushDatabaseSync();
+});
+
+function persistAll(): void {
+  schedulePersistAll();
 }
 
 // Helper to normalize Telegram Chat / Channel ID so users don't get stuck on missing '@' or '-100'
@@ -631,6 +713,7 @@ function getOrCreateIsolatedUserContext(req: express.Request): {
   userKey: string;
   userAccount: IsolatedUserAccountRecord;
   userPam: PAMSeamlessWalletEngine;
+  isNewlyCreated: boolean;
   commitUserAccount: () => void;
 } {
   const session = resolveVerifiedTelegramSession(req);
@@ -679,11 +762,16 @@ function getOrCreateIsolatedUserContext(req: express.Request): {
     persistAll();
   };
 
+  if (isNewlyCreated) {
+    commitUserAccount();
+  }
+
   return {
     session,
     userKey,
     userAccount,
     userPam,
+    isNewlyCreated,
     commitUserAccount,
   };
 }
@@ -761,7 +849,7 @@ async function dispatchAdminTelegramAlert(params: {
     amountTon:
       typeof params.amountTon === 'number'
         ? params.amountTon
-        : Number((params.amountUsdt / (DEFAULT_FX_RATES.TON || 5.2)).toFixed(2)),
+        : Number((params.amountUsdt / (DEFAULT_FX_RATES.TON || 5.0)).toFixed(2)),
     amountStars: params.amountStars,
     amountUsdt: params.amountUsdt,
     multiplierX: params.multiplierX,
@@ -831,14 +919,23 @@ async function dispatchAdminTelegramAlert(params: {
 app.post('/api/pam/authenticate', optionalAuth, async (req: AuthRequest, res) => {
   const { userKey, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
   await globalUserLocks.runExclusive(userKey, async () => {
-    const { playerId, displayName, vipTier } = req.body || {};
+    const { displayName, vipTier } = req.body || {};
     const result = userPam.authenticate({
       playerId: `tg_${userKey}`,
       displayName: displayName || userPam.getState().displayName,
       vipTier: vipTier || userPam.getState().vipTier,
     });
     commitUserAccount();
-    res.json(result);
+    res.json({
+      ...result,
+      seeds: result.seeds ? { ...result.seeds, serverSeed: '' } : undefined,
+      playerState: result.playerState
+        ? {
+            ...result.playerState,
+            seeds: { ...result.playerState.seeds, serverSeed: '' },
+          }
+        : undefined,
+    });
   });
 });
 
@@ -848,6 +945,13 @@ app.get('/api/pam/balance', optionalAuth, (req: AuthRequest, res) => {
   const result = userPam.balance();
   res.json({
     ...result,
+    seeds: result.seeds ? { ...result.seeds, serverSeed: '' } : undefined,
+    playerState: result.playerState
+      ? {
+          ...result.playerState,
+          seeds: { ...result.playerState.seeds, serverSeed: '' },
+        }
+      : undefined,
     ledger: userPam.getState().ledger,
     tombstones: userPam.getState().tombstones,
     reconciliation: userPam.reconcile().reconciliation,
@@ -1178,9 +1282,13 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
       plinkoRisk = 'MEDIUM',
       minesCount = 3,
       minesRevealedSafeCount = 1,
+      selectedTiles,
       towerDifficulty = 'MEDIUM',
       towerFloorsCleared = 1,
+      selectedColumns,
       wheelRisk = 'MEDIUM',
+      hiloChoice,
+      hiloBaseCard,
       hiloSummaryLabel,
       transaction_uuid,
     } = req.body || {};
@@ -1219,7 +1327,7 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
         rawAmount: rawBetUsdt,
         currency: 'USDT',
         minAmount: 0.01,
-        maxAvailableBalance: currentBalanceUsdt,
+        maxBalance: currentBalanceUsdt,
       });
 
       if (!betValidation.valid) {
@@ -1286,10 +1394,15 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
           : 'MEDIUM',
       minesCount: Number(minesCount) || 3,
       minesRevealedSafeCount: Number(minesRevealedSafeCount) || 1,
+      selectedTiles: Array.isArray(selectedTiles) ? selectedTiles.map(Number) : undefined,
       towerDifficulty:
         towerDifficulty === 'EASY' || towerDifficulty === 'HARD' ? towerDifficulty : 'MEDIUM',
       towerFloorsCleared: Number(towerFloorsCleared) || 1,
+      selectedColumns: Array.isArray(selectedColumns) ? selectedColumns.map(Number) : undefined,
       wheelRisk: wheelRisk === 'LOW' || wheelRisk === 'HIGH' ? wheelRisk : 'MEDIUM',
+      hiloChoice:
+        hiloChoice === 'LOWER' || hiloChoice === 'SAME' ? hiloChoice : 'HIGHER',
+      hiloBaseCard: typeof hiloBaseCard === 'number' ? Number(hiloBaseCard) : undefined,
       hiloSummaryLabel: typeof hiloSummaryLabel === 'string' ? hiloSummaryLabel : undefined,
     });
 
@@ -1385,9 +1498,15 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
     }
 
     const latestPam = userPam.getState();
+    const redactedEvaluation: MiniGameEvaluationResult = {
+      ...evaluation,
+      // Never leak the active unrevealed serverSeed before the user rotates it!
+      serverSeed: '',
+    };
+
     return res.json({
       ok: true,
-      evaluation,
+      evaluation: redactedEvaluation,
       bonusTicketAwarded,
       debitTransactionUuid: debitUuid,
       debitEntry,
@@ -1425,6 +1544,635 @@ app.post(
   requireTelegramWebAppAuth,
   enforceMutationRateLimit,
   handleMiniGamePlay
+);
+
+// ============================================================================
+// 10. STATEFUL SERVER-SIDE MULTI-STEP GAME SESSIONS (`MINES` & `TOWER_3D`)
+// Prevents client-side board inspection or outcome spoofing!
+// ============================================================================
+
+app.post(
+  '/api/games/session/start',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    if (dbState.killSwitchActive) {
+      return res.status(503).json({
+        ok: false,
+        error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: بازی‌ها موقتاً متوقف است.',
+      });
+    }
+
+    const { userKey, userAccount, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const {
+        gameId = 'MINES',
+        currency = 'TON',
+        betAmountUsdt,
+        bet,
+        amount,
+        minesCount = 3,
+        towerDifficulty = 'MEDIUM',
+        transaction_uuid,
+      } = req.body || {};
+
+      if (gameId !== 'MINES' && gameId !== 'TOWER_3D') {
+        return res.status(400).json({
+          ok: false,
+          error: 'INVALID_SESSION_GAME_ID — تنها MINES و TOWER_3D دارای نشست چندمرحله‌ای هستند.',
+        });
+      }
+
+      const activeCurrency = currency === 'STARS' ? 'STARS' : 'TON';
+      const rawBetUsdt =
+        betAmountUsdt !== undefined
+          ? Number(betAmountUsdt)
+          : bet !== undefined
+          ? Number(bet)
+          : amount !== undefined
+          ? Number(amount)
+          : NaN;
+
+      const currentBalanceUsdt =
+        activeCurrency === 'STARS'
+          ? Number((userPam.getState().starsBalance * 0.02).toFixed(4))
+          : Number((userPam.getState().tonBalance * DEFAULT_FX_RATES.TON).toFixed(4));
+
+      const betValidation = validateStrictFinancialAmount({
+        rawAmount: rawBetUsdt,
+        currency: 'USDT',
+        minAmount: 0.01,
+        maxBalance: currentBalanceUsdt,
+      });
+
+      if (!betValidation.valid) {
+        return res.status(400).json({
+          ok: false,
+          error: betValidation.error,
+          tonBalance: userPam.getState().tonBalance,
+          starsBalance: userPam.getState().starsBalance,
+        });
+      }
+
+      const safeBetUsdt = betValidation.cleanAmount;
+      const seedsBefore = { ...userPam.getState().seeds };
+      const debitUuid = String(
+        transaction_uuid || generateDeterministicUuid('sess_debit')
+      ).trim();
+      const roundId = `MG-${gameId}-${seedsBefore.nonce}`;
+
+      const debitRes = userPam.debit({
+        transactionUuid: debitUuid,
+        roundId,
+        vertical: `INSTANT_${gameId}`,
+        currency: activeCurrency,
+        amountUsdt: safeBetUsdt,
+        note: `شروع نشست بازی ${gameId} (${roundId} • ${activeCurrency})`,
+        incrementNonce: true,
+      });
+
+      if (!debitRes.ok) {
+        return res.status(400).json({
+          ok: false,
+          error: debitRes.error || 'INSUFFICIENT_BALANCE',
+          tonBalance: debitRes.tonBalance,
+          starsBalance: debitRes.starsBalance,
+        });
+      }
+
+      dbState.rolloverReservePoolUsdt = Number(
+        (dbState.rolloverReservePoolUsdt + safeBetUsdt * 0.005).toFixed(4)
+      );
+      userAccount.xp = Number(
+        (userAccount.xp + Math.max(1, Math.round(safeBetUsdt))).toFixed(0)
+      );
+
+      const sessionId = `sess_${gameId.toLowerCase()}_${seedsBefore.nonce}_${Date.now().toString(36)}`;
+
+      if (gameId === 'MINES') {
+        const safeMines = Math.max(1, Math.min(24, Math.floor(Number(minesCount) || 3)));
+        const board = deriveProvablyFairMinesBoard({
+          serverSeed: seedsBefore.serverSeed,
+          clientSeed: seedsBefore.clientSeed,
+          nonce: seedsBefore.nonce,
+          minesCount: safeMines,
+        });
+
+        userAccount.activeGameSession = {
+          sessionId,
+          gameId: 'MINES',
+          currency: activeCurrency,
+          betAmountUsdt: safeBetUsdt,
+          debitTransactionUuid: debitUuid,
+          roundId,
+          serverSeed: seedsBefore.serverSeed,
+          serverSeedHash: seedsBefore.serverSeedHash,
+          clientSeed: seedsBefore.clientSeed,
+          nonce: seedsBefore.nonce,
+          minesCount: safeMines,
+          mineIndices: board.mineIndices,
+          revealedTiles: [],
+          startedAt: new Date().toISOString(),
+        };
+      } else {
+        const safeDiff: TowerDifficulty =
+          towerDifficulty === 'EASY' || towerDifficulty === 'HARD'
+            ? towerDifficulty
+            : 'MEDIUM';
+        const towerBoard = deriveProvablyFairTowerBoard({
+          serverSeed: seedsBefore.serverSeed,
+          clientSeed: seedsBefore.clientSeed,
+          nonce: seedsBefore.nonce,
+          difficulty: safeDiff,
+        });
+
+        userAccount.activeGameSession = {
+          sessionId,
+          gameId: 'TOWER_3D',
+          currency: activeCurrency,
+          betAmountUsdt: safeBetUsdt,
+          debitTransactionUuid: debitUuid,
+          roundId,
+          serverSeed: seedsBefore.serverSeed,
+          serverSeedHash: seedsBefore.serverSeedHash,
+          clientSeed: seedsBefore.clientSeed,
+          nonce: seedsBefore.nonce,
+          towerDifficulty: safeDiff,
+          trapColumnsPerFloor: towerBoard.trapColumnsPerFloor,
+          colsCount: towerBoard.colsCount,
+          selectedColumns: [],
+          startedAt: new Date().toISOString(),
+        };
+      }
+
+      commitUserAccount();
+      const latestPam = userPam.getState();
+
+      return res.json({
+        ok: true,
+        session: {
+          sessionId: userAccount.activeGameSession.sessionId,
+          gameId: userAccount.activeGameSession.gameId,
+          currency: userAccount.activeGameSession.currency,
+          betAmountUsdt: userAccount.activeGameSession.betAmountUsdt,
+          roundId: userAccount.activeGameSession.roundId,
+          serverSeedHash: userAccount.activeGameSession.serverSeedHash,
+          clientSeed: userAccount.activeGameSession.clientSeed,
+          nonce: userAccount.activeGameSession.nonce,
+          minesCount: userAccount.activeGameSession.minesCount,
+          revealedTiles: userAccount.activeGameSession.revealedTiles || [],
+          towerDifficulty: userAccount.activeGameSession.towerDifficulty,
+          colsCount: userAccount.activeGameSession.colsCount,
+          selectedColumns: userAccount.activeGameSession.selectedColumns || [],
+          currentMultiplier: 1.0,
+        },
+        debitTransactionUuid: debitUuid,
+        tonBalance: latestPam.tonBalance,
+        starsBalance: latestPam.starsBalance,
+        pamState: {
+          ...latestPam,
+          seeds: { ...latestPam.seeds, serverSeed: '' },
+        },
+      });
+    });
+  }
+);
+
+app.post(
+  '/api/games/session/reveal',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    const { userKey, userAccount, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const activeSess = userAccount.activeGameSession;
+      if (!activeSess) {
+        return res.status(400).json({
+          ok: false,
+          error: 'NO_ACTIVE_GAME_SESSION — نشست فعالی برای این بازی یافت نشد. ابتدا دور جدید را شروع کنید.',
+        });
+      }
+
+      if (activeSess.gameId === 'MINES') {
+        const tileIndex = Math.floor(Number(req.body?.tileIndex));
+        if (!Number.isFinite(tileIndex) || tileIndex < 0 || tileIndex > 24) {
+          return res.status(400).json({
+            ok: false,
+            error: 'INVALID_TILE_INDEX — شماره خانه انتخابی باید بین ۰ تا ۲۴ باشد.',
+          });
+        }
+
+        const revealed = activeSess.revealedTiles || [];
+        if (revealed.includes(tileIndex)) {
+          return res.status(400).json({
+            ok: false,
+            error: 'TILE_ALREADY_REVEALED — این خانه قبلاً انتخاب شده است.',
+          });
+        }
+
+        const mineIndices = activeSess.mineIndices || [];
+        const minesCount = activeSess.minesCount || 3;
+        const isBomb = mineIndices.includes(tileIndex);
+
+        if (isBomb) {
+          const evalResult = evaluateProvablyFairMiniGame({
+            gameId: 'MINES',
+            serverSeed: activeSess.serverSeed,
+            clientSeed: activeSess.clientSeed,
+            nonce: activeSess.nonce,
+            betAmountUsdt: activeSess.betAmountUsdt,
+            minesCount,
+            selectedTiles: [...revealed, tileIndex],
+          });
+
+          userAccount.activeGameSession = null;
+          commitUserAccount();
+          const latestPam = userPam.getState();
+
+          return res.json({
+            ok: true,
+            status: 'BOMB_HIT',
+            hitBomb: true,
+            explodedTile: tileIndex,
+            mineIndices,
+            revealedTiles: revealed,
+            currentMultiplier: 0,
+            payoutUsdt: 0,
+            evaluation: {
+              ...evalResult,
+              serverSeed: '',
+            },
+            debitTransactionUuid: activeSess.debitTransactionUuid,
+            tonBalance: latestPam.tonBalance,
+            starsBalance: latestPam.starsBalance,
+            pamState: {
+              ...latestPam,
+              seeds: { ...latestPam.seeds, serverSeed: '' },
+            },
+          });
+        }
+
+        // Safe Gem revealed!
+        const nextRevealed = [...revealed, tileIndex];
+        activeSess.revealedTiles = nextRevealed;
+        const maxSafe = 25 - minesCount;
+        const currentMultiplier = calculateMinesMultiplier(minesCount, nextRevealed.length);
+
+        // Auto-cashout if all safe gems are uncovered
+        if (nextRevealed.length >= maxSafe) {
+          const payoutUsdt = Math.min(
+            DICE_TREASURY_MAX_PAYOUT_USDT,
+            Number((activeSess.betAmountUsdt * currentMultiplier).toFixed(2))
+          );
+          const creditRes = userPam.credit({
+            transactionUuid: generateDeterministicUuid('sess_credit'),
+            referenceTransactionUuid: activeSess.debitTransactionUuid,
+            roundId: activeSess.roundId,
+            vertical: 'INSTANT_MINES',
+            currency: activeSess.currency,
+            amountUsdt: payoutUsdt,
+            note: `برد کامل Mines (${currentMultiplier}x • ${nextRevealed.length}💎)`,
+          });
+
+          const evalResult = evaluateProvablyFairMiniGame({
+            gameId: 'MINES',
+            serverSeed: activeSess.serverSeed,
+            clientSeed: activeSess.clientSeed,
+            nonce: activeSess.nonce,
+            betAmountUsdt: activeSess.betAmountUsdt,
+            minesCount,
+            selectedTiles: nextRevealed,
+          });
+
+          userAccount.activeGameSession = null;
+          commitUserAccount();
+          const latestPam = userPam.getState();
+
+          return res.json({
+            ok: true,
+            status: 'AUTO_CASHED_OUT',
+            hitBomb: false,
+            revealedTiles: nextRevealed,
+            mineIndices,
+            currentMultiplier,
+            payoutUsdt,
+            evaluation: {
+              ...evalResult,
+              serverSeed: '',
+            },
+            creditEntry: creditRes.ledgerEntry,
+            debitTransactionUuid: activeSess.debitTransactionUuid,
+            tonBalance: latestPam.tonBalance,
+            starsBalance: latestPam.starsBalance,
+            pamState: {
+              ...latestPam,
+              seeds: { ...latestPam.seeds, serverSeed: '' },
+            },
+          });
+        }
+
+        commitUserAccount();
+        const nextMultiplier = calculateMinesMultiplier(minesCount, nextRevealed.length + 1);
+        return res.json({
+          ok: true,
+          status: 'SAFE_GEM',
+          hitBomb: false,
+          tileIndex,
+          revealedTiles: nextRevealed,
+          currentMultiplier,
+          nextMultiplier,
+        });
+      }
+
+      // TOWER_3D reveal
+      const colIndex = Math.floor(Number(req.body?.colIndex));
+      const diff = activeSess.towerDifficulty || 'MEDIUM';
+      const colsCount = activeSess.colsCount || (diff === 'EASY' ? 4 : diff === 'MEDIUM' ? 3 : 2);
+      const selectedCols = activeSess.selectedColumns || [];
+      const currentFloor = selectedCols.length;
+      const trapCols = activeSess.trapColumnsPerFloor || [];
+
+      if (!Number.isFinite(colIndex) || colIndex < 0 || colIndex >= colsCount) {
+        return res.status(400).json({
+          ok: false,
+          error: 'INVALID_TOWER_COLUMN — ستون انتخابی نامعتبر است.',
+        });
+      }
+
+      const trapColOnFloor = trapCols[currentFloor] ?? 0;
+      const isTrap = colIndex === trapColOnFloor;
+
+      if (isTrap) {
+        const evalResult = evaluateProvablyFairMiniGame({
+          gameId: 'TOWER_3D',
+          serverSeed: activeSess.serverSeed,
+          clientSeed: activeSess.clientSeed,
+          nonce: activeSess.nonce,
+          betAmountUsdt: activeSess.betAmountUsdt,
+          towerDifficulty: diff,
+          selectedColumns: [...selectedCols, colIndex],
+        });
+
+        userAccount.activeGameSession = null;
+        commitUserAccount();
+        const latestPam = userPam.getState();
+
+        return res.json({
+          ok: true,
+          status: 'TRAP_HIT',
+          hitTrap: true,
+          explodedFloor: currentFloor,
+          trapColumnsPerFloor: trapCols,
+          selectedColumns: [...selectedCols, colIndex],
+          currentMultiplier: 0,
+          payoutUsdt: 0,
+          evaluation: {
+            ...evalResult,
+            serverSeed: '',
+          },
+          debitTransactionUuid: activeSess.debitTransactionUuid,
+          tonBalance: latestPam.tonBalance,
+          starsBalance: latestPam.starsBalance,
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+        });
+      }
+
+      const nextCols = [...selectedCols, colIndex];
+      activeSess.selectedColumns = nextCols;
+      const clearedFloors = nextCols.length;
+      const currentMultiplier = calculateTowerStepMultiplier(diff, clearedFloors);
+
+      if (clearedFloors >= 8) {
+        const payoutUsdt = Math.min(
+          DICE_TREASURY_MAX_PAYOUT_USDT,
+          Number((activeSess.betAmountUsdt * currentMultiplier).toFixed(2))
+        );
+        const creditRes = userPam.credit({
+          transactionUuid: generateDeterministicUuid('sess_credit'),
+          referenceTransactionUuid: activeSess.debitTransactionUuid,
+          roundId: activeSess.roundId,
+          vertical: 'INSTANT_TOWER_3D',
+          currency: activeSess.currency,
+          amountUsdt: payoutUsdt,
+          note: `فتح کامل برج کریستالی Tower 3D (${currentMultiplier}x • طبقه 8/8)`,
+        });
+
+        const evalResult = evaluateProvablyFairMiniGame({
+          gameId: 'TOWER_3D',
+          serverSeed: activeSess.serverSeed,
+          clientSeed: activeSess.clientSeed,
+          nonce: activeSess.nonce,
+          betAmountUsdt: activeSess.betAmountUsdt,
+          towerDifficulty: diff,
+          selectedColumns: nextCols,
+        });
+
+        userAccount.activeGameSession = null;
+        commitUserAccount();
+        const latestPam = userPam.getState();
+
+        return res.json({
+          ok: true,
+          status: 'AUTO_CASHED_OUT',
+          hitTrap: false,
+          clearedFloors,
+          selectedColumns: nextCols,
+          trapColumnsPerFloor: trapCols,
+          currentMultiplier,
+          payoutUsdt,
+          evaluation: {
+            ...evalResult,
+            serverSeed: '',
+          },
+          creditEntry: creditRes.ledgerEntry,
+          debitTransactionUuid: activeSess.debitTransactionUuid,
+          tonBalance: latestPam.tonBalance,
+          starsBalance: latestPam.starsBalance,
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+        });
+      }
+
+      commitUserAccount();
+      return res.json({
+        ok: true,
+        status: 'SAFE_STEP',
+        hitTrap: false,
+        clearedFloors,
+        selectedColumns: nextCols,
+        currentMultiplier,
+        nextMultiplier: calculateTowerStepMultiplier(diff, clearedFloors + 1),
+      });
+    });
+  }
+);
+
+app.post(
+  '/api/games/session/cashout',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    const { userKey, userAccount, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const activeSess = userAccount.activeGameSession;
+      if (!activeSess) {
+        return res.status(400).json({
+          ok: false,
+          error: 'NO_ACTIVE_GAME_SESSION — نشست فعالی برای برداشت جایزه یافت نشد.',
+        });
+      }
+
+      if (activeSess.gameId === 'MINES') {
+        const revealed = activeSess.revealedTiles || [];
+        if (revealed.length <= 0) {
+          return res.status(400).json({
+            ok: false,
+            error: 'NO_TILES_REVEALED — ابتدا حداقل یک خانه امن را باز کنید.',
+          });
+        }
+        const minesCount = activeSess.minesCount || 3;
+        const evalResult = evaluateProvablyFairMiniGame({
+          gameId: 'MINES',
+          serverSeed: activeSess.serverSeed,
+          clientSeed: activeSess.clientSeed,
+          nonce: activeSess.nonce,
+          betAmountUsdt: activeSess.betAmountUsdt,
+          minesCount,
+          selectedTiles: revealed,
+        });
+
+        const creditRes = userPam.credit({
+          transactionUuid: generateDeterministicUuid('sess_credit'),
+          referenceTransactionUuid: activeSess.debitTransactionUuid,
+          roundId: activeSess.roundId,
+          vertical: 'INSTANT_MINES',
+          currency: activeSess.currency,
+          amountUsdt: evalResult.payoutUsdt,
+          note: `برداشت موفق Mines (${evalResult.multiplier}x • ${revealed.length}💎)`,
+        });
+
+        const mineIndices = activeSess.mineIndices || [];
+        const debitUuid = activeSess.debitTransactionUuid;
+        userAccount.activeGameSession = null;
+        commitUserAccount();
+
+        if (evalResult.won && evalResult.multiplier >= 10) {
+          void dispatchAdminTelegramAlert({
+            eventType: 'BIG_MULTIPLIER_WIN',
+            userDisplayName: userPam.getState().displayName,
+            amountUsdt: evalResult.payoutUsdt,
+            network: 'TON Mini-Games Arena',
+            multiplierX: evalResult.multiplier,
+            gameTitle: 'MINES',
+            seedHash: activeSess.serverSeedHash,
+            details: `برد ضریب ${evalResult.multiplier.toFixed(2)}x در بازی MINES`,
+          });
+        }
+
+        const latestPam = userPam.getState();
+        return res.json({
+          ok: true,
+          status: 'CASHED_OUT',
+          mineIndices,
+          revealedTiles: revealed,
+          multiplier: evalResult.multiplier,
+          payoutUsdt: evalResult.payoutUsdt,
+          evaluation: {
+            ...evalResult,
+            serverSeed: '',
+          },
+          creditEntry: creditRes.ledgerEntry,
+          debitTransactionUuid: debitUuid,
+          tonBalance: latestPam.tonBalance,
+          starsBalance: latestPam.starsBalance,
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+        });
+      }
+
+      // TOWER_3D cashout
+      const selectedCols = activeSess.selectedColumns || [];
+      if (selectedCols.length <= 0) {
+        return res.status(400).json({
+          ok: false,
+          error: 'NO_FLOORS_CLEARED — ابتدا حداقل یک طبقه از برج را پشت سر بگذارید.',
+        });
+      }
+      const diff = activeSess.towerDifficulty || 'MEDIUM';
+      const evalResult = evaluateProvablyFairMiniGame({
+        gameId: 'TOWER_3D',
+        serverSeed: activeSess.serverSeed,
+        clientSeed: activeSess.clientSeed,
+        nonce: activeSess.nonce,
+        betAmountUsdt: activeSess.betAmountUsdt,
+        towerDifficulty: diff,
+        selectedColumns: selectedCols,
+      });
+
+      const creditRes = userPam.credit({
+        transactionUuid: generateDeterministicUuid('sess_credit'),
+        referenceTransactionUuid: activeSess.debitTransactionUuid,
+        roundId: activeSess.roundId,
+        vertical: 'INSTANT_TOWER_3D',
+        currency: activeSess.currency,
+        amountUsdt: evalResult.payoutUsdt,
+        note: `برداشت موفق Tower 3D (${evalResult.multiplier}x • طبقه ${selectedCols.length}/8)`,
+      });
+
+      const trapColumnsPerFloor = activeSess.trapColumnsPerFloor || [];
+      const debitUuid = activeSess.debitTransactionUuid;
+      userAccount.activeGameSession = null;
+      commitUserAccount();
+
+      if (evalResult.won && evalResult.multiplier >= 10) {
+        void dispatchAdminTelegramAlert({
+          eventType: 'BIG_MULTIPLIER_WIN',
+          userDisplayName: userPam.getState().displayName,
+          amountUsdt: evalResult.payoutUsdt,
+          network: 'TON Mini-Games Arena',
+          multiplierX: evalResult.multiplier,
+          gameTitle: 'TOWER_3D',
+          seedHash: activeSess.serverSeedHash,
+          details: `برد ضریب ${evalResult.multiplier.toFixed(2)}x در بازی TOWER_3D`,
+        });
+      }
+
+      const latestPam = userPam.getState();
+      return res.json({
+        ok: true,
+        status: 'CASHED_OUT',
+        trapColumnsPerFloor,
+        selectedColumns: selectedCols,
+        multiplier: evalResult.multiplier,
+        payoutUsdt: evalResult.payoutUsdt,
+        evaluation: {
+          ...evalResult,
+          serverSeed: '',
+        },
+        creditEntry: creditRes.ledgerEntry,
+        debitTransactionUuid: debitUuid,
+        tonBalance: latestPam.tonBalance,
+        starsBalance: latestPam.starsBalance,
+        pamState: {
+          ...latestPam,
+          seeds: { ...latestPam.seeds, serverSeed: '' },
+        },
+      });
+    });
+  }
 );
 
 // ============================================================================
@@ -1585,8 +2333,8 @@ app.get('/api/oracle/live', async (_req, res) => {
 });
 
 function buildSnapshotPayload(req: express.Request) {
-  const { session, userAccount, userPam, commitUserAccount } = getOrCreateIsolatedUserContext(req);
-  commitUserAccount();
+  // Read-only snapshot: never triggers synchronous disk writes for existing users!
+  const { session, userAccount, userPam } = getOrCreateIsolatedUserContext(req);
 
   const pamState = userPam.getState();
   const reconciliation = userPam.reconcile().reconciliation;
@@ -1622,6 +2370,24 @@ function buildSnapshotPayload(req: express.Request) {
     claimed: userAccount.completedQuests.includes(q.id),
   }));
 
+  const sanitizedActiveSession = userAccount.activeGameSession
+    ? {
+        sessionId: userAccount.activeGameSession.sessionId,
+        gameId: userAccount.activeGameSession.gameId,
+        currency: userAccount.activeGameSession.currency,
+        betAmountUsdt: userAccount.activeGameSession.betAmountUsdt,
+        roundId: userAccount.activeGameSession.roundId,
+        serverSeedHash: userAccount.activeGameSession.serverSeedHash,
+        clientSeed: userAccount.activeGameSession.clientSeed,
+        nonce: userAccount.activeGameSession.nonce,
+        minesCount: userAccount.activeGameSession.minesCount,
+        revealedTiles: userAccount.activeGameSession.revealedTiles || [],
+        towerDifficulty: userAccount.activeGameSession.towerDifficulty,
+        colsCount: userAccount.activeGameSession.colsCount,
+        selectedColumns: userAccount.activeGameSession.selectedColumns || [],
+      }
+    : null;
+
   return {
     ok: true,
     isAdmin: session.isAdmin,
@@ -1639,6 +2405,7 @@ function buildSnapshotPayload(req: express.Request) {
     referredByUserId: userAccount.referredByUserId,
     referralCode: userAccount.referralCode,
     quests: userQuests,
+    activeGameSession: sanitizedActiveSession,
     user: {
       uid: pamState.playerId,
       telegramUserId: session.userKey,
@@ -1681,6 +2448,16 @@ function buildSnapshotPayload(req: express.Request) {
       ...dbState.telegramBotConfig,
       botToken: getEffectiveBotToken() ? '•••••••••••• (CONFIGURED_IN_ENV)' : '',
       adminChatId: getEffectiveNotificationChatId() || dbState.telegramBotConfig.adminChatId,
+      botUsername:
+        dbState.telegramBotConfig.botUsername ||
+        process.env.TELEGRAM_BOT_USERNAME ||
+        'LuckyDrop_TON_Bot',
+      officialChannelUrl:
+        dbState.telegramBotConfig.officialChannelUrl ||
+        process.env.TELEGRAM_OFFICIAL_CHANNEL_URL ||
+        (getEffectiveNotificationChatId().startsWith('@')
+          ? `https://t.me/${getEffectiveNotificationChatId().slice(1)}`
+          : 'https://t.me/LuckyDrop_TON_Official'),
     },
     telegramAlertsLog: session.isAdmin ? dbState.telegramAlertsLog : [],
     rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
@@ -1995,11 +2772,275 @@ app.post(
 );
 
 // ============================================================================
-// REAL PROVABLY FAIR LOTTERY DRAW EXECUTION ENGINE (PARI-MUTUEL 85% / 15%)
+// REAL PROVABLY FAIR LOTTERY DRAW EXECUTION ENGINE & AUTOMATED 5-SEC SCHEDULER
 // - Deducts & locks 15% of collected pool for the Site
 // - Distributes the remaining 85% of the collected pool among winning tickets at draw time ("راس تایم")
 // - Automatically credits winners via PAM Seamless Wallet credit endpoint
+// - Background setInterval(..., 5000) scheduler runs 24/7 with zero manual intervention
 // ============================================================================
+
+async function executeLotteryDrawWithDynamicPool(params: {
+  roundObj: PersistentRoundRecord;
+  clientSeedOverride?: string;
+  isAdmin?: boolean;
+  forceWinningMain?: number[];
+  forceWinningGolden?: number;
+}) {
+  const { roundObj, clientSeedOverride, isAdmin, forceWinningMain, forceWinningGolden } = params;
+
+  const activeServerSeed =
+    roundObj.serverSeed || sha256Hex(`luckydrop_seed_${roundObj.roundCode}_${Date.now()}`);
+  const activeClientSeed =
+    (clientSeedOverride || roundObj.clientSeed || '').trim() || 'luckydrop_vip_client_seed';
+  const drawNonce = Math.max(1, Number(roundObj.nonce) || 1);
+
+  // 1. 100% Server-Authoritative Lottery Draw using Node's crypto.createHmac('sha256', serverSeed) & crypto.randomInt
+  const drawProof = computeServerAuthoritativeLotteryDraw({
+    serverSeed: activeServerSeed,
+    clientSeed: activeClientSeed,
+    nonce: drawNonce,
+    roundCode: roundObj.roundCode,
+    mainCount: roundObj.mainCount || 5,
+    mainMax: roundObj.mainMax || 50,
+    goldenMax: roundObj.goldenMax ?? 15,
+  });
+
+  const drawnMain: number[] =
+    isAdmin && Array.isArray(forceWinningMain) && forceWinningMain.length >= 4
+      ? forceWinningMain.map(Number).sort((a, b) => a - b)
+      : drawProof.drawnMain;
+  const drawnGolden: number =
+    isAdmin && typeof forceWinningGolden === 'number'
+      ? forceWinningGolden
+      : drawProof.drawnGolden;
+
+  // 2. Dynamic Pari-Mutuel Pool Calculation: 15% Site Share Reserved, 85% Distributable Pool
+  const grossCollectedUsdt = Math.max(0, parseFloat(roundObj.totalSalesUsdt) || 0);
+  const poolSplit = calculateDynamicPariMutuelPool(grossCollectedUsdt, 15);
+  const distributablePool85Usdt = poolSplit.distributablePool85Usdt;
+
+  // First pass: evaluate all ACTIVE tickets in this round
+  const candidateTickets: Array<{
+    ticket: PersistentTicketRecord;
+    evalResult: ReturnType<typeof evaluateTicketPrizeTier>;
+  }> = [];
+
+  for (const ticket of dbState.tickets) {
+    const normalizedStatus = (ticket.status || '').toUpperCase();
+    if (
+      ticket.roundCode === roundObj.roundCode &&
+      (normalizedStatus === 'ACTIVE' || normalizedStatus === 'MINTED')
+    ) {
+      let parsedMain: number[] = [];
+      try {
+        parsedMain = JSON.parse(ticket.mainNumbers);
+      } catch {
+        parsedMain = String(ticket.mainNumbers)
+          .replace(/[\[\]]/g, '')
+          .split(',')
+          .map((n) => Number(n.trim()))
+          .filter((n) => Number.isFinite(n));
+      }
+
+      const evalResult = evaluateTicketPrizeTier({
+        ticketMain: parsedMain,
+        ticketGolden: Number(ticket.goldenBall || 0),
+        drawnMain,
+        drawnGolden,
+        ticketCostUsdt: parseFloat(ticket.costUsdt) || 5,
+        jackpotUsdt: Math.max(50, distributablePool85Usdt),
+      });
+
+      candidateTickets.push({ ticket, evalResult });
+    }
+  }
+
+  // Second pass: distribute the exact 85% collected pool among winning tickets proportionally
+  const rawWeights = candidateTickets.map((c) => (c.evalResult.won ? c.evalResult.prizeUsdt : 0));
+  const distributedPrizes = distributePoolAmongWinners(distributablePool85Usdt, rawWeights);
+
+  const ticketsEvaluatedCount = candidateTickets.length;
+  let winnersCount = 0;
+  let totalPayoutUsdt = 0;
+  const evaluatedTicketsSummary: Array<{
+    ticketCode: string;
+    status: 'WON' | 'LOST';
+    prizeUsdt: number;
+    tierLabelFa: string;
+    payoutTransactionUuid: string | null;
+  }> = [];
+
+  for (let idx = 0; idx < candidateTickets.length; idx++) {
+    const { ticket, evalResult } = candidateTickets[idx];
+    const finalPrizeUsdt = distributedPrizes[idx] || 0;
+
+    if (evalResult.won && finalPrizeUsdt > 0) {
+      ticket.status = 'WON';
+      ticket.prizeWonUsdt = finalPrizeUsdt.toFixed(2);
+      ticket.tierLabelFa = evalResult.tierLabelFa;
+      ticket.claimed = true;
+      winnersCount += 1;
+      totalPayoutUsdt = Number((totalPayoutUsdt + finalPrizeUsdt).toFixed(2));
+
+      const payoutUuid = `tx_win_${ticket.ticketCode}_${drawNonce}`;
+      const ownerKey = String(ticket.userUid || '').replace(/^tg_/, '');
+      const ownerAccount = dbState.users?.[ownerKey];
+      let winnerDisplayName = 'کاربر برنده LuckyDrop';
+
+      if (ownerAccount) {
+        const ownerPam = new PAMSeamlessWalletEngine(ownerAccount.pamState);
+        const creditRes = ownerPam.credit({
+          transactionUuid: payoutUuid,
+          referenceTransactionUuid: ticket.transactionUuid || null,
+          roundId: roundObj.roundCode,
+          vertical: 'LUCKYDROP_LOTTERY',
+          amountUsdt: finalPrizeUsdt,
+          note: `تسویه راس تایم استخر ۸۵٪ برای کوپن ${ticket.ticketCode} (${evalResult.tierLabelFa}) در دور ${roundObj.roundCode}`,
+        });
+        ownerAccount.pamState = ownerPam.getState();
+        ownerAccount.tonBalance = roundTonClean(ownerAccount.pamState.tonBalance);
+        ownerAccount.starsBalance = roundStarsClean(ownerAccount.pamState.starsBalance);
+        ownerAccount.ledger = ownerAccount.pamState.ledger;
+        winnerDisplayName = ownerAccount.displayName;
+        ticket.payoutTransactionUuid = creditRes.ledgerEntry?.transactionUuid || payoutUuid;
+      } else {
+        ticket.payoutTransactionUuid = payoutUuid;
+      }
+
+      if (!dbState.claimedTicketCodes.includes(ticket.ticketCode)) {
+        dbState.claimedTicketCodes.push(ticket.ticketCode);
+      }
+
+      const tonWon = (finalPrizeUsdt / DEFAULT_FX_RATES.TON).toFixed(2);
+      dbState.transactions.unshift({
+        id: Date.now() + winnersCount,
+        txHash: `0x${drawProof.primaryHmacHex}`,
+        userUid: ticket.userUid,
+        type: 'PAYOUT',
+        network: 'TON Network',
+        amountUsdt: finalPrizeUsdt.toFixed(2),
+        amountCrypto: `${tonWon} TON`,
+        winnerName: winnerDisplayName,
+        winnerLocation: 'تسویه راس تایم (۸۵٪ استخر)',
+        lotteryTitle: roundObj.titleFa,
+        winningCombo: `[${drawnMain.join(', ')}] + ★${drawnGolden}`,
+        timeAgoLabel: 'همین الان',
+        status: 'CONFIRMED',
+        blockNumber: 62195000 + drawNonce,
+        confirmations: 19,
+      });
+    } else {
+      ticket.status = 'LOST';
+      ticket.prizeWonUsdt = '0.00';
+      ticket.tierLabelFa = evalResult.tierLabelFa;
+    }
+
+    evaluatedTicketsSummary.push({
+      ticketCode: ticket.ticketCode,
+      status: ticket.status as 'WON' | 'LOST',
+      prizeUsdt: finalPrizeUsdt,
+      tierLabelFa: evalResult.tierLabelFa,
+      payoutTransactionUuid: ticket.payoutTransactionUuid || null,
+    });
+  }
+
+  // 3. Update round winning numbers, rotate serverSeed, and roll over countdown timer for next cycle
+  roundObj.winningNumbers = JSON.stringify(drawnMain);
+  roundObj.winningGoldenBall = drawnGolden;
+  const nextServerSeed = generateCryptographicServerSeed();
+  roundObj.serverSeed = nextServerSeed;
+  roundObj.serverSeedHash = sha256Hex(nextServerSeed);
+  roundObj.nonce = drawNonce + 1;
+  const durMin = Math.max(1, Number(roundObj.durationMinutes) || 60);
+  roundObj.drawTargetTimestampMs = Date.now() + durMin * 60_000;
+
+  if (winnersCount > 0) {
+    const seedUsdt = Math.max(0, parseFloat(roundObj.initialSeedUsdt || '0') || 0);
+    const nextSplit = calculateDynamicPariMutuelPool(seedUsdt, 15);
+    roundObj.totalSalesUsdt = nextSplit.grossCollectedUsdt.toFixed(2);
+    roundObj.jackpotUsdt = nextSplit.distributablePool85Usdt.toFixed(2);
+    roundObj.totalPayoutUsdt = nextSplit.distributablePool85Usdt.toFixed(2);
+    roundObj.operatorProfitUsdt = nextSplit.siteShare15Usdt.toFixed(2);
+    roundObj.ticketsSoldCount = 0;
+  }
+
+  // 4. Record verifiable draw in Draw History (serverSeed is revealed ONLY after draw completion!)
+  const drawRecord: VerifiableDrawHistoryRecord = {
+    drawId: `DRAW-${roundObj.roundCode.replace('#', '')}-${drawNonce}`,
+    roundCode: roundObj.roundCode,
+    roundTitleFa: roundObj.titleFa,
+    drawnMain,
+    drawnGolden,
+    serverSeed: drawProof.serverSeed,
+    serverSeedHash: drawProof.serverSeedHash,
+    clientSeed: drawProof.clientSeed,
+    nonce: drawProof.nonce,
+    primaryHmacHex: drawProof.primaryHmacHex,
+    first52BitHex: drawProof.first52BitHex,
+    uniformFloatX: drawProof.uniformFloatX,
+    ticketsEvaluatedCount,
+    winnersCount,
+    totalPayoutUsdt,
+    createdAt: new Date().toLocaleTimeString('fa-IR'),
+  };
+  dbState.drawHistory.unshift(drawRecord);
+
+  persistAll();
+
+  void dispatchAdminTelegramAlert({
+    eventType: 'DRAW_RESULT',
+    userDisplayName: `${winnersCount} برنده راس تایم`,
+    amountUsdt: distributablePool85Usdt,
+    network: 'TON Pari-Mutuel 85% Pool',
+    roundCode: roundObj.roundCode,
+    roundTitleFa: roundObj.titleFa,
+    winningBalls: drawnMain,
+    winningGoldenBall: drawnGolden,
+    seedHash: drawProof.serverSeedHash,
+    details: `قرعه‌کشی دور ${roundObj.roundCode} انجام شد • استخر ۸۵٪ تقسیم‌شده: $${distributablePool85Usdt.toFixed(2)}`,
+  });
+
+  return {
+    roundCode: roundObj.roundCode,
+    drawnMain,
+    drawnGolden,
+    hash: `0x${drawProof.primaryHmacHex}`,
+    drawProof,
+    drawRecord,
+    ticketsEvaluatedCount,
+    winnersCount,
+    totalPayoutUsdt,
+    grossCollectedUsdt: poolSplit.grossCollectedUsdt,
+    siteShare15Usdt: poolSplit.siteShare15Usdt,
+    distributablePool85Usdt: poolSplit.distributablePool85Usdt,
+    evaluatedTickets: evaluatedTicketsSummary,
+    nextServerSeedHash: roundObj.serverSeedHash,
+  };
+}
+
+// Background 5-Second Automated Lottery Draw Scheduler (Runs 24/7 on the Server)
+let drawSchedulerRunning = false;
+setInterval(async () => {
+  if (drawSchedulerRunning || dbState.killSwitchActive) return;
+  drawSchedulerRunning = true;
+  try {
+    const nowMs = Date.now();
+    for (const roundObj of dbState.rounds) {
+      const isRoundActive = !roundObj.status || roundObj.status.toUpperCase() === 'ACTIVE';
+      const targetMs = Number(roundObj.drawTargetTimestampMs) || 0;
+      if (isRoundActive && targetMs > 0 && nowMs >= targetMs) {
+        await executeLotteryDrawWithDynamicPool({
+          roundObj,
+          isAdmin: false,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Automated lottery draw scheduler error:', err);
+  } finally {
+    drawSchedulerRunning = false;
+  }
+}, 5000);
 
 app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
   try {
@@ -2020,221 +3061,13 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'دور قرعه‌کشی مورد نظر یافت نشد.' });
     }
 
-    const activeServerSeed =
-      roundObj.serverSeed || sha256Hex(`luckydrop_seed_${roundObj.roundCode}_${Date.now()}`);
-    const activeClientSeed =
-      (
-        clientSeedOverride ||
-        roundObj.clientSeed ||
-        userPam.getState().seeds.clientSeed ||
-        ''
-      ).trim() || 'luckydrop_vip_client_seed';
-    const drawNonce = Math.max(1, Number(roundObj.nonce) || 1);
-
-    // 1. 100% Server-Authoritative Lottery Draw using Node's crypto.createHmac('sha256', serverSeed) & crypto.randomInt
-    const drawProof = computeServerAuthoritativeLotteryDraw({
-      serverSeed: activeServerSeed,
-      clientSeed: activeClientSeed,
-      nonce: drawNonce,
-      roundCode: roundObj.roundCode,
-      mainCount: roundObj.mainCount || 5,
-      mainMax: roundObj.mainMax || 50,
-      goldenMax: roundObj.goldenMax ?? 15,
-    });
-
-    const drawnMain: number[] =
-      session.isAdmin && Array.isArray(forceWinningMain) && forceWinningMain.length >= 4
-        ? forceWinningMain.map(Number).sort((a, b) => a - b)
-        : drawProof.drawnMain;
-    const drawnGolden: number =
-      session.isAdmin && typeof forceWinningGolden === 'number'
-        ? forceWinningGolden
-        : drawProof.drawnGolden;
-
-    // 2. Dynamic Pari-Mutuel Pool Calculation: 15% Site Share Reserved, 85% Distributable Pool
-    const grossCollectedUsdt = Math.max(0, parseFloat(roundObj.totalSalesUsdt) || 0);
-    const poolSplit = calculateDynamicPariMutuelPool(grossCollectedUsdt, 15);
-    const distributablePool85Usdt = poolSplit.distributablePool85Usdt;
-
-    // First pass: evaluate all ACTIVE tickets in this round
-    const candidateTickets: Array<{
-      ticket: PersistentTicketRecord;
-      evalResult: ReturnType<typeof evaluateTicketPrizeTier>;
-    }> = [];
-
-    for (const ticket of dbState.tickets) {
-      const normalizedStatus = (ticket.status || '').toUpperCase();
-      if (
-        ticket.roundCode === roundObj.roundCode &&
-        (normalizedStatus === 'ACTIVE' || normalizedStatus === 'MINTED')
-      ) {
-        let parsedMain: number[] = [];
-        try {
-          parsedMain = JSON.parse(ticket.mainNumbers);
-        } catch {
-          parsedMain = String(ticket.mainNumbers)
-            .replace(/[\[\]]/g, '')
-            .split(',')
-            .map((n) => Number(n.trim()))
-            .filter((n) => Number.isFinite(n));
-        }
-
-        const evalResult = evaluateTicketPrizeTier({
-          ticketMain: parsedMain,
-          ticketGolden: Number(ticket.goldenBall || 0),
-          drawnMain,
-          drawnGolden,
-          ticketCostUsdt: parseFloat(ticket.costUsdt) || 5,
-          jackpotUsdt: Math.max(50, distributablePool85Usdt),
-        });
-
-        candidateTickets.push({ ticket, evalResult });
-      }
-    }
-
-    // Second pass: distribute the exact 85% collected pool among winning tickets proportionally
-    const rawWeights = candidateTickets.map((c) => (c.evalResult.won ? c.evalResult.prizeUsdt : 0));
-    const distributedPrizes = distributePoolAmongWinners(distributablePool85Usdt, rawWeights);
-
-    const ticketsEvaluatedCount = candidateTickets.length;
-    let winnersCount = 0;
-    let totalPayoutUsdt = 0;
-    const evaluatedTicketsSummary: Array<{
-      ticketCode: string;
-      status: 'WON' | 'LOST';
-      prizeUsdt: number;
-      tierLabelFa: string;
-      payoutTransactionUuid: string | null;
-    }> = [];
-
-    for (let idx = 0; idx < candidateTickets.length; idx++) {
-      const { ticket, evalResult } = candidateTickets[idx];
-      const finalPrizeUsdt = distributedPrizes[idx] || 0;
-
-      if (evalResult.won && finalPrizeUsdt > 0) {
-        ticket.status = 'WON';
-        ticket.prizeWonUsdt = finalPrizeUsdt.toFixed(2);
-        ticket.tierLabelFa = evalResult.tierLabelFa;
-        ticket.claimed = true;
-        winnersCount += 1;
-        totalPayoutUsdt = Number((totalPayoutUsdt + finalPrizeUsdt).toFixed(2));
-
-        const payoutUuid = `tx_win_${ticket.ticketCode}_${drawNonce}`;
-        const ownerKey = String(ticket.userUid || '').replace(/^tg_/, '');
-        const ownerAccount = dbState.users?.[ownerKey];
-        let winnerDisplayName = 'کاربر برنده LuckyDrop';
-
-        if (ownerAccount) {
-          const ownerPam = new PAMSeamlessWalletEngine(ownerAccount.pamState);
-          const creditRes = ownerPam.credit({
-            transactionUuid: payoutUuid,
-            referenceTransactionUuid: ticket.transactionUuid || null,
-            roundId: roundObj.roundCode,
-            vertical: 'LUCKYDROP_LOTTERY',
-            amountUsdt: finalPrizeUsdt,
-            note: `تسویه راس تایم استخر ۸۵٪ برای کوپن ${ticket.ticketCode} (${evalResult.tierLabelFa}) در دور ${roundObj.roundCode}`,
-          });
-          ownerAccount.pamState = ownerPam.getState();
-          ownerAccount.tonBalance = roundTonClean(ownerAccount.pamState.tonBalance);
-          ownerAccount.starsBalance = roundStarsClean(ownerAccount.pamState.starsBalance);
-          ownerAccount.ledger = ownerAccount.pamState.ledger;
-          winnerDisplayName = ownerAccount.displayName;
-          ticket.payoutTransactionUuid = creditRes.ledgerEntry?.transactionUuid || payoutUuid;
-        } else {
-          ticket.payoutTransactionUuid = payoutUuid;
-        }
-
-        if (!dbState.claimedTicketCodes.includes(ticket.ticketCode)) {
-          dbState.claimedTicketCodes.push(ticket.ticketCode);
-        }
-
-        const tonWon = (finalPrizeUsdt / DEFAULT_FX_RATES.TON).toFixed(2);
-        dbState.transactions.unshift({
-          id: Date.now() + winnersCount,
-          txHash: `0x${drawProof.primaryHmacHex}`,
-          userUid: ticket.userUid,
-          type: 'PAYOUT',
-          network: 'TON Network',
-          amountUsdt: finalPrizeUsdt.toFixed(2),
-          amountCrypto: `${tonWon} TON`,
-          winnerName: winnerDisplayName,
-          winnerLocation: 'تسویه راس تایم (۸۵٪ استخر)',
-          lotteryTitle: roundObj.titleFa,
-          winningCombo: `[${drawnMain.join(', ')}] + ★${drawnGolden}`,
-          timeAgoLabel: 'همین الان',
-          status: 'CONFIRMED',
-          blockNumber: 62195000 + drawNonce,
-          confirmations: 19,
-        });
-      } else {
-        ticket.status = 'LOST';
-        ticket.prizeWonUsdt = '0.00';
-        ticket.tierLabelFa = evalResult.tierLabelFa;
-      }
-
-      evaluatedTicketsSummary.push({
-        ticketCode: ticket.ticketCode,
-        status: ticket.status as 'WON' | 'LOST',
-        prizeUsdt: finalPrizeUsdt,
-        tierLabelFa: evalResult.tierLabelFa,
-        payoutTransactionUuid: ticket.payoutTransactionUuid || null,
-      });
-    }
-
-    // 3. Update round winning numbers, rotate serverSeed, and reset countdown timer for next cycle
-    roundObj.winningNumbers = JSON.stringify(drawnMain);
-    roundObj.winningGoldenBall = drawnGolden;
-    const nextServerSeed = generateCryptographicServerSeed();
-    roundObj.serverSeed = nextServerSeed;
-    roundObj.serverSeedHash = sha256Hex(nextServerSeed);
-    roundObj.nonce = drawNonce + 1;
-    const durMin = Math.max(1, Number(roundObj.durationMinutes) || 60);
-    roundObj.drawTargetTimestampMs = Date.now() + durMin * 60 * 1000;
-
-    if (winnersCount > 0) {
-      const seedUsdt = Math.max(0, parseFloat(roundObj.initialSeedUsdt || '0') || 0);
-      const nextSplit = calculateDynamicPariMutuelPool(seedUsdt, 15);
-      roundObj.totalSalesUsdt = nextSplit.grossCollectedUsdt.toFixed(2);
-      roundObj.jackpotUsdt = nextSplit.distributablePool85Usdt.toFixed(2);
-      roundObj.totalPayoutUsdt = nextSplit.distributablePool85Usdt.toFixed(2);
-      roundObj.operatorProfitUsdt = nextSplit.siteShare15Usdt.toFixed(2);
-      roundObj.ticketsSoldCount = 0;
-    }
-
-    // 4. Record verifiable draw in Draw History (serverSeed is revealed ONLY after draw completion!)
-    const drawRecord: VerifiableDrawHistoryRecord = {
-      drawId: `DRAW-${roundObj.roundCode.replace('#', '')}-${drawNonce}`,
-      roundCode: roundObj.roundCode,
-      roundTitleFa: roundObj.titleFa,
-      drawnMain,
-      drawnGolden,
-      serverSeed: drawProof.serverSeed,
-      serverSeedHash: drawProof.serverSeedHash,
-      clientSeed: drawProof.clientSeed,
-      nonce: drawProof.nonce,
-      primaryHmacHex: drawProof.primaryHmacHex,
-      first52BitHex: drawProof.first52BitHex,
-      uniformFloatX: drawProof.uniformFloatX,
-      ticketsEvaluatedCount,
-      winnersCount,
-      totalPayoutUsdt,
-      createdAt: new Date().toLocaleTimeString('fa-IR'),
-    };
-    dbState.drawHistory.unshift(drawRecord);
-
-    persistAll();
-
-    void dispatchAdminTelegramAlert({
-      eventType: 'DRAW_RESULT',
-      userDisplayName: `${winnersCount} برنده راس تایم`,
-      amountUsdt: distributablePool85Usdt,
-      network: 'TON Pari-Mutuel 85% Pool',
-      roundCode: roundObj.roundCode,
-      roundTitleFa: roundObj.titleFa,
-      winningBalls: drawnMain,
-      winningGoldenBall: drawnGolden,
-      seedHash: drawProof.serverSeedHash,
-      details: `قرعه‌کشی دور ${roundObj.roundCode} انجام شد • استخر ۸۵٪ تقسیم‌شده: $${distributablePool85Usdt.toFixed(2)}`,
+    const drawOutcome = await executeLotteryDrawWithDynamicPool({
+      roundObj,
+      clientSeedOverride:
+        clientSeedOverride || roundObj.clientSeed || userPam.getState().seeds.clientSeed,
+      isAdmin: session.isAdmin,
+      forceWinningMain,
+      forceWinningGolden,
     });
 
     const refreshedCaller = getOrCreateIsolatedUserContext(req);
@@ -2242,19 +3075,7 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
 
     res.json({
       ok: true,
-      roundCode: roundObj.roundCode,
-      drawnMain,
-      drawnGolden,
-      hash: `0x${drawProof.primaryHmacHex}`,
-      drawProof,
-      drawRecord,
-      ticketsEvaluatedCount,
-      winnersCount,
-      totalPayoutUsdt,
-      grossCollectedUsdt: poolSplit.grossCollectedUsdt,
-      siteShare15Usdt: poolSplit.siteShare15Usdt,
-      distributablePool85Usdt: poolSplit.distributablePool85Usdt,
-      evaluatedTickets: evaluatedTicketsSummary,
+      ...drawOutcome,
       rounds: dbState.rounds.map((r) => ({ ...r, serverSeed: undefined })),
       tonBalance: callerPam.tonBalance,
       starsBalance: callerPam.starsBalance,
@@ -2262,7 +3083,6 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
         ...callerPam,
         seeds: { ...callerPam.seeds, serverSeed: '' },
       },
-      nextServerSeedHash: roundObj.serverSeedHash,
     });
   } catch (error: any) {
     console.error('Failed to execute draw:', error);
@@ -2620,10 +3440,17 @@ const handleQuestVerificationAndClaim = async (req: AuthRequest, res: express.Re
 
       commitUserAccount();
 
+      const updatedQuests = INITIAL_TMA_QUESTS.map((q) => ({
+        ...q,
+        progress: userAccount.completedQuests.includes(q.id) ? q.target : 0,
+        claimed: userAccount.completedQuests.includes(q.id),
+      }));
+
       return res.json({
         ok: true,
         verified: true,
         questId: cleanQuestId,
+        quests: updatedQuests,
         completedQuests: userAccount.completedQuests,
         freePlinkoDrops: userAccount.freePlinkoDrops,
         freeScratchCards: userAccount.freeScratchCards,
@@ -2764,6 +3591,8 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
     const {
       botToken = '',
       adminChatId = '',
+      botUsername,
+      officialChannelUrl,
       enabled = true,
       notifyOnDeposit = true,
       notifyOnWithdrawal = true,
@@ -2775,6 +3604,14 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
         ? dbState.telegramBotConfig.botToken
         : incomingToken,
       adminChatId: normalizeTelegramChatId(String(adminChatId)),
+      botUsername:
+        typeof botUsername === 'string' && botUsername.trim()
+          ? botUsername.trim().replace(/^@/, '')
+          : dbState.telegramBotConfig.botUsername || 'LuckyDrop_TON_Bot',
+      officialChannelUrl:
+        typeof officialChannelUrl === 'string' && officialChannelUrl.trim()
+          ? officialChannelUrl.trim()
+          : dbState.telegramBotConfig.officialChannelUrl || 'https://t.me/LuckyDrop_TON_Official',
       enabled: Boolean(enabled),
       notifyOnDeposit: Boolean(notifyOnDeposit),
       notifyOnWithdrawal: Boolean(notifyOnWithdrawal),
@@ -2942,24 +3779,27 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
         });
       }
 
-      // Anti-Replay Idempotency Check (409 Conflict on duplicate TXID)
-      const idempotency = verifyAndRecordDepositIdempotency({
-        txHashOrChargeId: rawTxHash,
-        processedSet: processedDepositTxHashes,
-      });
-      if (!idempotency.ok) {
-        return res.status(idempotency.status).json({
-          ok: false,
-          error: idempotency.error,
-        });
-      }
-
-      const cleanTxHash = idempotency.normalizedKey;
       const safeAmount = amountValidation.cleanAmount;
       const userDisplayName = userPam.getState().displayName;
       const playerId = userPam.getState().playerId;
+      const liveSecurityCfg = loadServerSecurityConfig(process.env);
+      const treasuryWallet =
+        (process.env.PUBLIC_TON_TREASURY_WALLET || '').trim() ||
+        liveSecurityCfg.publicTonTreasuryWallet;
 
       if (effectiveMode === 'ADMIN_MANUAL') {
+        const idempotency = verifyAndRecordDepositIdempotency({
+          txHashOrChargeId: rawTxHash,
+          processedSet: processedDepositTxHashes,
+        });
+        if (!idempotency.ok) {
+          return res.status(idempotency.status).json({
+            ok: false,
+            error: idempotency.error,
+          });
+        }
+        const cleanTxHash = idempotency.normalizedKey;
+
         const pendingItem: ServerDepositItem = {
           id: Date.now(),
           depositCode: `DEP-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -2967,7 +3807,7 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
           userDisplayName,
           network,
           senderWallet: senderWallet || 'External Wallet / Exchange',
-          officialRecipientWallet,
+          officialRecipientWallet: treasuryWallet,
           amountUsdt: safeAmount,
           amountCrypto: `${safeAmount} USDT`,
           txHash: cleanTxHash,
@@ -3000,14 +3840,59 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
         });
       }
 
+      // ONCHAIN_AUTO mode: strictly verify on-chain via TonAPI / TON Center before crediting
+      const expectedTon = roundTonClean(
+        amountTon !== undefined ? Number(amountTon) : safeAmount / DEFAULT_FX_RATES.TON
+      );
+      if (processedDepositTxHashes.has(rawTxHash)) {
+        return res.status(409).json({
+          ok: false,
+          error: '409 Conflict — DUPLICATE_DEPOSIT_REPLAY: این تراکنش قبلاً پردازش و شارژ شده است.',
+        });
+      }
+
+      const onChainVerification = await verifyOnChainTonTransaction({
+        bocOrTxHash: cleanBoc || rawTxHash,
+        expectedDestinationWallet: treasuryWallet,
+        expectedAmountTon: expectedTon,
+        senderWallet,
+        tonApiKey: process.env.TONAPI_KEY,
+        toncenterApiKey: process.env.TONCENTER_API_KEY,
+      });
+
+      if (!onChainVerification.verified) {
+        return res.status(onChainVerification.status).json({
+          ok: false,
+          error: onChainVerification.error,
+        });
+      }
+
+      const idempotency = verifyAndRecordDepositIdempotency({
+        txHashOrChargeId: onChainVerification.onChainTxHash,
+        processedSet: processedDepositTxHashes,
+      });
+      if (!idempotency.ok) {
+        return res.status(idempotency.status).json({
+          ok: false,
+          error: idempotency.error,
+        });
+      }
+      processedDepositTxHashes.add(rawTxHash);
+
+      const cleanTxHash = onChainVerification.onChainTxHash;
+      const verifiedAmountUsdt = Number(
+        (onChainVerification.verifiedAmountTon * DEFAULT_FX_RATES.TON).toFixed(2)
+      );
       const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
       const creditRes = userPam.credit({
-        transactionUuid: `tx_dep_${depositCode}_${cleanTxHash.slice(0, 10)}`,
+        transactionUuid: `tx_dep_${depositCode}_${cleanTxHash.slice(2, 12)}`,
         referenceTransactionUuid: null,
         roundId: depositCode,
         vertical: 'CRYPTO_TREASURY',
-        amountUsdt: safeAmount,
-        note: `شارژ آنی کیف پول از شبکه ${network} (${depositCode})`,
+        currency: 'TON',
+        amountTon: onChainVerification.verifiedAmountTon,
+        amountUsdt: verifiedAmountUsdt,
+        note: `شارژ آنی تاییدشده بلاکچین TON (${depositCode})`,
       });
 
       const confirmedItem: ServerDepositItem = {
@@ -3016,13 +3901,13 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
         userUid: playerId,
         userDisplayName,
         network,
-        senderWallet: senderWallet || 'Connected Web3 Wallet',
-        officialRecipientWallet,
-        amountUsdt: safeAmount,
-        amountCrypto: `${safeAmount} USDT`,
+        senderWallet: onChainVerification.senderAddress || senderWallet || 'Connected Web3 Wallet',
+        officialRecipientWallet: treasuryWallet,
+        amountUsdt: verifiedAmountUsdt,
+        amountCrypto: `${onChainVerification.verifiedAmountTon.toFixed(2)} TON`,
         txHash: cleanTxHash,
         explorerUrl: getBlockchainExplorerTxUrl(network, cleanTxHash),
-        explorerNote: 'تایید اتوماتیک نود شبکه و شارژ در PAM Ledger',
+        explorerNote: `تایید آن‌چین (${onChainVerification.provider}) و شارژ در PAM Ledger`,
         verificationMethod: 'ONCHAIN_AUTO',
         verificationMode: 'ONCHAIN_AUTO',
         status: 'CREDITED',
@@ -3036,9 +3921,9 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
         await dispatchAdminTelegramAlert({
           eventType: 'DEPOSIT',
           userDisplayName,
-          amountUsdt: safeAmount,
+          amountUsdt: verifiedAmountUsdt,
           network,
-          details: `شارژ آنی Web3 تایید شد (${depositCode})`,
+          details: `شارژ آنی Web3 در بلاکچین تایید شد (${depositCode})`,
         });
       }
 
@@ -3072,7 +3957,8 @@ app.post(
   handleCryptoDeposit
 );
 
-// Strict TON Connect Signed BOC Verification & Ledger Credit Endpoint (Anti-Replay 409 Conflict)
+// Strict TON Connect Signed BOC & On-Chain Verification Endpoint (`/api/wallet/deposit-ton`)
+// Verifies transaction on-chain via TonAPI / TON Center, strictly matching PUBLIC_TON_TREASURY_WALLET and exact nanoTON value.
 app.post(
   '/api/wallet/deposit-ton',
   optionalAuth,
@@ -3096,18 +3982,17 @@ app.post(
           boc = '',
           txHash = '',
           amountTon,
-          amountUsdt,
           senderWallet = '',
           destinationWallet,
           memo = '',
         } = req.body || {};
 
         const cleanBoc = String(boc || txHash || '').trim();
-        if (!cleanBoc || cleanBoc.length < 8) {
+        if (!cleanBoc || cleanBoc.length < 16) {
           return res.status(400).json({
             ok: false,
             error:
-              'MISSING_SIGNED_BOC — تراکنش TON باید در کیف پول TON Connect امضا شود (BOC معتبر یافت نشد).',
+              'MISSING_SIGNED_BOC — تراکنش TON باید در کیف پول TON Connect امضا شود (BOC یا هش تراکنش معتبر یافت نشد).',
           });
         }
 
@@ -3124,39 +4009,102 @@ app.post(
         }
         const safeAmountTon = tonValidation.cleanAmount;
 
+        const liveSecurityCfg = loadServerSecurityConfig(process.env);
+        const officialTreasuryWallet =
+          (process.env.PUBLIC_TON_TREASURY_WALLET || '').trim() ||
+          liveSecurityCfg.publicTonTreasuryWallet;
+
+        // If client explicitly passed destinationWallet, ensure it is not spoofing a different recipient
+        if (
+          destinationWallet &&
+          String(destinationWallet).trim() &&
+          String(destinationWallet).trim() !== officialTreasuryWallet
+        ) {
+          return res.status(400).json({
+            ok: false,
+            error:
+              'DESTINATION_ADDRESS_MISMATCH — آدرس مقصد ارسال‌شده با آدرس خزانه رسمی سایت (PUBLIC_TON_TREASURY_WALLET) مطابقت ندارد.',
+          });
+        }
+
         const bocTxHash = `0x${sha256Hex(`ton_boc:${cleanBoc}`)}`;
-        const idempotency = verifyAndRecordDepositIdempotency({
-          txHashOrChargeId: bocTxHash,
-          processedSet: processedDepositTxHashes,
-        });
-        if (!idempotency.ok) {
-          return res.status(idempotency.status).json({
+        if (processedDepositTxHashes.has(bocTxHash) || processedDepositTxHashes.has(cleanBoc)) {
+          return res.status(409).json({
             ok: false,
             error:
               '409 Conflict — DUPLICATE_BOC: این بسته امضاشده (BOC / TXID) قبلاً در سیستم ثبت و پردازش شده است.',
           });
         }
 
-        const liveSecurityCfg = loadServerSecurityConfig(process.env);
-        const officialRecipientWallet =
-          String(destinationWallet || '').trim() || liveSecurityCfg.publicTonTreasuryWallet;
+        // Verify the transaction on-chain via TonAPI / TON Center with a server-side retry loop (up to 6 attempts spaced by 3s)
+        // so freshly signed Tonkeeper BOCs have time to be indexed on-chain before returning 422!
+        const maxPollAttempts = req.body?.skipRetryPoll ? 1 : 6;
+        let onChainVerification = await verifyOnChainTonTransaction({
+          bocOrTxHash: cleanBoc,
+          expectedDestinationWallet: officialTreasuryWallet,
+          expectedAmountTon: safeAmountTon,
+          senderWallet,
+          tonApiKey: process.env.TONAPI_KEY,
+          toncenterApiKey: process.env.TONCENTER_API_KEY,
+        });
+
+        for (
+          let attempt = 2;
+          attempt <= maxPollAttempts &&
+          !onChainVerification.verified &&
+          onChainVerification.status === 422;
+          attempt++
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          onChainVerification = await verifyOnChainTonTransaction({
+            bocOrTxHash: cleanBoc,
+            expectedDestinationWallet: officialTreasuryWallet,
+            expectedAmountTon: safeAmountTon,
+            senderWallet,
+            tonApiKey: process.env.TONAPI_KEY,
+            toncenterApiKey: process.env.TONCENTER_API_KEY,
+          });
+        }
+
+        if (!onChainVerification.verified) {
+          return res.status(onChainVerification.status).json({
+            ok: false,
+            error: onChainVerification.error,
+          });
+        }
+
+        // Record both the canonical on-chain txHash and the BOC digest in persistent anti-replay storage
+        const onChainIdempotency = verifyAndRecordDepositIdempotency({
+          txHashOrChargeId: onChainVerification.onChainTxHash,
+          processedSet: processedDepositTxHashes,
+        });
+        if (!onChainIdempotency.ok) {
+          return res.status(onChainIdempotency.status).json({
+            ok: false,
+            error:
+              '409 Conflict — DUPLICATE_ONCHAIN_TX: این تراکنش بلاکچین TON قبلاً در سیستم ثبت و شارژ شده است.',
+          });
+        }
+        verifyAndRecordDepositIdempotency({
+          txHashOrChargeId: bocTxHash,
+          processedSet: processedDepositTxHashes,
+        });
+
+        const verifiedTon = onChainVerification.verifiedAmountTon;
         const depositCode = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
-        const computedUsdt =
-          typeof amountUsdt === 'number' && Number.isFinite(amountUsdt) && amountUsdt > 0
-            ? Number(amountUsdt.toFixed(2))
-            : Number((safeAmountTon * DEFAULT_FX_RATES.TON).toFixed(2));
+        const computedUsdt = Number((verifiedTon * DEFAULT_FX_RATES.TON).toFixed(2));
         const userDisplayName = userPam.getState().displayName;
         const playerId = userPam.getState().playerId;
 
         const creditRes = userPam.credit({
-          transactionUuid: `tx_ton_boc_${depositCode}_${bocTxHash.slice(2, 12)}`,
+          transactionUuid: `tx_ton_boc_${depositCode}_${onChainVerification.onChainTxHash.slice(2, 12)}`,
           referenceTransactionUuid: null,
           roundId: depositCode,
           vertical: 'TON_CONNECT_BOC_TREASURY',
           currency: 'TON',
-          amountTon: safeAmountTon,
+          amountTon: verifiedTon,
           amountUsdt: computedUsdt,
-          note: `واریز تاییدشده TON Connect BOC (+${safeAmountTon.toFixed(2)} TON • ${memo || depositCode})`,
+          note: `واریز آن‌چین تاییدشده TON (${onChainVerification.provider} • +${verifiedTon.toFixed(2)} TON • ${memo || depositCode})`,
         });
 
         const confirmedItem: ServerDepositItem = {
@@ -3164,14 +4112,14 @@ app.post(
           depositCode,
           userUid: playerId,
           userDisplayName,
-          network: 'TON (TON Connect 2.0 Signed BOC)',
-          senderWallet: String(senderWallet || 'TON Connect Wallet'),
-          officialRecipientWallet,
+          network: `TON (${onChainVerification.provider} Verified)`,
+          senderWallet: String(onChainVerification.senderAddress || senderWallet || 'TON Connect Wallet'),
+          officialRecipientWallet: officialTreasuryWallet,
           amountUsdt: computedUsdt,
-          amountCrypto: `${safeAmountTon.toFixed(2)} TON`,
-          txHash: bocTxHash,
-          explorerUrl: getBlockchainExplorerTxUrl('TON Network', bocTxHash),
-          explorerNote: 'تایید BOC امضاشده TON Connect و شارژ در PAM Ledger',
+          amountCrypto: `${verifiedTon.toFixed(2)} TON`,
+          txHash: onChainVerification.onChainTxHash,
+          explorerUrl: getBlockchainExplorerTxUrl('TON Network', onChainVerification.onChainTxHash),
+          explorerNote: `تایید آن‌چین ${onChainVerification.provider} (${onChainVerification.verifiedNanoTon} nanoTON) و شارژ در PAM Ledger`,
           verificationMethod: 'ONCHAIN_AUTO',
           verificationMode: 'ONCHAIN_AUTO',
           status: 'CREDITED',
@@ -3187,8 +4135,8 @@ app.post(
             eventType: 'DEPOSIT',
             userDisplayName,
             amountUsdt: computedUsdt,
-            network: 'TON (Signed BOC)',
-            details: `واریز تاییدشده TON Connect (+${safeAmountTon.toFixed(2)} TON • ${depositCode})`,
+            network: `TON (${onChainVerification.provider})`,
+            details: `واریز آن‌چین تاییدشده TON (+${verifiedTon.toFixed(2)} TON • ${depositCode})`,
           });
         }
 
@@ -3210,7 +4158,7 @@ app.post(
     } catch (error: any) {
       return res.status(500).json({
         ok: false,
-        error: error.message || 'خطا در تایید BOC و شارژ کیف پول TON',
+        error: error.message || 'خطا در تایید آن‌چین تراکنش TON',
       });
     }
   }
@@ -3407,9 +4355,9 @@ app.post(
           netAmountUsdt: computedUsdt,
           netAmountCrypto: `${safeStars.toLocaleString('en-US')} ⭐`,
           twoFactorVerified: true,
-          status: 'completed',
-          txHash: `xtr_wd_${sha256Hex(`${withdrawalCode}:${safeStars}`).slice(0, 28)}`,
-          createdAt: 'همین الان (تسویه آنی Stars)',
+          status: 'pending_review',
+          txHash: 'PENDING_ONCHAIN_TRANSFER',
+          createdAt: 'در انتظار تایید و تسویه ادمین (Escrow)',
         };
 
         dbState.withdrawals.unshift(newItem);
@@ -3417,14 +4365,14 @@ app.post(
 
         if (dbState.telegramBotConfig.notifyOnWithdrawal) {
           void dispatchAdminTelegramAlert({
-            eventType: 'WITHDRAWAL',
+            eventType: 'HIGH_VALUE_WITHDRAWAL',
             userDisplayName: userPam.getState().displayName,
             amountUsdt: computedUsdt,
             amountStars: safeStars,
             network: 'Telegram Stars (XTR)',
             withdrawalCode,
             destinationAddress: cleanDest,
-            details: `✅ برداشت ستاره تلگرام (${safeStars.toLocaleString('en-US')} ⭐) به مقصد ${cleanDest} ثبت و تسویه شد (${withdrawalCode})`,
+            details: `🛡️ درخواست برداشت ستاره تلگرام (${safeStars.toLocaleString('en-US')} ⭐) به مقصد ${cleanDest} در صف تایید ادمین قرار گرفت (${withdrawalCode})`,
           });
         }
 
@@ -3595,6 +4543,14 @@ app.post(
             .json({ error: debitRes.error || 'موجودی کیف پول برای این برداشت کافی نیست.' });
         }
 
+        const netNanoTon = Math.max(10_000_000, Math.round(netTon * 1e9));
+        const tonkeeperPayUrl = `https://app.tonkeeper.com/transfer/${encodeURIComponent(
+          destinationAddress
+        )}?amount=${netNanoTon}&text=${encodeURIComponent(
+          `LuckyDrop_Payout_${withdrawalCode}`
+        )}`;
+
+        // Safe Withdrawal Escrow: Never generate a fake completed txHash without a real on-chain transfer!
         const newItem: ServerWithdrawalItem = {
           id: Date.now(),
           withdrawalCode,
@@ -3607,27 +4563,24 @@ app.post(
           netAmountUsdt: Number(netAmountUsdt) || Number((netTon * DEFAULT_FX_RATES.TON).toFixed(2)),
           netAmountCrypto: `${netTon.toFixed(2)} TON`,
           twoFactorVerified: true,
-          status: gate.initialStatus,
-          txHash: `0x${Math.random().toString(16).slice(2, 14)}${Date.now().toString(16)}`,
-          createdAt: gate.requiresAdminApproval
-            ? 'در انتظار تایید ادمین (مبلغ بالا)'
-            : 'همین الان (تسویه اتوماتیک TON)',
+          status: 'pending_review',
+          txHash: 'PENDING_ONCHAIN_TRANSFER',
+          tonkeeperPayUrl,
+          createdAt: 'در انتظار تایید و پرداخت آن‌چین ادمین (Escrow)',
         };
         dbState.withdrawals.unshift(newItem);
         commitUserAccount();
 
         if (dbState.telegramBotConfig.notifyOnWithdrawal) {
           await dispatchAdminTelegramAlert({
-            eventType: gate.requiresAdminApproval ? 'HIGH_VALUE_WITHDRAWAL' : 'WITHDRAWAL',
+            eventType: 'HIGH_VALUE_WITHDRAWAL',
             userDisplayName: userPam.getState().displayName,
             amountUsdt: amountNum,
             amountTon: derivedAmountTon,
             network: 'TON Network',
             withdrawalCode,
             destinationAddress,
-            details: gate.requiresAdminApproval
-              ? `⚠️ درخواست برداشت مبلغ بالا (${derivedAmountTon.toFixed(2)} TON) نیازمند تایید ادمین (${withdrawalCode})`
-              : `✅ برداشت اتوماتیک (${derivedAmountTon.toFixed(2)} TON) تسویه شد (${withdrawalCode})`,
+            details: `🛡️ درخواست برداشت (${netTon.toFixed(2)} TON خالص) در صف تایید ادمین قرار گرفت (${withdrawalCode}) • لینک پرداخت ۱-کلیکی Tonkeeper آماده است`,
           });
         }
 
@@ -3636,7 +4589,8 @@ app.post(
           ok: true,
           withdrawal: newItem,
           withdrawals: dbState.withdrawals.filter((w) => w.userUid === playerId),
-          requiresAdminApproval: gate.requiresAdminApproval,
+          requiresAdminApproval: true,
+          tonkeeperPayUrl,
           autoWithdrawLimitTon: gate.thresholdTon,
           tonBalance: debitRes.tonBalance,
           starsBalance: debitRes.starsBalance,
@@ -4135,25 +5089,45 @@ app.post('/api/ai/support', optionalAuth, async (req: AuthRequest, res) => {
 });
 
 async function startServer() {
-  const vite = await createViteServer({
-    server: {
-      middlewareMode: true,
-      allowedHosts: [
-        'luckydrop-60r3.onrender.com',
-        '.onrender.com',
-        '.run.app',
-        'localhost',
-        '127.0.0.1',
-      ],
-    },
-    appType: 'spa',
-  });
+  const distPath = path.resolve(process.cwd(), 'dist');
+  const distIndexHtml = path.join(distPath, 'index.html');
+  const isProdMode =
+    process.env.NODE_ENV === 'production' && fs.existsSync(distIndexHtml);
 
-  app.use(vite.middlewares);
+  if (isProdMode) {
+    app.use(
+      express.static(distPath, {
+        maxAge: '1h',
+        index: false,
+      })
+    );
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
+      res.sendFile(distIndexHtml);
+    });
+  } else {
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        allowedHosts: [
+          'luckydrop-60r3.onrender.com',
+          '.onrender.com',
+          '.run.app',
+          'localhost',
+          '127.0.0.1',
+        ],
+      },
+      appType: 'spa',
+    });
+
+    app.use(vite.middlewares);
+  }
 
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, '0.0.0.0', () => {
-    console.log(`LuckyDrop iLottery & PAM Seamless Wallet server listening on http://0.0.0.0:${port}`);
+    console.log(
+      `LuckyDrop iLottery & PAM Seamless Wallet server (${isProdMode ? 'PRODUCTION' : 'DEV'}) listening on http://0.0.0.0:${port}`
+    );
   });
 }
 
