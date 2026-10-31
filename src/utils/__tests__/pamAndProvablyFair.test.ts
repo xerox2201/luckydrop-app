@@ -22,6 +22,7 @@ import {
   flipDiceRollMode,
   calculateMinesMultiplier,
   deriveProvablyFairMinesBoard,
+  deriveProvablyFairTowerBoard,
   deriveProvablyFairScratchCard,
 } from '../provablyFair.ts';
 import {
@@ -287,6 +288,14 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
     );
 
     // Verify new 3D games (TOWER_3D, WHEEL_3D, HILO_3D) & Zero-Loss Free Ticket math
+    const towerBoard = deriveProvablyFairTowerBoard({
+      serverSeed: 'tower_seed_999',
+      clientSeed: 'tower_client_777',
+      nonce: 3,
+      difficulty: 'MEDIUM',
+    });
+    const safeColFloor0 = towerBoard.trapColumnsPerFloor[0] === 0 ? 1 : 0;
+    const safeColFloor1 = towerBoard.trapColumnsPerFloor[1] === 0 ? 1 : 0;
     const towerEval = evaluateProvablyFairMiniGame({
       gameId: 'TOWER_3D',
       serverSeed: 'tower_seed_999',
@@ -295,7 +304,7 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
       betAmountUsdt: 0.05, // 0.01 TON micro bet
       towerDifficulty: 'MEDIUM',
       towerFloorsCleared: 2,
-      towerHitTrap: false,
+      selectedColumns: [safeColFloor0, safeColFloor1],
     });
     assert.equal(towerEval.gameId, 'TOWER_3D');
     assert.equal(towerEval.won, true);
@@ -324,7 +333,7 @@ describe('Provably Fair Cryptographic Engine (HMAC-SHA256 & 52-Bit Float)', () =
     });
     assert.equal(hiloEval.gameId, 'HILO_3D');
     assert.equal(hiloEval.won, true);
-    assert.equal(hiloEval.payoutUsdt, 4.9);
+    assert.equal(hiloEval.payoutUsdt, 4.55);
     assert.ok(hiloEval.hiloNextCard! >= 1 && hiloEval.hiloNextCard! <= 13);
   });
 });

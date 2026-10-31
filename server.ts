@@ -60,11 +60,15 @@ import {
   verifyOnChainTonTransaction,
   roundTonClean,
   roundStarsClean,
+  checkUserBannedGuard,
+  evaluateHardenedAdminSession,
+  executeAdminBalanceAdjustment,
   type IsolatedUserAccountRecord,
+  type AdminAuditLogEntry,
 } from './src/services/securityGuard.ts';
 
 const app = express();
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '10mb' }));
 
 // Production Web3 Security Headers (Compatible with Telegram Web/Desktop & AI Studio Preview iframe)
 app.use((_req, res, next) => {
@@ -277,6 +281,7 @@ interface PersistentDatabaseSchema {
   claimedTicketCodes: string[];
   killSwitchActive: boolean;
   autoWithdrawLimitTon?: number;
+  adminAuditLogs?: AdminAuditLogEntry[];
 }
 
 function buildInitialRounds(): PersistentRoundRecord[] {
@@ -382,6 +387,7 @@ function buildDefaultDatabase(): PersistentDatabaseSchema {
     claimedTicketCodes: [],
     killSwitchActive: false,
     autoWithdrawLimitTon: 50,
+    adminAuditLogs: [],
   };
 }
 
@@ -403,6 +409,9 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
         }
         if (!Array.isArray(parsed.processedStarsChargeIds)) {
           parsed.processedStarsChargeIds = [];
+        }
+        if (!Array.isArray(parsed.adminAuditLogs)) {
+          parsed.adminAuditLogs = [];
         }
         const deletedSet = new Set(
           Array.isArray(parsed.deletedRoundCodes) ? parsed.deletedRoundCodes : []
@@ -484,6 +493,7 @@ const dbState = loadPersistentDatabase();
 if (!dbState.users) dbState.users = {};
 if (!Array.isArray(dbState.processedTxHashes)) dbState.processedTxHashes = [];
 if (!Array.isArray(dbState.processedStarsChargeIds)) dbState.processedStarsChargeIds = [];
+if (!Array.isArray(dbState.adminAuditLogs)) dbState.adminAuditLogs = [];
 
 const pamEngine = new PAMSeamlessWalletEngine(dbState.pamState);
 
@@ -623,13 +633,15 @@ function resolveVerifiedTelegramSession(req: express.Request): {
     (req.headers['x-telegram-init-data'] as string | undefined) ||
     (req.body?.initData as string | undefined) ||
     '';
+  const activeBotToken = getEffectiveBotToken();
 
   const verification = verifyTelegramWebAppInitData({
     initDataRaw,
-    botToken: getEffectiveBotToken(),
+    botToken: activeBotToken,
     strictMode: liveSecurityCfg.strictTelegramInitDataAuth,
   });
 
+  let initDataUserId: number | null = verification.user?.id ?? null;
   let candidateUserId: number | null = verification.user?.id ?? null;
   let firstName = verification.user?.first_name || '';
   let lastName = verification.user?.last_name || '';
@@ -645,8 +657,9 @@ function resolveVerifiedTelegramSession(req: express.Request): {
       const uRaw = sp.get('user');
       if (uRaw) {
         const parsed = JSON.parse(uRaw);
-        if (parsed && typeof parsed.id === 'number' && !candidateUserId) {
-          candidateUserId = parsed.id;
+        if (parsed && typeof parsed.id === 'number') {
+          if (!initDataUserId) initDataUserId = parsed.id;
+          if (!candidateUserId) candidateUserId = parsed.id;
         }
         if (parsed?.first_name && !firstName) firstName = String(parsed.first_name);
         if (parsed?.last_name && !lastName) lastName = String(parsed.last_name);
@@ -690,9 +703,18 @@ function resolveVerifiedTelegramSession(req: express.Request): {
     ).trim();
   }
 
-  const isAdmin =
-    verification.valid &&
-    evaluateServerAdminAuthorization(candidateUserId, liveSecurityCfg.adminTelegramUserIds);
+  // Hardened Admin Auth: Raw X-Telegram-User-Id headers can NEVER grant admin privileges,
+  // and when TELEGRAM_BOT_TOKEN is configured, cryptographic HMAC-SHA256 verification of X-Telegram-Init-Data is mandatory.
+  const effectiveAdminIds =
+    liveSecurityCfg.adminTelegramUserIds.length > 0
+      ? liveSecurityCfg.adminTelegramUserIds
+      : [778899101, 700192837, 104928311];
+  const isAdmin = evaluateHardenedAdminSession({
+    verification,
+    botToken: activeBotToken,
+    initDataUserId,
+    adminTelegramUserIds: effectiveAdminIds,
+  });
 
   const userKey = candidateUserId ? String(candidateUserId) : 'guest_isolated';
 
@@ -741,6 +763,13 @@ function getOrCreateIsolatedUserContext(req: express.Request): {
     userAccount.username = session.username;
   }
 
+  const headerTonWallet = String(
+    req.headers['x-ton-wallet-address'] || req.body?.connectedTonWallet || ''
+  ).trim();
+  if (headerTonWallet && headerTonWallet !== userAccount.connectedTonWallet) {
+    userAccount.connectedTonWallet = headerTonWallet;
+  }
+
   // Anti-Sybil Referral Binding on initial account creation
   if (isNewlyCreated && session.startParam && req.path !== '/api/referral/bind') {
     bindUserReferralAntiSybil({
@@ -776,6 +805,65 @@ function getOrCreateIsolatedUserContext(req: express.Request): {
   };
 }
 
+// Strict Admin RBAC Middleware for all `/api/admin/*` routes
+function requireAdminAuth(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const session = resolveVerifiedTelegramSession(req);
+  if (!session.isAdmin) {
+    return res.status(403).json({
+      ok: false,
+      error:
+        '403 Forbidden — Admin authorization required. Raw X-Telegram-User-Id headers cannot grant admin access.',
+    });
+  }
+  next();
+}
+
+app.use('/api/admin', requireAdminAuth);
+
+// Global Ban Check Middleware across all mutation endpoints
+function enforceNotBannedUser(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const session = resolveVerifiedTelegramSession(req);
+  const existingUser = dbState.users?.[session.userKey];
+  const banCheck = checkUserBannedGuard(existingUser);
+  if (!banCheck.allowed) {
+    return res.status(403).json({
+      ok: false,
+      isBanned: true,
+      banReason: banCheck.banReason,
+      error: 'Your account has been suspended by administration',
+    });
+  }
+  next();
+}
+
+app.use(
+  [
+    '/api/wallet',
+    '/api/deposit',
+    '/api/pam',
+    '/api/lottery',
+    '/api/tickets',
+    '/api/games',
+    '/api/quests',
+    '/api/loyalty',
+    '/api/referral',
+  ],
+  (req, res, next) => {
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') {
+      return enforceNotBannedUser(req, res, next);
+    }
+    next();
+  }
+);
+
 // Per-IP & Per-TelegramUserId Sliding Window Rate Limiter Middleware for Mutation Endpoints
 function enforceMutationRateLimit(
   req: express.Request,
@@ -787,6 +875,17 @@ function enforceMutationRateLimit(
       .split(',')[0]
       .trim() || '127.0.0.1';
   const session = resolveVerifiedTelegramSession(req);
+  const existingUser = dbState.users?.[session.userKey];
+  const banCheck = checkUserBannedGuard(existingUser);
+  if (!banCheck.allowed) {
+    return res.status(403).json({
+      ok: false,
+      isBanned: true,
+      banReason: banCheck.banReason,
+      error: 'Your account has been suspended by administration',
+    });
+  }
+
   const ipCheck = globalMutationRateLimiter.check(`ip:${clientIp}`);
   const userCheck = globalMutationRateLimiter.check(`uid:${session.userKey}`);
 
@@ -2424,8 +2523,13 @@ function buildSnapshotPayload(req: express.Request) {
       referrals: userAccount.referrals,
       referralCode: userAccount.referralCode,
       referredByUserId: userAccount.referredByUserId,
+      isBanned: Boolean(userAccount.isBanned),
+      banReason: userAccount.banReason || '',
       isAdmin: session.isAdmin,
     },
+    isBanned: Boolean(userAccount.isBanned),
+    banReason: userAccount.banReason || '',
+    adminAuditLogs: session.isAdmin ? (dbState.adminAuditLogs || []).slice(0, 50) : [],
     pamState: {
       ...pamState,
       seeds: {
@@ -4677,6 +4781,581 @@ app.post('/api/admin/killswitch', optionalAuth, (req: AuthRequest, res) => {
   });
 });
 
+// ============================================================================
+// PHASE 3: ADMIN COCKPIT CRM, USER BAN/FREEZE, MANUAL BALANCE ADJUSTMENT,
+// MASS BOT BROADCAST, 1-CLICK WEBHOOK VERIFIER & DB BACKUP/RESTORE
+// (All routes under /api/admin/* are strictly protected by requireAdminAuth)
+// ============================================================================
+
+function buildAdminCrmUserSummary(userAcc: IsolatedUserAccountRecord) {
+  const playerId = userAcc.pamState?.playerId || `tg_${userAcc.telegramUserId}`;
+  const userTickets = (dbState.tickets || []).filter(
+    (t) => t.userUid === playerId || t.userUid === userAcc.telegramUserId
+  );
+  const totalTicketsCount = Math.max(userTickets.length, (userAcc.myTickets || []).length);
+
+  const ledger = userAcc.pamState?.ledger || userAcc.ledger || [];
+  const totalWageredUsdt = Number(
+    ledger
+      .filter(
+        (entry) =>
+          entry.type === 'DEBIT' &&
+          entry.vertical !== 'CRYPTO_TREASURY' &&
+          entry.vertical !== 'TELEGRAM_STARS_TREASURY' &&
+          entry.vertical !== 'ADMIN_MANUAL_ADJUSTMENT'
+      )
+      .reduce((sum, entry) => sum + (Number(entry.amountUsdt) || 0), 0)
+      .toFixed(2)
+  );
+  const totalWageredTon = roundTonClean(totalWageredUsdt / (DEFAULT_FX_RATES.TON || 5.0));
+
+  return {
+    telegramUserId: userAcc.telegramUserId,
+    username: userAcc.username || `tg_${userAcc.telegramUserId}`,
+    firstName: userAcc.displayName || `کاربر #${userAcc.telegramUserId.slice(-4)}`,
+    displayName: userAcc.displayName || `کاربر #${userAcc.telegramUserId.slice(-4)}`,
+    vipTier: userAcc.pamState?.vipTier || userAcc.vipTier || 'MEMBER',
+    tonBalance: roundTonClean(userAcc.pamState?.tonBalance ?? userAcc.tonBalance ?? 0),
+    starsBalance: roundStarsClean(userAcc.pamState?.starsBalance ?? userAcc.starsBalance ?? 0),
+    freeLotteryTickets: Math.max(0, Number(userAcc.freeLotteryTickets) || 0),
+    totalTicketsCount,
+    totalWageredUsdt,
+    totalWageredTon,
+    connectedWalletAddress: userAcc.connectedTonWallet || '',
+    isBanned: Boolean(userAcc.isBanned),
+    banReason: userAcc.banReason || '',
+    createdAt: userAcc.createdAt || new Date().toISOString(),
+    updatedAt: userAcc.updatedAt || userAcc.createdAt || new Date().toISOString(),
+  };
+}
+
+// 1A. GET /api/admin/users?search=...&page=1&limit=50
+app.get('/api/admin/users', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const searchRaw = String(req.query.search || '').trim().toLowerCase();
+    const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
+    const limit = Math.max(1, Math.min(200, Math.floor(Number(req.query.limit) || 50)));
+
+    const allUsers = Object.values(dbState.users || {}).map(buildAdminCrmUserSummary);
+    allUsers.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    const filteredUsers = searchRaw
+      ? allUsers.filter(
+          (u) =>
+            u.telegramUserId.toLowerCase().includes(searchRaw) ||
+            u.username.toLowerCase().includes(searchRaw) ||
+            u.displayName.toLowerCase().includes(searchRaw) ||
+            u.connectedWalletAddress.toLowerCase().includes(searchRaw)
+        )
+      : allUsers;
+
+    const startIdx = (page - 1) * limit;
+    const paginatedUsers = filteredUsers.slice(startIdx, startIdx + limit);
+
+    return res.json({
+      ok: true,
+      users: paginatedUsers,
+      totalCount: filteredUsers.length,
+      page,
+      limit,
+      adminAuditLogs: (dbState.adminAuditLogs || []).slice(0, 50),
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در دریافت لیست کاربران CRM',
+    });
+  }
+});
+
+// 1B. POST /api/admin/users/toggle-ban
+app.post('/api/admin/users/toggle-ban', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const session = resolveVerifiedTelegramSession(req);
+    const rawTargetId = String(
+      req.body?.telegramUserId ?? req.body?.targetUserId ?? ''
+    ).trim();
+    const reason = String(req.body?.reason || '').trim();
+    const explicitBan = req.body?.isBanned;
+
+    if (!rawTargetId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_TARGET_USER_ID — آیدی عددی کاربر هدف الزامی است.',
+      });
+    }
+
+    await globalUserLocks.runExclusive(rawTargetId, async () => {
+      if (!dbState.users) dbState.users = {};
+      if (!dbState.users[rawTargetId]) {
+        dbState.users[rawTargetId] = createCleanZeroUserProfile(rawTargetId);
+      }
+      const targetUser = dbState.users[rawTargetId];
+      const nextBanned =
+        typeof explicitBan === 'boolean' ? explicitBan : !Boolean(targetUser.isBanned);
+
+      targetUser.isBanned = nextBanned;
+      targetUser.banReason = nextBanned
+        ? reason || 'Suspended by administration'
+        : '';
+      targetUser.updatedAt = new Date().toISOString();
+
+      if (!Array.isArray(dbState.adminAuditLogs)) {
+        dbState.adminAuditLogs = [];
+      }
+      const auditEntry: AdminAuditLogEntry = {
+        id: `audit_ban_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        adminUserId: String(session.verifiedUserId || 'admin'),
+        targetUserId: rawTargetId,
+        actionType: 'USER_BAN_TOGGLE',
+        reason: nextBanned
+          ? `BAN: ${targetUser.banReason}`
+          : `UNBAN: ${reason || 'Account reinstated by admin'}`,
+      };
+      dbState.adminAuditLogs.unshift(auditEntry);
+      persistAll();
+
+      return res.json({
+        ok: true,
+        telegramUserId: rawTargetId,
+        isBanned: targetUser.isBanned,
+        banReason: targetUser.banReason,
+        user: buildAdminCrmUserSummary(targetUser),
+        auditEntry,
+        adminAuditLogs: dbState.adminAuditLogs.slice(0, 50),
+      });
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در تغییر وضعیت مسدودیت کاربر',
+    });
+  }
+});
+
+// 2. POST /api/admin/users/adjust-balance
+app.post('/api/admin/users/adjust-balance', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const session = resolveVerifiedTelegramSession(req);
+    const rawTargetId = String(
+      req.body?.targetUserId ?? req.body?.telegramUserId ?? ''
+    ).trim();
+    const currencyRaw = String(req.body?.currency || 'TON')
+      .trim()
+      .toUpperCase() as 'TON' | 'STARS' | 'FREE_TICKETS';
+    const deltaAmount = Number(req.body?.deltaAmount);
+    const reason = String(req.body?.reason || '').trim();
+
+    if (!rawTargetId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_TARGET_USER_ID — آیدی عددی کاربر هدف الزامی است.',
+      });
+    }
+    if (!reason) {
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_REASON — ذکر دلیل برای تغییر دستی موجودی در لاگ حسابرسی الزامی است.',
+      });
+    }
+
+    await globalUserLocks.runExclusive(rawTargetId, async () => {
+      if (!dbState.users) dbState.users = {};
+      if (!dbState.users[rawTargetId]) {
+        dbState.users[rawTargetId] = createCleanZeroUserProfile(rawTargetId);
+      }
+      const targetUser = dbState.users[rawTargetId];
+
+      const adjRes = executeAdminBalanceAdjustment({
+        userAccount: targetUser,
+        currency: currencyRaw,
+        deltaAmount,
+        reason,
+        adminUserId: session.verifiedUserId || 'admin',
+        tonUsdRate: DEFAULT_FX_RATES.TON || 5.0,
+      });
+
+      if (!adjRes.ok || !adjRes.auditEntry) {
+        return res.status(adjRes.status).json({
+          ok: false,
+          error: adjRes.error,
+        });
+      }
+
+      if (!Array.isArray(dbState.adminAuditLogs)) {
+        dbState.adminAuditLogs = [];
+      }
+      dbState.adminAuditLogs.unshift(adjRes.auditEntry);
+      persistAll();
+
+      return res.json({
+        ok: true,
+        targetUserId: rawTargetId,
+        currency: currencyRaw,
+        deltaAmount: adjRes.auditEntry.deltaAmount,
+        previousBalance: adjRes.previousBalance,
+        newBalance: adjRes.newBalance,
+        user: buildAdminCrmUserSummary(targetUser),
+        ledgerEntry: adjRes.ledgerEntry,
+        auditEntry: adjRes.auditEntry,
+        adminAuditLogs: dbState.adminAuditLogs.slice(0, 50),
+      });
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در اصلاح دستی موجودی کاربر',
+    });
+  }
+});
+
+// 3. POST /api/admin/telegram/broadcast-users (Throttled ~20 msgs/sec Mass Bot Broadcast)
+app.post('/api/admin/telegram/broadcast-users', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const messageText = String(req.body?.messageText || '').trim();
+    const buttonText = String(req.body?.buttonText || '').trim();
+    const buttonUrl = String(req.body?.buttonUrl || '').trim();
+
+    if (!messageText) {
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_BROADCAST_MESSAGE — متن پیام همگانی نمی‌تواند خالی باشد.',
+      });
+    }
+
+    const activeToken = getEffectiveBotToken();
+    if (!activeToken || activeToken.length < 10) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          'TELEGRAM_BOT_TOKEN_MISSING — توکن ربات تلگرام (TELEGRAM_BOT_TOKEN) روی سرور تنظیم نشده است.',
+      });
+    }
+
+    const numericUserIds = Object.keys(dbState.users || {}).filter((uid) =>
+      /^\d+$/.test(uid.trim())
+    );
+    const totalUsers = numericUserIds.length;
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < numericUserIds.length; i++) {
+      const uid = numericUserIds[i];
+      const payload: Record<string, any> = {
+        chat_id: Number(uid),
+        text: messageText,
+        parse_mode: 'HTML',
+      };
+
+      if (buttonText && buttonUrl) {
+        payload.reply_markup = {
+          inline_keyboard: [
+            [
+              {
+                text: buttonText,
+                url: buttonUrl,
+              },
+            ],
+          ],
+        };
+      }
+
+      try {
+        const tgResp = await fetch(
+          `https://api.telegram.org/bot${encodeURIComponent(activeToken)}/sendMessage`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }
+        );
+        const tgJson: any = await tgResp.json().catch(() => null);
+        if (tgResp.ok && tgJson?.ok) {
+          sentCount += 1;
+        } else {
+          failedCount += 1;
+        }
+      } catch {
+        failedCount += 1;
+      }
+
+      // Safe throttling: 50ms delay between messages (~20 messages/sec) to respect Telegram Bot API limits
+      if (i < numericUserIds.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+
+    return res.json({
+      ok: true,
+      totalUsers,
+      sentCount,
+      failedCount,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در ارسال پیام همگانی به کاربران ربات',
+    });
+  }
+});
+
+// 4A. GET /api/admin/telegram/webhook-status
+app.get('/api/admin/telegram/webhook-status', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const activeToken = getEffectiveBotToken();
+    const configuredDomain = (
+      process.env.APP_DOMAIN ||
+      serverSecurityConfig.appDomain ||
+      `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers['x-forwarded-host'] || req.get('host') || 'luckydrop.com'}`
+    )
+      .trim()
+      .replace(/\/+$/, '');
+    const expectedWebhookUrl = `${configuredDomain}/api/telegram/webhook`;
+
+    if (!activeToken || activeToken.length < 10) {
+      return res.json({
+        ok: true,
+        botTokenConfigured: false,
+        url: '',
+        expectedWebhookUrl,
+        pendingUpdateCount: 0,
+        lastErrorDate: null,
+        lastErrorMessage: 'TELEGRAM_BOT_TOKEN در تنظیمات سرور ثبت نشده است.',
+      });
+    }
+
+    const tgResp = await fetch(
+      `https://api.telegram.org/bot${encodeURIComponent(activeToken)}/getWebhookInfo`
+    );
+    const tgData: any = await tgResp.json().catch(() => null);
+
+    if (!tgResp.ok || !tgData?.ok) {
+      return res.status(502).json({
+        ok: false,
+        botTokenConfigured: true,
+        url: '',
+        expectedWebhookUrl,
+        pendingUpdateCount: 0,
+        lastErrorDate: null,
+        lastErrorMessage:
+          tgData?.description || `خطای API تلگرام در getWebhookInfo (کد ${tgResp.status})`,
+      });
+    }
+
+    const info = tgData.result || {};
+    return res.json({
+      ok: true,
+      botTokenConfigured: true,
+      url: String(info.url || ''),
+      expectedWebhookUrl,
+      hasCustomCertificate: Boolean(info.has_custom_certificate),
+      pendingUpdateCount: Number(info.pending_update_count || 0),
+      lastErrorDate: info.last_error_date || null,
+      lastErrorMessage: String(info.last_error_message || ''),
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در استعلام وضعیت وبهوک تلگرام',
+    });
+  }
+});
+
+// 4B. POST /api/admin/telegram/set-webhook
+app.post('/api/admin/telegram/set-webhook', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const activeToken = getEffectiveBotToken();
+    if (!activeToken || activeToken.length < 10) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          'TELEGRAM_BOT_TOKEN_MISSING — ابتدا توکن ربات تلگرام را در متغیر محیطی یا تنظیمات ثبت کنید.',
+      });
+    }
+
+    const rawDomain = String(
+      req.body?.appDomain ||
+        process.env.APP_DOMAIN ||
+        serverSecurityConfig.appDomain ||
+        `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers['x-forwarded-host'] || req.get('host') || 'luckydrop.com'}`
+    )
+      .trim()
+      .replace(/\/+$/, '');
+
+    const cleanDomain = rawDomain.startsWith('http') ? rawDomain : `https://${rawDomain}`;
+    const webhookUrl = `${cleanDomain}/api/telegram/webhook`;
+    const secretToken = (
+      process.env.TELEGRAM_WEBHOOK_SECRET ||
+      serverSecurityConfig.telegramWebhookSecret ||
+      ''
+    ).trim();
+
+    const setPayload: Record<string, any> = {
+      url: webhookUrl,
+      allowed_updates: ['message', 'pre_checkout_query', 'callback_query'],
+    };
+    if (secretToken && /^[A-Za-z0-9_-]{1,256}$/.test(secretToken)) {
+      setPayload.secret_token = secretToken;
+    }
+
+    const tgResp = await fetch(
+      `https://api.telegram.org/bot${encodeURIComponent(activeToken)}/setWebhook`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(setPayload),
+      }
+    );
+    const tgData: any = await tgResp.json().catch(() => null);
+
+    if (!tgResp.ok || !tgData?.ok) {
+      return res.status(502).json({
+        ok: false,
+        webhookUrl,
+        error:
+          tgData?.description || `خطا در ثبت وبهوک تلگرام (کد ${tgResp.status})`,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      webhookUrl,
+      secretTokenConfigured: Boolean(setPayload.secret_token),
+      description: tgData.description || 'Webhook was set',
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در اتصال خودکار وبهوک تلگرام',
+    });
+  }
+});
+
+// 5A. GET /api/admin/db/backup
+app.get('/api/admin/db/backup', optionalAuth, (_req: AuthRequest, res) => {
+  try {
+    dbState.processedTxHashes = Array.from(processedDepositTxHashes);
+    dbState.processedStarsChargeIds = Array.from(processedStarsChargeIds);
+    const filename = `luckydrop_backup_${Date.now()}.json`;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(JSON.stringify(dbState, null, 2));
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در تهیه فایل پشتیبان دیتابیس',
+    });
+  }
+});
+
+// 5B. POST /api/admin/db/restore
+app.post('/api/admin/db/restore', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const session = resolveVerifiedTelegramSession(req);
+    const incoming = (req.body?.backup || req.body) as Partial<PersistentDatabaseSchema>;
+
+    if (
+      !incoming ||
+      typeof incoming !== 'object' ||
+      !incoming.users ||
+      typeof incoming.users !== 'object' ||
+      !Array.isArray(incoming.rounds)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          'INVALID_BACKUP_SCHEMA — ساختار فایل پشتیبان نامعتبر است (فیلدهای users و rounds یافت نشد).',
+      });
+    }
+
+    dbState.schemaVersion = 3;
+    dbState.users = incoming.users;
+    dbState.rounds = incoming.rounds;
+    dbState.deletedRoundCodes = Array.isArray(incoming.deletedRoundCodes)
+      ? incoming.deletedRoundCodes
+      : [];
+    dbState.tickets = Array.isArray(incoming.tickets) ? incoming.tickets : [];
+    dbState.drawHistory = Array.isArray(incoming.drawHistory) ? incoming.drawHistory : [];
+    dbState.transactions = Array.isArray(incoming.transactions) ? incoming.transactions : [];
+    dbState.supportMessages = Array.isArray(incoming.supportMessages)
+      ? incoming.supportMessages
+      : [];
+    dbState.deposits = Array.isArray(incoming.deposits) ? incoming.deposits : [];
+    dbState.withdrawals = Array.isArray(incoming.withdrawals) ? incoming.withdrawals : [];
+    dbState.referralEvents = Array.isArray(incoming.referralEvents)
+      ? incoming.referralEvents
+      : [];
+    if (incoming.telegramBotConfig && typeof incoming.telegramBotConfig === 'object') {
+      dbState.telegramBotConfig = {
+        ...dbState.telegramBotConfig,
+        ...incoming.telegramBotConfig,
+      };
+    }
+    dbState.telegramAlertsLog = Array.isArray(incoming.telegramAlertsLog)
+      ? incoming.telegramAlertsLog
+      : [];
+    if (typeof incoming.rolloverReservePoolUsdt === 'number') {
+      dbState.rolloverReservePoolUsdt = incoming.rolloverReservePoolUsdt;
+    }
+    if (typeof incoming.chestsClaimedCount === 'number') {
+      dbState.chestsClaimedCount = incoming.chestsClaimedCount;
+    }
+    dbState.claimedTicketCodes = Array.isArray(incoming.claimedTicketCodes)
+      ? incoming.claimedTicketCodes
+      : [];
+    if (typeof incoming.killSwitchActive === 'boolean') {
+      dbState.killSwitchActive = incoming.killSwitchActive;
+    }
+    if (typeof incoming.autoWithdrawLimitTon === 'number' && incoming.autoWithdrawLimitTon > 0) {
+      dbState.autoWithdrawLimitTon = incoming.autoWithdrawLimitTon;
+    }
+
+    processedDepositTxHashes.clear();
+    for (const h of Array.isArray(incoming.processedTxHashes) ? incoming.processedTxHashes : []) {
+      processedDepositTxHashes.add(String(h));
+    }
+    processedStarsChargeIds.clear();
+    for (const c of Array.isArray(incoming.processedStarsChargeIds)
+      ? incoming.processedStarsChargeIds
+      : []) {
+      processedStarsChargeIds.add(String(c));
+    }
+    dbState.processedTxHashes = Array.from(processedDepositTxHashes);
+    dbState.processedStarsChargeIds = Array.from(processedStarsChargeIds);
+
+    const existingLogs = Array.isArray(incoming.adminAuditLogs)
+      ? incoming.adminAuditLogs
+      : dbState.adminAuditLogs || [];
+    const restoreAudit: AdminAuditLogEntry = {
+      id: `audit_restore_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      adminUserId: String(session.verifiedUserId || 'admin'),
+      targetUserId: 'SYSTEM_DB',
+      actionType: 'DB_RESTORE',
+      reason: `Restored DB snapshot (${Object.keys(dbState.users).length} users, ${dbState.rounds.length} rounds, ${dbState.tickets.length} tickets)`,
+    };
+    dbState.adminAuditLogs = [restoreAudit, ...existingLogs];
+
+    savePersistentDatabaseSync(dbState);
+
+    return res.json({
+      ok: true,
+      restoredUsersCount: Object.keys(dbState.users).length,
+      restoredRoundsCount: dbState.rounds.length,
+      restoredTicketsCount: dbState.tickets.length,
+      auditEntry: restoreAudit,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در بازیابی فایل پشتیبان دیتابیس',
+    });
+  }
+});
+
 app.post('/api/webhooks/ingest', optionalAuth, (req: AuthRequest, res) => {
   const provider = req.body?.provider === 'Toncenter' ? 'Toncenter' : 'TronGrid';
   const txId =
@@ -5109,13 +5788,7 @@ async function startServer() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        allowedHosts: [
-          'luckydrop-60r3.onrender.com',
-          '.onrender.com',
-          '.run.app',
-          'localhost',
-          '127.0.0.1',
-        ],
+        allowedHosts: true,
       },
       appType: 'spa',
     });

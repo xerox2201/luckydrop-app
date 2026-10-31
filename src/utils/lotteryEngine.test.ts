@@ -386,20 +386,23 @@ test('Telegram Bot /start payload, Stars XTR payment webhook verifier, and Live 
   assert.equal(starsRes.starsAmount, 500);
   assert.equal(starsRes.creditedUsdt, 10.0);
 
-  // 3. High-Value Withdrawal Live Broadcast with inline Approve/Reject buttons
+  // 3. High-Value Withdrawal Live Broadcast: private admin chat gets inline Approve/Reject buttons, public channel does not
   const wdBroadcast = buildLiveChannelBroadcastPayload({
     eventType: 'HIGH_VALUE_WITHDRAWAL',
-    chatId: '@LuckyDropAdmin',
+    chatId: '778899101',
     appDomain: 'https://luckydrop.com',
     userDisplayName: 'Kamran VIP',
     amountTon: 120,
     withdrawalCode: 'WD-740192',
     destinationAddress: 'UQCV8Y2khEsLJW1ChVWFMSMeRDow5KcbLSE_TONVIP',
   });
-  const firstRowButtons = wdBroadcast.reply_markup?.inline_keyboard[0] || [];
-  assert.equal(firstRowButtons.length, 2);
-  assert.equal(firstRowButtons[0].callback_data, 'approve_wd:WD-740192');
-  assert.equal(firstRowButtons[1].callback_data, 'reject_wd:WD-740192');
+  const approvalRowButtons =
+    wdBroadcast.reply_markup?.inline_keyboard.find((row) =>
+      row.some((b) => b.callback_data?.startsWith('approve_wd:'))
+    ) || [];
+  assert.equal(approvalRowButtons.length, 2);
+  assert.equal(approvalRowButtons[0].callback_data, 'approve_wd:WD-740192');
+  assert.equal(approvalRowButtons[1].callback_data, 'reject_wd:WD-740192');
 });
 
 test('PAMSeamlessWalletEngine strictly tracks and reconciles tonBalance (💎 TON) and starsBalance (⭐ Stars) with zero balanceUsdt primary state', async () => {

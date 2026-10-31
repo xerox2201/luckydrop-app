@@ -8,11 +8,53 @@ import {
 
 type AdminMobileSectionTab =
   | 'ALL'
+  | 'USERS'
   | 'OVERVIEW'
   | 'ROUNDS'
   | 'CASHIER'
   | 'CONFIG'
   | 'SHIELD';
+
+interface AdminCrmUserItem {
+  telegramUserId: string;
+  username: string;
+  firstName: string;
+  displayName: string;
+  vipTier: string;
+  tonBalance: number;
+  starsBalance: number;
+  freeLotteryTickets: number;
+  totalTicketsCount: number;
+  totalWageredUsdt: number;
+  totalWageredTon: number;
+  connectedWalletAddress: string;
+  isBanned: boolean;
+  banReason: string;
+  createdAt: string;
+}
+
+interface AdminAuditLogItem {
+  id: string;
+  timestamp: string;
+  adminUserId: string;
+  targetUserId: string;
+  actionType: 'BALANCE_ADJUSTMENT' | 'USER_BAN_TOGGLE' | 'DB_RESTORE';
+  currency?: 'TON' | 'STARS' | 'FREE_TICKETS';
+  deltaAmount?: number;
+  previousBalance?: number;
+  newBalance?: number;
+  reason: string;
+}
+
+interface TelegramWebhookStatusInfo {
+  ok: boolean;
+  botTokenConfigured: boolean;
+  url: string;
+  expectedWebhookUrl: string;
+  pendingUpdateCount: number;
+  lastErrorDate: number | null;
+  lastErrorMessage: string;
+}
 
 export const CockpitView: React.FC = () => {
   const {
@@ -55,11 +97,325 @@ export const CockpitView: React.FC = () => {
     telegramUser,
     autoWithdrawLimitTon,
     setAutoWithdrawLimitTon,
+    refreshSnapshot,
   } = useLottery();
 
   const [activeMobileTab, setActiveMobileTab] = useState<AdminMobileSectionTab>('ALL');
 
-  const effectiveTonRate = tonUsdRate > 0 ? tonUsdRate : 5.2;
+  const getAdminFetchHeaders = React.useCallback((): Record<string, string> => {
+    const rawWebAppInitData =
+      typeof window !== 'undefined'
+        ? String((window as any)?.Telegram?.WebApp?.initData || '').trim()
+        : '';
+    const previewInitData =
+      rawWebAppInitData ||
+      `user=${encodeURIComponent(
+        JSON.stringify({
+          id: telegramUser.id,
+          first_name: telegramUser.first_name || 'Admin',
+          username: telegramUser.username || `tg_${telegramUser.id}`,
+        })
+      )}`;
+    return {
+      'Content-Type': 'application/json',
+      'X-Telegram-Init-Data': previewInitData,
+      'X-Telegram-User-Id': String(telegramUser.id || ''),
+    };
+  }, [telegramUser.id, telegramUser.first_name, telegramUser.username]);
+
+  // =========================================================================
+  // PHASE 3 STATES: USERS CRM, BALANCE ADJUST, BROADCAST, WEBHOOK & DB BACKUP
+  // =========================================================================
+  const [crmUsers, setCrmUsers] = useState<AdminCrmUserItem[]>([]);
+  const [crmTotalCount, setCrmTotalCount] = useState<number>(0);
+  const [crmSearch, setCrmSearch] = useState<string>('');
+  const [crmLoading, setCrmLoading] = useState<boolean>(false);
+  const [crmBanReasonDraft, setCrmBanReasonDraft] = useState<string>('');
+  const [crmBanner, setCrmBanner] = useState<string | null>(null);
+  const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLogItem[]>([]);
+
+  // Manual Balance Adjustment Form State
+  const [adjustTargetUserId, setAdjustTargetUserId] = useState<string>('');
+  const [adjustCurrency, setAdjustCurrency] = useState<'TON' | 'STARS' | 'FREE_TICKETS'>('TON');
+  const [adjustDeltaAmount, setAdjustDeltaAmount] = useState<string>('10');
+  const [adjustReason, setAdjustReason] = useState<string>('');
+  const [adjustSubmitting, setAdjustSubmitting] = useState<boolean>(false);
+
+  // Mass Telegram Bot Broadcast State
+  const [broadcastMessageText, setBroadcastMessageText] = useState<string>('');
+  const [broadcastButtonText, setBroadcastButtonText] = useState<string>('🎰 ورود به LuckyDrop');
+  const [broadcastButtonUrl, setBroadcastButtonUrl] = useState<string>(
+    typeof window !== 'undefined' ? window.location.origin : 'https://luckydrop.com'
+  );
+  const [broadcastSending, setBroadcastSending] = useState<boolean>(false);
+  const [broadcastResult, setBroadcastResult] = useState<{
+    totalUsers: number;
+    sentCount: number;
+    failedCount: number;
+  } | null>(null);
+
+  // 1-Click Webhook Verifier & Auto-Setter State
+  const [webhookStatus, setWebhookStatus] = useState<TelegramWebhookStatusInfo | null>(null);
+  const [webhookLoading, setWebhookLoading] = useState<boolean>(false);
+  const [webhookBinding, setWebhookBinding] = useState<boolean>(false);
+  const [webhookBanner, setWebhookBanner] = useState<string | null>(null);
+
+  // 1-Click DB Backup & Restore State
+  const [dbBackupDownloading, setDbBackupDownloading] = useState<boolean>(false);
+  const [dbRestoring, setDbRestoring] = useState<boolean>(false);
+  const [dbBackupBanner, setDbBackupBanner] = useState<string | null>(null);
+
+  const fetchAdminUsersCrm = React.useCallback(
+    async (searchQuery?: string) => {
+      setCrmLoading(true);
+      try {
+        const q = encodeURIComponent((searchQuery ?? crmSearch).trim());
+        const res = await fetch(`/api/admin/users?search=${q}&limit=100`, {
+          headers: getAdminFetchHeaders(),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.ok) {
+          setCrmUsers(Array.isArray(data.users) ? data.users : []);
+          setCrmTotalCount(Number(data.totalCount || 0));
+          if (Array.isArray(data.adminAuditLogs)) {
+            setAdminAuditLogs(data.adminAuditLogs);
+          }
+        }
+      } catch {
+        // ignore network errors
+      } finally {
+        setCrmLoading(false);
+      }
+    },
+    [crmSearch, getAdminFetchHeaders]
+  );
+
+  const fetchWebhookStatus = React.useCallback(async () => {
+    setWebhookLoading(true);
+    try {
+      const res = await fetch('/api/admin/telegram/webhook-status', {
+        headers: getAdminFetchHeaders(),
+      });
+      const data = await res.json().catch(() => null);
+      if (data) {
+        setWebhookStatus(data);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setWebhookLoading(false);
+    }
+  }, [getAdminFetchHeaders]);
+
+  React.useEffect(() => {
+    void fetchAdminUsersCrm('');
+    void fetchWebhookStatus();
+  }, [fetchAdminUsersCrm, fetchWebhookStatus]);
+
+  const handleToggleUserBan = async (user: AdminCrmUserItem) => {
+    try {
+      const res = await fetch('/api/admin/users/toggle-ban', {
+        method: 'POST',
+        headers: getAdminFetchHeaders(),
+        body: JSON.stringify({
+          telegramUserId: user.telegramUserId,
+          isBanned: !user.isBanned,
+          reason:
+            crmBanReasonDraft.trim() ||
+            (!user.isBanned ? 'Suspended by administration' : 'Reinstated by administration'),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setCrmBanner(
+          data.isBanned
+            ? `🚫 حساب کاربر #${user.telegramUserId} مسدود (Banned) شد.`
+            : `✅ مسدودیت حساب کاربر #${user.telegramUserId} رفع گردید.`
+        );
+        setTimeout(() => setCrmBanner(null), 4500);
+        void fetchAdminUsersCrm();
+        void refreshSnapshot();
+      } else {
+        setCrmBanner(`❌ خطا: ${data?.error || 'عدم دسترسی ادمین'}`);
+        setTimeout(() => setCrmBanner(null), 4500);
+      }
+    } catch (err: any) {
+      setCrmBanner(`❌ خطا: ${err?.message || 'Network Error'}`);
+    }
+  };
+
+  const handleAdjustUserBalance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanTarget = adjustTargetUserId.trim();
+    const numericDelta = Number(adjustDeltaAmount);
+    const cleanReason = adjustReason.trim();
+    if (!cleanTarget || !Number.isFinite(numericDelta) || numericDelta === 0 || !cleanReason) {
+      setCrmBanner('⚠️ لطفاً آیدی کاربر، مقدار غیرصفر و دلیل حسابرسی را وارد کنید.');
+      setTimeout(() => setCrmBanner(null), 4500);
+      return;
+    }
+    setAdjustSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/users/adjust-balance', {
+        method: 'POST',
+        headers: getAdminFetchHeaders(),
+        body: JSON.stringify({
+          targetUserId: cleanTarget,
+          currency: adjustCurrency,
+          deltaAmount: numericDelta,
+          reason: cleanReason,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setCrmBanner(
+          `✅ موجودی کاربر #${cleanTarget} (${adjustCurrency}: ${
+            numericDelta >= 0 ? `+${numericDelta}` : numericDelta
+          }) تغییر یافت و در لاگ حسابرسی ثبت شد (موجودی جدید: ${data.newBalance}).`
+        );
+        setAdjustReason('');
+        if (Array.isArray(data.adminAuditLogs)) {
+          setAdminAuditLogs(data.adminAuditLogs);
+        }
+        void fetchAdminUsersCrm();
+        void refreshSnapshot();
+      } else {
+        setCrmBanner(`❌ خطا در تغییر موجودی: ${data?.error || 'خطای سرور'}`);
+      }
+    } catch (err: any) {
+      setCrmBanner(`❌ خطا: ${err?.message || 'Network Error'}`);
+    } finally {
+      setAdjustSubmitting(false);
+      setTimeout(() => setCrmBanner(null), 5500);
+    }
+  };
+
+  const handleMassBroadcastUsers = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!broadcastMessageText.trim()) return;
+    setBroadcastSending(true);
+    setBroadcastResult(null);
+    try {
+      const res = await fetch('/api/admin/telegram/broadcast-users', {
+        method: 'POST',
+        headers: getAdminFetchHeaders(),
+        body: JSON.stringify({
+          messageText: broadcastMessageText,
+          buttonText: broadcastButtonText,
+          buttonUrl: broadcastButtonUrl,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setBroadcastResult({
+          totalUsers: Number(data.totalUsers || 0),
+          sentCount: Number(data.sentCount || 0),
+          failedCount: Number(data.failedCount || 0),
+        });
+        setTgBanner(
+          `📢 ارسال همگانی به پایان رسید: ${data.sentCount} موفق از ${data.totalUsers} کاربر (${data.failedCount} ناموفق).`
+        );
+      } else {
+        setTgBanner(`❌ خطا در ارسال همگانی: ${data?.error || 'خطای سرور'}`);
+      }
+    } catch (err: any) {
+      setTgBanner(`❌ خطا: ${err?.message || 'Network Error'}`);
+    } finally {
+      setBroadcastSending(false);
+      setTimeout(() => setTgBanner(null), 6500);
+    }
+  };
+
+  const handleAutoBindWebhook = async () => {
+    setWebhookBinding(true);
+    setWebhookBanner(null);
+    try {
+      const res = await fetch('/api/admin/telegram/set-webhook', {
+        method: 'POST',
+        headers: getAdminFetchHeaders(),
+        body: JSON.stringify({
+          appDomain: typeof window !== 'undefined' ? window.location.origin : undefined,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setWebhookBanner(`✅ وبهوک تلگرام با موفقیت روی ${data.webhookUrl} ثبت و فعال شد!`);
+        await fetchWebhookStatus();
+      } else {
+        setWebhookBanner(`❌ خطا در ثبت وبهوک: ${data?.error || 'خطای تلگرام'}`);
+      }
+    } catch (err: any) {
+      setWebhookBanner(`❌ خطا: ${err?.message || 'Network Error'}`);
+    } finally {
+      setWebhookBinding(false);
+      setTimeout(() => setWebhookBanner(null), 6500);
+    }
+  };
+
+  const handleDownloadDbBackup = async () => {
+    setDbBackupDownloading(true);
+    setDbBackupBanner(null);
+    try {
+      const res = await fetch('/api/admin/db/backup', {
+        headers: getAdminFetchHeaders(),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        setDbBackupBanner(`❌ خطا در دانلود بکاپ: ${errData?.error || res.statusText}`);
+        return;
+      }
+      const rawJson = await res.text();
+      const blob = new Blob([rawJson], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `luckydrop_backup_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setDbBackupBanner('✅ فایل پشتیبان کامل دیتابیس (JSON) با موفقیت دانلود شد.');
+    } catch (err: any) {
+      setDbBackupBanner(`❌ خطا در دانلود بکاپ: ${err?.message || 'Network Error'}`);
+    } finally {
+      setDbBackupDownloading(false);
+      setTimeout(() => setDbBackupBanner(null), 5500);
+    }
+  };
+
+  const handleRestoreDbBackupFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDbRestoring(true);
+    setDbBackupBanner(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const res = await fetch('/api/admin/db/restore', {
+        method: 'POST',
+        headers: getAdminFetchHeaders(),
+        body: JSON.stringify({ backup: parsed }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setDbBackupBanner(
+          `✅ دیتابیس با موفقیت بازیابی شد! (${data.restoredUsersCount} کاربر، ${data.restoredRoundsCount} دور، ${data.restoredTicketsCount} بلیت)`
+        );
+        await refreshSnapshot();
+        await fetchAdminUsersCrm();
+      } else {
+        setDbBackupBanner(`❌ خطا در بازیابی دیتابیس: ${data?.error || 'ساختار فایل نامعتبر است'}`);
+      }
+    } catch (err: any) {
+      setDbBackupBanner(`❌ خطا در خواندن فایل JSON: ${err?.message || 'Invalid JSON'}`);
+    } finally {
+      setDbRestoring(false);
+      e.target.value = '';
+      setTimeout(() => setDbBackupBanner(null), 6500);
+    }
+  };
+
+  const effectiveTonRate = tonUsdRate > 0 ? tonUsdRate : 5.0;
   const usdtToTonFormatted = (usdt: number): string => {
     const ton = (Number(usdt) || 0) / effectiveTonRate;
     return `${ton.toLocaleString('en-US', {
@@ -299,11 +655,12 @@ export const CockpitView: React.FC = () => {
 
   const MOBILE_TABS: Array<{ id: AdminMobileSectionTab; label: string }> = [
     { id: 'ALL', label: '⚡ همه بخش‌ها' },
+    { id: 'USERS', label: `👥 کاربران CRM (${toPersianDigits(crmTotalCount || crmUsers.length)})` },
     { id: 'ROUNDS', label: `🎰 مدیریت لاتاری (${toPersianDigits(rounds.length)})` },
     { id: 'CASHIER', label: `💎 برداشت مبالغ بالا (${toPersianDigits(pendingHighValueWithdrawals.length)})` },
     { id: 'OVERVIEW', label: '📊 خزانه و نرخ TON' },
-    { id: 'CONFIG', label: '🤖 ربات و کانال تلگرام' },
-    { id: 'SHIELD', label: '🛡️ امنیت و پشتیبانی' },
+    { id: 'CONFIG', label: '🤖 ربات، وبهوک و برادکست' },
+    { id: 'SHIELD', label: '🛡️ بکاپ دیتابیس و امنیت' },
   ];
 
   return (
@@ -329,7 +686,7 @@ export const CockpitView: React.FC = () => {
             مرکز فرماندهی ادمین (TON & Telegram Stars)
           </h1>
           <p className="text-[11px] text-purple-200/80 mt-1 leading-relaxed">
-            مدیریت نامحدود دورهای لاتاری (۸۵٪ جایزه راس تایم / ۱۵٪ سهم محفوظ سایت)، واریز و برداشت خودکار TON و تایید برداشت‌های مبالغ بالا.
+            مدیریت کاربران (Users CRM)، تغییر دستی موجودی با لاگ حسابرسی، ارسال پیام همگانی ربات، مدیریت ۱-کلیکی وبهوک و پشتیبان‌گیری دیتابیس.
           </p>
         </div>
 
@@ -382,6 +739,301 @@ export const CockpitView: React.FC = () => {
           );
         })}
       </div>
+
+      {/* =====================================================================
+          PHASE 3 SECTION 1 & 2: USERS CRM, BAN/FREEZE & MANUAL BALANCE ADJUSTMENT
+          ===================================================================== */}
+      {showSection('USERS') && (
+        <div className="space-y-3.5" data-testid="cockpit-users-crm-section">
+          {crmBanner && (
+            <div
+              data-testid="cockpit-crm-banner"
+              className="p-3 rounded-2xl bg-[#00f59b]/15 border border-[#00f59b]/45 text-[#00f59b] text-xs font-bold leading-relaxed"
+            >
+              {crmBanner}
+            </div>
+          )}
+
+          {/* Users CRM Search & Inspection Card */}
+          <section className="rounded-2xl bg-[#130d24]/95 border border-purple-500/30 p-3.5 space-y-3">
+            <div className="flex items-center justify-between gap-2 border-b border-purple-500/20 pb-2">
+              <h2 className="text-xs font-extrabold text-white">
+                👥 مدیریت کاربران، بازرسی حساب و مسدودسازی (Users CRM)
+              </h2>
+              <button
+                type="button"
+                data-testid="crm-refresh-users-btn"
+                onClick={() => fetchAdminUsersCrm()}
+                className="h-7 px-2.5 rounded-lg bg-[#00f59b]/15 border border-[#00f59b]/40 text-[#00f59b] text-[10px] font-bold cursor-pointer"
+              >
+                {crmLoading ? '...' : '↻ بروزرسانی'}
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                data-testid="crm-user-search-input"
+                value={crmSearch}
+                onChange={(e) => {
+                  setCrmSearch(e.target.value);
+                  void fetchAdminUsersCrm(e.target.value);
+                }}
+                placeholder="جستجو با آیدی تلگرام، نام کاربری یا آدرس کیف پول TON..."
+                className="flex-1 h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-3 text-xs text-white"
+              />
+            </div>
+
+            <div>
+              <input
+                type="text"
+                data-testid="crm-ban-reason-input"
+                value={crmBanReasonDraft}
+                onChange={(e) => setCrmBanReasonDraft(e.target.value)}
+                placeholder="علت مسدودسازی (اختیاری — مثلاً: تخلف مولتی‌اکانت یا ربات)"
+                className="w-full h-8 bg-[#090612] border border-purple-500/20 rounded-xl px-3 text-[11px] text-purple-200"
+              />
+            </div>
+
+            <div className="space-y-2 max-h-80 overflow-y-auto no-scrollbar">
+              {crmUsers.length === 0 ? (
+                <div className="p-4 rounded-xl bg-[#090612] border border-purple-500/15 text-center text-xs text-purple-300/75">
+                  کاربری با این مشخصات یافت نشد.
+                </div>
+              ) : (
+                crmUsers.map((u) => (
+                  <div
+                    key={u.telegramUserId}
+                    data-testid={`crm-user-card-${u.telegramUserId}`}
+                    className={`rounded-xl p-3 border space-y-2 ${
+                      u.isBanned
+                        ? 'bg-rose-950/35 border-rose-500/50'
+                        : 'bg-[#090612] border-purple-500/25'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-white truncate">
+                          {u.displayName}{' '}
+                          <span className="text-[10px] font-mono text-purple-300/80" dir="ltr">
+                            (@{u.username.replace(/^@/, '')})
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-[#fbbf24]" dir="ltr">
+                          ID: #{u.telegramUserId} • Joined: {u.createdAt.slice(0, 10)}
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${
+                          u.isBanned
+                            ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40'
+                            : 'bg-[#00f59b]/15 text-[#00f59b]'
+                        }`}
+                      >
+                        {u.isBanned ? '🚫 مسدود (BANNED)' : '✓ فعال'}
+                      </span>
+                    </div>
+
+                    {u.isBanned && u.banReason && (
+                      <div className="text-[10px] text-rose-300 bg-rose-950/50 rounded-lg px-2 py-1">
+                        علت مسدودیت: {u.banReason}
+                      </div>
+                    )}
+
+                    {/* Balances & Activity Metrics */}
+                    <div className="grid grid-cols-4 gap-1.5 bg-[#130d24]/90 border border-purple-500/20 rounded-xl p-2 text-center">
+                      <div>
+                        <span className="text-[9px] text-cyan-300 block">موجودی TON</span>
+                        <span className="text-[11px] font-mono font-bold text-white" dir="ltr">
+                          {u.tonBalance.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-[#fbbf24] block">موجودی Stars</span>
+                        <span className="text-[11px] font-mono font-bold text-[#fbbf24]" dir="ltr">
+                          {u.starsBalance} ⭐
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-purple-300 block">بلیت‌ها / هدیه</span>
+                        <span className="text-[11px] font-mono font-bold text-white" dir="ltr">
+                          {u.totalTicketsCount} ({u.freeLotteryTickets}🎟️)
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-[#00f59b] block">گردش کل</span>
+                        <span className="text-[11px] font-mono font-bold text-[#00f59b]" dir="ltr">
+                          {u.totalWageredTon.toFixed(1)} TON
+                        </span>
+                      </div>
+                    </div>
+
+                    {u.connectedWalletAddress && (
+                      <div className="text-[10px] font-mono text-cyan-300/85 truncate" dir="ltr">
+                        💎 Wallet: {u.connectedWalletAddress}
+                      </div>
+                    )}
+
+                    {/* 1-Tap Ban/Unban & Select for Balance Adjust */}
+                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                      <button
+                        type="button"
+                        data-testid={`crm-select-adjust-btn-${u.telegramUserId}`}
+                        onClick={() => setAdjustTargetUserId(u.telegramUserId)}
+                        className="h-8 rounded-lg bg-purple-600/25 border border-purple-400/40 text-purple-100 text-[10px] font-bold cursor-pointer"
+                      >
+                        ⚖️ اصلاح موجودی #{u.telegramUserId}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid={`crm-toggle-ban-btn-${u.telegramUserId}`}
+                        onClick={() => handleToggleUserBan(u)}
+                        className={`h-8 rounded-lg text-[10px] font-bold border cursor-pointer ${
+                          u.isBanned
+                            ? 'bg-[#00f59b]/20 border-[#00f59b]/45 text-[#00f59b]'
+                            : 'bg-rose-500/20 border-rose-500/45 text-rose-300'
+                        }`}
+                      >
+                        {u.isBanned ? '✓ رفع مسدودیت (Unban)' : '🚫 مسدودسازی آنی (Ban)'}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* Manual Balance Credit / Debit with Immutable Audit Log */}
+          <form
+            onSubmit={handleAdjustUserBalance}
+            data-testid="cockpit-adjust-balance-form"
+            className="rounded-2xl bg-[#130d24]/95 border border-purple-500/30 p-3.5 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-purple-500/20 pb-2">
+              <h3 className="text-xs font-extrabold text-white">
+                ⚖️ افزایش / کسر دستی موجودی کاربر با ثبت در دفترکل حسابرسی
+              </h3>
+              <span className="px-2 py-0.5 rounded bg-[#fbbf24]/15 text-[#fbbf24] text-[10px] font-mono font-bold">
+                AUDIT LOGGED
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                  آیدی عددی کاربر هدف (`targetUserId`):
+                </label>
+                <input
+                  type="text"
+                  dir="ltr"
+                  data-testid="adjust-target-user-id-input"
+                  placeholder="مثلاً: 778899101"
+                  value={adjustTargetUserId}
+                  onChange={(e) => setAdjustTargetUserId(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                  نوع ارز / دارایی (`currency`):
+                </label>
+                <select
+                  data-testid="adjust-currency-select"
+                  value={adjustCurrency}
+                  onChange={(e) =>
+                    setAdjustCurrency(e.target.value as 'TON' | 'STARS' | 'FREE_TICKETS')
+                  }
+                  className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2 text-xs text-[#00f59b] font-bold"
+                >
+                  <option value="TON">💎 TON Balance</option>
+                  <option value="STARS">⭐ Telegram Stars</option>
+                  <option value="FREE_TICKETS">🎟️ بلیت رایگان لاتاری</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                  مقدار تغییر (`+` افزایش / `-` کسر):
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  dir="ltr"
+                  data-testid="adjust-delta-amount-input"
+                  value={adjustDeltaAmount}
+                  onChange={(e) => setAdjustDeltaAmount(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-[#fbbf24] font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                  دلیل رسمی حسابرسی (`reason`):
+                </label>
+                <input
+                  type="text"
+                  data-testid="adjust-reason-input"
+                  placeholder="مثلاً: پاداش VIP یا اصلاح خطا"
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              data-testid="adjust-balance-submit-btn"
+              disabled={adjustSubmitting}
+              className="w-full h-10 rounded-xl stake-emerald-cta font-black text-xs text-[#041f14] cursor-pointer"
+            >
+              {adjustSubmitting
+                ? 'در حال ثبت در دفترکل PAM و لاگ حسابرسی...'
+                : '✓ اعمال تغییر موجودی و ثبت در لاگ غیرقابل تغییر'}
+            </button>
+
+            {adminAuditLogs.length > 0 && (
+              <div className="space-y-1.5 pt-2 border-t border-purple-500/20">
+                <div className="text-[10px] font-bold text-purple-300">
+                  📜 آخرین لاگ‌های حسابرسی ادمین (`dbState.adminAuditLogs`):
+                </div>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto no-scrollbar">
+                  {adminAuditLogs.slice(0, 8).map((log) => (
+                    <div
+                      key={log.id}
+                      data-testid={`admin-audit-log-row-${log.id}`}
+                      className="bg-[#090612] border border-purple-500/15 rounded-xl p-2 text-[10px] flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-white truncate">
+                          [{log.actionType}] User #{log.targetUserId} — {log.reason}
+                        </div>
+                        <div className="text-[9px] font-mono text-purple-300/70" dir="ltr">
+                          By Admin #{log.adminUserId} • {log.timestamp.slice(0, 19).replace('T', ' ')}
+                        </div>
+                      </div>
+                      {typeof log.deltaAmount === 'number' && (
+                        <span
+                          className={`font-mono font-bold shrink-0 ${
+                            log.deltaAmount >= 0 ? 'text-[#00f59b]' : 'text-rose-400'
+                          }`}
+                          dir="ltr"
+                        >
+                          {log.deltaAmount >= 0 ? `+${log.deltaAmount}` : log.deltaAmount}{' '}
+                          {log.currency}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </form>
+        </div>
+      )}
 
       {/* =====================================================================
           SECTION B: UNLIMITED LOTTERY CREATION & PARI-MUTUEL POOL MANAGEMENT
@@ -1199,14 +1851,228 @@ export const CockpitView: React.FC = () => {
               ))}
             </div>
           </section>
+
+          {/* 1-Click Telegram Webhook Verifier & Auto-Setter */}
+          <section
+            data-testid="cockpit-webhook-manager-section"
+            className="rounded-2xl bg-[#130d24]/95 border border-cyan-500/30 p-3.5 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-purple-500/20 pb-2">
+              <div>
+                <h2 className="text-xs font-extrabold text-white">
+                  🔗 وضعیت زنده Webhook و اتصال ۱-کلیکی تلگرام
+                </h2>
+                <p className="text-[10px] text-purple-300/75 mt-0.5">
+                  تنظیم خودکار وبهوک پرداخت Telegram Stars و دستورات ربات روی دامنه فعلی
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="cockpit-refresh-webhook-btn"
+                onClick={() => fetchWebhookStatus()}
+                disabled={webhookLoading}
+                className="h-8 px-2.5 rounded-xl bg-purple-500/15 border border-purple-400/30 text-[10px] font-bold text-purple-200 cursor-pointer shrink-0"
+              >
+                {webhookLoading ? '...' : '↻ بررسی'}
+              </button>
+            </div>
+
+            {webhookBanner && (
+              <div
+                data-testid="cockpit-webhook-banner"
+                className="p-2.5 rounded-xl bg-[#00f59b]/15 border border-[#00f59b]/40 text-[#00f59b] text-[11px] font-bold"
+              >
+                {webhookBanner}
+              </div>
+            )}
+
+            <div className="bg-[#090612] border border-purple-500/20 rounded-xl p-2.5 space-y-1.5 text-[11px]" dir="ltr">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-purple-300/70">Bot Token Configured:</span>
+                <span className={`font-mono font-bold ${webhookStatus?.configured ? 'text-[#00f59b]' : 'text-rose-400'}`}>
+                  {webhookStatus?.configured ? 'YES (ACTIVE)' : 'NO TOKEN'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-purple-300/70">Current Webhook URL:</span>
+                <span className="font-mono text-cyan-300 truncate max-w-[200px]">
+                  {webhookStatus?.url || 'Not Bound'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-purple-300/70">Pending Updates:</span>
+                <span className="font-mono text-[#fbbf24] font-bold">
+                  {webhookStatus?.pendingUpdateCount ?? 0}
+                </span>
+              </div>
+              {webhookStatus?.lastErrorMessage && (
+                <div className="text-[10px] text-rose-400 font-mono break-all pt-1 border-t border-purple-500/15">
+                  Last Error: {webhookStatus.lastErrorMessage}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              data-testid="cockpit-auto-bind-webhook-btn"
+              disabled={webhookBinding}
+              onClick={handleAutoBindWebhook}
+              className="w-full h-10 rounded-xl stake-emerald-cta font-black text-xs text-[#041f14] cursor-pointer"
+            >
+              {webhookBinding ? 'در حال ثبت Webhook در تلگرام...' : '🔗 Auto-Bind Webhook (اتصال خودکار ۱-کلیکی)'}
+            </button>
+          </section>
+
+          {/* Mass Telegram Bot Broadcast to All Users */}
+          <section
+            data-testid="cockpit-mass-broadcast-section"
+            className="rounded-2xl bg-[#130d24]/95 border border-[#fbbf24]/30 p-3.5 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-purple-500/20 pb-2">
+              <div>
+                <h2 className="text-xs font-extrabold text-white">
+                  📢 ارسال پیام همگانی به تمام کاربران ربات (Mass Broadcast)
+                </h2>
+                <p className="text-[10px] text-purple-300/75 mt-0.5">
+                  ارسال نوتیفیکیشن مستقیم همراه با دکمه شیشه‌ای Mini App با محافظت Rate-Limit (۲۰ پیام/ثانیه)
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-[#fbbf24]/15 text-[#fbbf24] text-[10px] font-mono font-bold shrink-0" dir="ltr">
+                50ms Throttle
+              </span>
+            </div>
+
+            <form onSubmit={handleMassBroadcastUsers} className="space-y-2.5">
+              <div>
+                <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                  متن پیام همگانی (پشتیبانی از HTML):
+                </label>
+                <textarea
+                  rows={3}
+                  data-testid="cockpit-broadcast-message-input"
+                  value={broadcastMessageText}
+                  onChange={(e) => setBroadcastMessageText(e.target.value)}
+                  placeholder="🔥 استخر جک‌پات امشب به ۵,۰۰۰ TON رسید! همین حالا شانست رو امتحان کن..."
+                  className="w-full bg-[#090612] border border-purple-500/25 rounded-xl p-2.5 text-xs text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                    متن دکمه شیشه‌ای (Inline CTA):
+                  </label>
+                  <input
+                    type="text"
+                    data-testid="cockpit-broadcast-btn-text-input"
+                    value={broadcastButtonText}
+                    onChange={(e) => setBroadcastButtonText(e.target.value)}
+                    placeholder="🎰 ورود به LuckyDrop"
+                    className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                    لینک دکمه (URL / Mini App):
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    data-testid="cockpit-broadcast-btn-url-input"
+                    value={broadcastButtonUrl}
+                    onChange={(e) => setBroadcastButtonUrl(e.target.value)}
+                    placeholder="https://t.me/YourBot/app"
+                    className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs font-mono text-cyan-300"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                data-testid="cockpit-send-broadcast-btn"
+                disabled={broadcastSending || !broadcastMessageText.trim()}
+                className="w-full h-10 rounded-xl tma-purple-cta font-black text-xs text-white cursor-pointer disabled:opacity-50"
+              >
+                {broadcastSending ? 'در حال ارسال به کاربران...' : '📢 ارسال همگانی به تمام کاربران ثبت‌نام‌شده'}
+              </button>
+            </form>
+
+            {broadcastResult && (
+              <div
+                data-testid="cockpit-broadcast-result"
+                className="p-2.5 rounded-xl bg-[#090612] border border-[#00f59b]/35 flex items-center justify-around text-[11px] font-mono"
+                dir="ltr"
+              >
+                <span className="text-purple-200">Total: <b>{broadcastResult.totalUsers}</b></span>
+                <span className="text-[#00f59b]">Sent: <b>{broadcastResult.sentCount}</b></span>
+                <span className="text-rose-400">Failed: <b>{broadcastResult.failedCount}</b></span>
+              </div>
+            )}
+          </section>
         </div>
       )}
 
       {/* =====================================================================
-          SECTION E: PLATFORM SECURITY AUDIT & VIP CONCIERGE CHAT
+          SECTION E: PLATFORM SECURITY AUDIT, DB BACKUP & VIP CONCIERGE CHAT
           ===================================================================== */}
       {showSection('SHIELD') && (
         <div className="space-y-3.5">
+          {/* 1-Click Database Backup Export & Restore */}
+          <section
+            data-testid="cockpit-db-backup-section"
+            className="rounded-2xl bg-[#130d24]/95 border border-cyan-500/35 p-3.5 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-purple-500/20 pb-2">
+              <div>
+                <h2 className="text-xs font-extrabold text-white">
+                  💾 پشتیبان‌گیری و بازیابی ۱-کلیکی دیتابیس (DB Backup & Restore)
+                </h2>
+                <p className="text-[10px] text-purple-300/75 mt-0.5">
+                  دانلود کل وضعیت کاربران، بلیت‌ها، دفترکل مالی و لاگ حسابرسی یا انتقال به سرور جدید
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 text-[10px] font-mono font-bold shrink-0" dir="ltr">
+                JSON Snapshot
+              </span>
+            </div>
+
+            {dbBackupBanner && (
+              <div
+                data-testid="cockpit-db-backup-banner"
+                className="p-2.5 rounded-xl bg-[#00f59b]/15 border border-[#00f59b]/40 text-[#00f59b] text-[11px] font-bold"
+              >
+                {dbBackupBanner}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                data-testid="cockpit-download-db-backup-btn"
+                disabled={dbBackupDownloading}
+                onClick={handleDownloadDbBackup}
+                className="h-10 rounded-xl stake-emerald-cta font-black text-xs text-[#041f14] cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {dbBackupDownloading ? 'در حال آماده‌سازی...' : '💾 Download DB Backup'}
+              </button>
+
+              <label
+                data-testid="cockpit-restore-db-backup-label"
+                className="h-10 rounded-xl bg-purple-600/35 border border-purple-400/45 text-white font-black text-xs cursor-pointer flex items-center justify-center gap-1.5 hover:bg-purple-600/50 transition"
+              >
+                <span>{dbRestoring ? 'در حال بازیابی...' : '📤 Restore DB Backup'}</span>
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  data-testid="cockpit-restore-db-backup-input"
+                  disabled={dbRestoring}
+                  onChange={handleRestoreDbBackupFile}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </section>
+
           {/* Platform Security & Zero-Loss Architecture Audit */}
           <section
             data-testid="cockpit-solvency-shield-section"
@@ -1240,8 +2106,8 @@ export const CockpitView: React.FC = () => {
                   desc: `برداشت‌های کمتر از ${autoWithdrawLimitTon} TON خودکار و مبالغ بالاتر نیازمند تایید مستقیم ادمین هستند.`,
                 },
                 {
-                  title: '۵. قوانین امنیتی دیتابیس ابری (Firestore RBAC Rules)',
-                  desc: 'دسترسی نوشتن تنظیمات خزانه و تایید برداشت‌ها در دیتابیس صرفاً به ادمین محدود شده است.',
+                  title: '۵. ضد جعل هدر ادمین و مسدودسازی آنی (Anti-Spoof & Ban Guard)',
+                  desc: 'هدرهای خام بدون امضای رمزنگاری تلگرام هرگز دسترسی ادمین نمی‌گیرند و حساب‌های مسدود در تمام مسیرها قفل می‌شوند.',
                 },
               ].map((item) => (
                 <div

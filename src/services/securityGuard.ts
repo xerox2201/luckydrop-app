@@ -62,6 +62,8 @@ export interface IsolatedUserAccountRecord {
   claimedTicketCodes: string[];
   lastDailyCheckInDate: string | null;
   connectedTonWallet: string;
+  isBanned?: boolean;
+  banReason?: string;
   activeGameSession?: ActiveGameSessionState | null;
   pamState: PAMPlayerState;
   createdAt: string;
@@ -206,6 +208,8 @@ export function createCleanZeroUserProfile(
     claimedTicketCodes: [],
     lastDailyCheckInDate: null,
     connectedTonWallet: '',
+    isBanned: false,
+    banReason: '',
     activeGameSession: null,
     pamState,
     createdAt: nowIso,
@@ -1269,4 +1273,248 @@ export async function verifyOnChainTonTransaction(params: {
       'ONCHAIN_VERIFICATION_FAILED — تراکنش در بلاکچین TON (TonAPI / TON Center) یافت نشد یا هنوز به آدرس خزانه رسمی سایت نهایی (Confirmed) نشده است.',
   };
 }
+
+// ============================================================================
+// 7. PHASE 3: USER BAN GUARD, MANUAL BALANCE ADJUSTMENT & HARDENED ADMIN AUTH
+// ============================================================================
+
+export interface AdminAuditLogEntry {
+  id: string;
+  timestamp: string;
+  adminUserId: string;
+  targetUserId: string;
+  actionType: 'BALANCE_ADJUSTMENT' | 'USER_BAN_TOGGLE' | 'DB_RESTORE';
+  currency?: 'TON' | 'STARS' | 'FREE_TICKETS';
+  deltaAmount?: number;
+  previousBalance?: number;
+  newBalance?: number;
+  reason: string;
+}
+
+/**
+ * Global Ban Check across all mutation endpoints:
+ * If `user.isBanned === true`, rejects immediately with 403 Forbidden
+ * ("Your account has been suspended by administration").
+ */
+export function checkUserBannedGuard(
+  userAccount: Pick<IsolatedUserAccountRecord, 'isBanned' | 'banReason'> | null | undefined
+): {
+  allowed: boolean;
+  status: 200 | 403;
+  error?: string;
+  banReason?: string;
+} {
+  if (userAccount && userAccount.isBanned === true) {
+    return {
+      allowed: false,
+      status: 403,
+      error: 'Your account has been suspended by administration',
+      banReason: userAccount.banReason || 'Suspended by administration',
+    };
+  }
+  return {
+    allowed: true,
+    status: 200,
+  };
+}
+
+/**
+ * Hardens Admin Authentication against header spoofing:
+ * - Raw unverified `X-Telegram-User-Id` headers can NEVER grant admin privileges.
+ * - When `TELEGRAM_BOT_TOKEN` is configured, `isAdmin` strictly requires cryptographic
+ *   HMAC-SHA256 verification (`reason === 'VERIFIED_CRYPTOGRAPHICALLY'`) of `X-Telegram-Init-Data`.
+ */
+export function evaluateHardenedAdminSession(params: {
+  verification: {
+    valid: boolean;
+    reason: string;
+    user: { id: number } | null;
+  };
+  botToken: string | undefined | null;
+  initDataUserId: number | null;
+  adminTelegramUserIds: number[];
+}): boolean {
+  const cleanToken = String(params.botToken || '').trim();
+  const allowedIds = Array.isArray(params.adminTelegramUserIds)
+    ? params.adminTelegramUserIds.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+    : [];
+
+  if (allowedIds.length === 0) {
+    return false;
+  }
+
+  // When TELEGRAM_BOT_TOKEN is configured, strictly require cryptographic HMAC verification of X-Telegram-Init-Data
+  if (cleanToken.length > 0) {
+    if (
+      !params.verification.valid ||
+      params.verification.reason !== 'VERIFIED_CRYPTOGRAPHICALLY' ||
+      !params.verification.user ||
+      typeof params.verification.user.id !== 'number'
+    ) {
+      return false;
+    }
+    return allowedIds.includes(params.verification.user.id);
+  }
+
+  // Even when TELEGRAM_BOT_TOKEN is not configured, raw X-Telegram-User-Id headers can NEVER grant admin privileges;
+  // only a user ID embedded inside X-Telegram-Init-Data can be checked against ADMIN_TELEGRAM_USER_IDS.
+  if (
+    !params.verification.valid ||
+    params.initDataUserId === null ||
+    !Number.isFinite(params.initDataUserId) ||
+    params.initDataUserId <= 0
+  ) {
+    return false;
+  }
+
+  return allowedIds.includes(Math.floor(params.initDataUserId));
+}
+
+/**
+ * Executes an atomic manual balance credit or debit (`TON`, `STARS`, or `FREE_TICKETS`)
+ * on a target user's account and appends an explicit immutable audit entry to both
+ * `user.pamState.ledger` and `adminAuditLogs`.
+ */
+export function executeAdminBalanceAdjustment(params: {
+  userAccount: IsolatedUserAccountRecord;
+  currency: 'TON' | 'STARS' | 'FREE_TICKETS';
+  deltaAmount: number;
+  reason: string;
+  adminUserId: string | number;
+  tonUsdRate?: number;
+}): {
+  ok: boolean;
+  status: 200 | 400;
+  error?: string;
+  previousBalance?: number;
+  newBalance?: number;
+  ledgerEntry?: PAMPlayerState['ledger'][number];
+  auditEntry?: AdminAuditLogEntry;
+} {
+  const { userAccount, currency } = params;
+  const rawDelta = Number(params.deltaAmount);
+  const cleanReason = String(params.reason || '').trim() || 'Manual Admin Balance Adjustment';
+  const tonRate = Number(params.tonUsdRate) > 0 ? Number(params.tonUsdRate) : 5.0;
+
+  if (!userAccount) {
+    return { ok: false, status: 400, error: 'USER_NOT_FOUND — کاربر مورد نظر یافت نشد.' };
+  }
+  if (currency !== 'TON' && currency !== 'STARS' && currency !== 'FREE_TICKETS') {
+    return {
+      ok: false,
+      status: 400,
+      error: 'INVALID_CURRENCY — ارز انتخابی باید TON، STARS یا FREE_TICKETS باشد.',
+    };
+  }
+  if (!Number.isFinite(rawDelta) || rawDelta === 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'INVALID_DELTA_AMOUNT — مقدار تغییر موجودی باید یک عدد غیرصفر معتبر باشد.',
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  const auditId = `audit_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+  const txUuid = `tx_admin_adj_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+  let previousBalance = 0;
+  let newBalance = 0;
+  let appliedDelta = 0;
+
+  if (currency === 'TON') {
+    previousBalance = roundTonClean(userAccount.pamState.tonBalance);
+    appliedDelta = roundTonClean(rawDelta);
+    if (appliedDelta === 0) {
+      return { ok: false, status: 400, error: 'DUST_DELTA_REJECTED — مقدار TON بسیار کوچک است.' };
+    }
+    newBalance = roundTonClean(Math.max(0, previousBalance + appliedDelta));
+    userAccount.pamState.tonBalance = newBalance;
+    userAccount.tonBalance = newBalance;
+  } else if (currency === 'STARS') {
+    previousBalance = roundStarsClean(userAccount.pamState.starsBalance);
+    appliedDelta = roundStarsClean(rawDelta);
+    if (appliedDelta === 0) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'DUST_DELTA_REJECTED — مقدار Stars باید حداقل ۱ ستاره باشد.',
+      };
+    }
+    newBalance = roundStarsClean(Math.max(0, previousBalance + appliedDelta));
+    userAccount.pamState.starsBalance = newBalance;
+    userAccount.starsBalance = newBalance;
+  } else {
+    previousBalance = Math.max(0, Math.round(Number(userAccount.freeLotteryTickets) || 0));
+    appliedDelta = Math.round(rawDelta);
+    if (appliedDelta === 0) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'DUST_DELTA_REJECTED — تعداد بلیت رایگان باید عدد صحیح غیرصفر باشد.',
+      };
+    }
+    newBalance = Math.max(0, previousBalance + appliedDelta);
+    userAccount.freeLotteryTickets = newBalance;
+  }
+
+  const absDelta = Math.abs(appliedDelta);
+  const amountUsdt =
+    currency === 'TON'
+      ? Number((absDelta * tonRate).toFixed(2))
+      : currency === 'STARS'
+      ? Number((absDelta * 0.02).toFixed(2))
+      : 0;
+
+  const ledgerEntry: PAMPlayerState['ledger'][number] = {
+    transactionUuid: txUuid,
+    referenceTransactionUuid: null,
+    roundId: `#ADMIN-ADJ-${auditId.slice(-6).toUpperCase()}`,
+    type: appliedDelta >= 0 ? 'BONUS' : 'DEBIT',
+    vertical: 'ADMIN_MANUAL_ADJUSTMENT',
+    currency: currency === 'STARS' ? 'STARS' : 'TON',
+    amountTon: currency === 'TON' ? absDelta : 0,
+    amountStars: currency === 'STARS' ? absDelta : 0,
+    amountUsdt,
+    balanceBeforeTon: currency === 'TON' ? previousBalance : userAccount.pamState.tonBalance,
+    balanceAfterTon: userAccount.pamState.tonBalance,
+    balanceBeforeStars: currency === 'STARS' ? previousBalance : userAccount.pamState.starsBalance,
+    balanceAfterStars: userAccount.pamState.starsBalance,
+    balanceBeforeUsdt: Number((userAccount.pamState.tonBalance * tonRate).toFixed(2)),
+    balanceAfterUsdt: Number((userAccount.pamState.tonBalance * tonRate).toFixed(2)),
+    clientSeed: userAccount.pamState.seeds.clientSeed,
+    serverSeedHash: userAccount.pamState.seeds.serverSeedHash,
+    nonce: userAccount.pamState.seeds.nonce,
+    status: 'COMPLETED',
+    createdAt: nowIso,
+    note: `ADMIN_ADJUSTMENT (${currency} ${appliedDelta >= 0 ? `+${appliedDelta}` : appliedDelta}) توسط ادمین #${params.adminUserId}: ${cleanReason}`,
+  };
+
+  userAccount.pamState.ledger.unshift(ledgerEntry);
+  userAccount.ledger = userAccount.pamState.ledger;
+  userAccount.updatedAt = nowIso;
+
+  const auditEntry: AdminAuditLogEntry = {
+    id: auditId,
+    timestamp: nowIso,
+    adminUserId: String(params.adminUserId),
+    targetUserId: userAccount.telegramUserId,
+    actionType: 'BALANCE_ADJUSTMENT',
+    currency,
+    deltaAmount: appliedDelta,
+    previousBalance,
+    newBalance,
+    reason: cleanReason,
+  };
+
+  return {
+    ok: true,
+    status: 200,
+    previousBalance,
+    newBalance,
+    ledgerEntry,
+    auditEntry,
+  };
+}
+
 

@@ -390,4 +390,119 @@ test('10. Deterministic Mines & Tower Sequence Verification blocks bomb/trap pic
   assert.equal(towerSafeAttempt.payoutUsdt, 19.6);
 });
 
+test('11. Phase 3 Global Ban Guard blocks suspended accounts with 403 Forbidden', async () => {
+  const { checkUserBannedGuard } = await import('./securityGuard.ts');
+  const cleanUser = createCleanZeroUserProfile({
+    telegramUserId: '888001',
+    displayName: 'Active Player',
+  });
+
+  const activeCheck = checkUserBannedGuard(cleanUser);
+  assert.equal(activeCheck.allowed, true);
+  assert.equal(activeCheck.status, 200);
+
+  cleanUser.isBanned = true;
+  cleanUser.banReason = 'Multi-account exploit attempt';
+
+  const bannedCheck = checkUserBannedGuard(cleanUser);
+  assert.equal(bannedCheck.allowed, false);
+  assert.equal(bannedCheck.status, 403);
+  assert.equal(bannedCheck.error, 'Your account has been suspended by administration');
+});
+
+test('12. Phase 3 Admin Manual Balance Adjustment credits/debits TON, STARS, and FREE_TICKETS with immutable audit logs', async () => {
+  const { executeAdminBalanceAdjustment } = await import('./securityGuard.ts');
+  const user = createCleanZeroUserProfile({
+    telegramUserId: '888002',
+    displayName: 'VIP Tester',
+  });
+
+  const creditTon = executeAdminBalanceAdjustment({
+    userAccount: user,
+    currency: 'TON',
+    deltaAmount: 12.5,
+    reason: 'VIP Tournament Prize',
+    adminUserId: '778899101',
+  });
+  assert.equal(creditTon.ok, true);
+  assert.equal(user.tonBalance, 12.5);
+  assert.equal(user.pamState.tonBalance, 12.5);
+  assert.equal(creditTon.auditEntry?.deltaAmount, 12.5);
+  assert.equal(user.pamState.ledger.length, 1);
+
+  const debitTon = executeAdminBalanceAdjustment({
+    userAccount: user,
+    currency: 'TON',
+    deltaAmount: -2.5,
+    reason: 'Manual Chargeback Correction',
+    adminUserId: '778899101',
+  });
+  assert.equal(debitTon.ok, true);
+  assert.equal(user.tonBalance, 10);
+
+  const creditStars = executeAdminBalanceAdjustment({
+    userAccount: user,
+    currency: 'STARS',
+    deltaAmount: 250,
+    reason: 'Stars Promo Credit',
+    adminUserId: '778899101',
+  });
+  assert.equal(creditStars.ok, true);
+  assert.equal(user.starsBalance, 250);
+
+  const creditFreeTickets = executeAdminBalanceAdjustment({
+    userAccount: user,
+    currency: 'FREE_TICKETS',
+    deltaAmount: 3,
+    reason: 'Compensatory Free Tickets',
+    adminUserId: '778899101',
+  });
+  assert.equal(creditFreeTickets.ok, true);
+  assert.equal(user.freeLotteryTickets, 3);
+});
+
+test('13. Phase 3 Hardened Admin Authentication rejects raw X-Telegram-User-Id header spoofing', async () => {
+  const { evaluateHardenedAdminSession } = await import('./securityGuard.ts');
+
+  // Case A: Bot token is configured, attacker sends raw X-Telegram-User-Id header without HMAC-verified initData
+  const spoofedWithToken = evaluateHardenedAdminSession({
+    verification: {
+      valid: true,
+      reason: 'DEV_BYPASS_NO_BOT_TOKEN',
+      user: null,
+    },
+    botToken: '123456789:AAH_real_bot_token_secret',
+    initDataUserId: null,
+    adminTelegramUserIds: [778899101],
+  });
+  assert.equal(spoofedWithToken, false, 'Must reject unverified session when botToken is configured');
+
+  // Case B: Bot token is configured and X-Telegram-Init-Data is cryptographically HMAC-verified for admin ID
+  const verifiedAdminWithToken = evaluateHardenedAdminSession({
+    verification: {
+      valid: true,
+      reason: 'VERIFIED_CRYPTOGRAPHICALLY',
+      user: { id: 778899101 },
+    },
+    botToken: '123456789:AAH_real_bot_token_secret',
+    initDataUserId: 778899101,
+    adminTelegramUserIds: [778899101],
+  });
+  assert.equal(verifiedAdminWithToken, true);
+
+  // Case C: Even without bot token, raw X-Telegram-User-Id header (initDataUserId === null) must never grant admin
+  const spoofedHeaderWithoutToken = evaluateHardenedAdminSession({
+    verification: {
+      valid: true,
+      reason: 'DEV_BYPASS_NO_BOT_TOKEN',
+      user: null,
+    },
+    botToken: '',
+    initDataUserId: null,
+    adminTelegramUserIds: [778899101],
+  });
+  assert.equal(spoofedHeaderWithoutToken, false, 'Raw X-Telegram-User-Id header alone can never grant admin');
+});
+
+
 

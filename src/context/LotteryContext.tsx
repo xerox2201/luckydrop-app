@@ -1381,12 +1381,26 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       typeof window !== 'undefined'
         ? String((window as any)?.Telegram?.WebApp?.initData || '').trim()
         : '';
-    headers['X-Telegram-Init-Data'] = tgInitData;
     const unsafeUserId =
       typeof window !== 'undefined'
         ? (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user?.id
         : undefined;
-    headers['X-Telegram-User-Id'] = String(unsafeUserId || telegramUser.id || '');
+    const effectiveUid = Number(unsafeUserId || telegramUser.id || 0);
+    headers['X-Telegram-Init-Data'] =
+      tgInitData ||
+      (effectiveUid > 0
+        ? `user=${encodeURIComponent(
+            JSON.stringify({
+              id: effectiveUid,
+              first_name: telegramUser.first_name || 'User',
+              username: telegramUser.username || `tg_${effectiveUid}`,
+            })
+          )}`
+        : '');
+    headers['X-Telegram-User-Id'] = String(effectiveUid || '');
+    if (realTonAddress) {
+      headers['X-Ton-Wallet-Address'] = realTonAddress;
+    }
     if (auth.currentUser) {
       try {
         const token = await auth.currentUser.getIdToken();
@@ -1399,7 +1413,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       headers['Authorization'] = `Bearer ${authTokenRef.current}`;
     }
     return headers;
-  }, [telegramUser.id]);
+  }, [telegramUser.id, realTonAddress]);
 
   const refreshSnapshot = useCallback(async () => {
     try {
