@@ -356,3 +356,65 @@
 button[data-tc-wallet-item="telegram-wallet"] {
   display: none !important;
 }
+
+/* ============================================================================
+   BESPOKE LUXURY SIGNATURE BRAND AESTHETICS (OBSIDIAN GLASS & HOLOGRAPHIC SHIMMER)
+   ============================================================================ */
+
+.luckydrop-obsidian-glass {
+  background-color: rgba(11, 7, 22, 0.9);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.luckydrop-specular-gold {
+  border: 1px solid rgba(255, 215, 0, 0.36);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 240, 150, 0.22);
+}
+
+.luckydrop-specular-purple {
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(216, 180, 254, 0.16);
+}
+
+.luckydrop-microgrid-watermark {
+  background-image: radial-gradient(rgba(255, 215, 0, 0.1) 1px, transparent 1px),
+    linear-gradient(to right, rgba(0, 245, 212, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(168, 85, 247, 0.04) 1px, transparent 1px);
+  background-size: 18px 18px, 18px 18px, 18px 18px;
+}
+
+@keyframes luckydropHoloSweep {
+  0% {
+    transform: translateX(-140%) skewX(-24deg);
+  }
+  45%,
+  100% {
+    transform: translateX(220%) skewX(-24deg);
+  }
+}
+
+.luckydrop-holographic-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.luckydrop-holographic-shimmer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 48%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(0, 245, 212, 0.09) 35%,
+    rgba(255, 224, 102, 0.16) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: luckydropHoloSweep 5.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+

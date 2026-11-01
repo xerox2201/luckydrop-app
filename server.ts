@@ -68,6 +68,12 @@ import {
   resolveStrictNativeBetAmount,
   computeStrictNativePayout,
   resolveStrictNativeTicketCost,
+  filterSupportMessagesForUser,
+  resolveSupportThreadUserId,
+  formatUserSupportReplyTelegramPush,
+  formatAdminSupportTelegramAlert,
+  type VipSupportMessageRecord,
+  type SupportDiagnosticChipType,
   type IsolatedUserAccountRecord,
   type AdminAuditLogEntry,
 } from './src/services/securityGuard.ts';
@@ -239,6 +245,8 @@ interface TelegramBotAlertConfig {
   adminChatId: string;
   botUsername?: string;
   officialChannelUrl?: string;
+  supportTelegramUsername?: string;
+  officialBrandTitle?: string;
   enabled: boolean;
   notifyOnDeposit: boolean;
   notifyOnWithdrawal: boolean;
@@ -381,6 +389,11 @@ function buildDefaultDatabase(): PersistentDatabaseSchema {
       botUsername: process.env.TELEGRAM_BOT_USERNAME || 'LuckyDrop_TON_Bot',
       officialChannelUrl:
         process.env.TELEGRAM_OFFICIAL_CHANNEL_URL || 'https://t.me/LuckyDrop_TON_Official',
+      supportTelegramUsername:
+        process.env.SUPPORT_TELEGRAM_USERNAME || '@LuckyDrop_Support',
+      officialBrandTitle:
+        process.env.OFFICIAL_BRAND_TITLE ||
+        '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol',
       enabled: true,
       notifyOnDeposit: true,
       notifyOnWithdrawal: true,
@@ -2847,7 +2860,11 @@ function buildSnapshotPayload(req: express.Request) {
     tickets: userTickets,
     drawHistory: dbState.drawHistory,
     transactions: dbState.transactions,
-    supportMessages: dbState.supportMessages,
+    supportMessages: session.isAdmin
+      ? dbState.supportMessages
+      : filterSupportMessagesForUser(dbState.supportMessages, session.userKey).messages,
+    unreadSupportCount: filterSupportMessagesForUser(dbState.supportMessages, session.userKey)
+      .unreadOperatorCount,
     deposits: userDeposits,
     withdrawals: userWithdrawals,
     referralEvents: dbState.referralEvents,
@@ -2865,6 +2882,14 @@ function buildSnapshotPayload(req: express.Request) {
         (getEffectiveNotificationChatId().startsWith('@')
           ? `https://t.me/${getEffectiveNotificationChatId().slice(1)}`
           : 'https://t.me/LuckyDrop_TON_Official'),
+      supportTelegramUsername:
+        dbState.telegramBotConfig.supportTelegramUsername ||
+        process.env.SUPPORT_TELEGRAM_USERNAME ||
+        '@LuckyDrop_Support',
+      officialBrandTitle:
+        dbState.telegramBotConfig.officialBrandTitle ||
+        process.env.OFFICIAL_BRAND_TITLE ||
+        '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol',
     },
     telegramAlertsLog: session.isAdmin ? dbState.telegramAlertsLog : [],
     rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
@@ -4018,6 +4043,8 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
       adminChatId = '',
       botUsername,
       officialChannelUrl,
+      supportTelegramUsername,
+      officialBrandTitle,
       enabled = true,
       notifyOnDeposit = true,
       notifyOnWithdrawal = true,
@@ -4031,6 +4058,19 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
         : dbState.telegramBotConfig.botToken
       : incomingToken;
 
+    const cleanSupportUsername =
+      typeof supportTelegramUsername === 'string' && supportTelegramUsername.trim()
+        ? supportTelegramUsername.trim().startsWith('@')
+          ? supportTelegramUsername.trim()
+          : `@${supportTelegramUsername.trim().replace(/^https?:\/\/t\.me\//i, '')}`
+        : dbState.telegramBotConfig.supportTelegramUsername || '@LuckyDrop_Support';
+
+    const cleanBrandTitle =
+      typeof officialBrandTitle === 'string' && officialBrandTitle.trim()
+        ? officialBrandTitle.trim()
+        : dbState.telegramBotConfig.officialBrandTitle ||
+          '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol';
+
     dbState.telegramBotConfig = {
       botToken: nextBotToken,
       adminChatId: normalizeTelegramChatId(String(adminChatId)),
@@ -4042,6 +4082,8 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
         typeof officialChannelUrl === 'string' && officialChannelUrl.trim()
           ? officialChannelUrl.trim()
           : dbState.telegramBotConfig.officialChannelUrl || 'https://t.me/LuckyDrop_TON_Official',
+      supportTelegramUsername: cleanSupportUsername,
+      officialBrandTitle: cleanBrandTitle,
       enabled: Boolean(enabled),
       notifyOnDeposit: Boolean(notifyOnDeposit),
       notifyOnWithdrawal: Boolean(notifyOnWithdrawal),
@@ -6129,36 +6171,363 @@ app.post('/api/telegram/webhook', async (req, res) => {
   }
 });
 
+// ============================================================================
+// REAL TWO-WAY LIVE CUSTOMER SUPPORT SYSTEM (WITH TELEGRAM ADMIN BRIDGE & PUSH)
+// ============================================================================
+
+async function sendDirectTelegramBotMessage(params: {
+  chatId: string | number;
+  text: string;
+  parseMode?: 'HTML' | 'Markdown';
+  replyMarkup?: Record<string, any>;
+}): Promise<{ delivered: boolean; description: string }> {
+  const activeToken = getEffectiveBotToken();
+  if (!activeToken || activeToken.length < 10) {
+    return {
+      delivered: false,
+      description: 'TELEGRAM_BOT_TOKEN_NOT_CONFIGURED',
+    };
+  }
+  const targetChat = String(params.chatId || '').trim();
+  if (!targetChat) {
+    return {
+      delivered: false,
+      description: 'EMPTY_TARGET_CHAT_ID',
+    };
+  }
+  try {
+    const payload: Record<string, any> = {
+      chat_id: /^\d+$/.test(targetChat) ? Number(targetChat) : targetChat,
+      text: params.text,
+    };
+    if (params.parseMode) {
+      payload.parse_mode = params.parseMode;
+    }
+    if (params.replyMarkup) {
+      payload.reply_markup = params.replyMarkup;
+    }
+    const resp = await fetch(
+      `https://api.telegram.org/bot${encodeURIComponent(activeToken)}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    const data: any = await resp.json().catch(() => null);
+    if (resp.ok && data?.ok) {
+      return { delivered: true, description: 'DELIVERED' };
+    }
+    return {
+      delivered: false,
+      description: String(data?.description || `HTTP_${resp.status}`),
+    };
+  } catch (err: any) {
+    return {
+      delivered: false,
+      description: String(err?.message || 'NETWORK_ERROR'),
+    };
+  }
+}
+
+// 1. GET /api/support/my-messages (Strictly scoped to authenticated user's telegramUserId)
+app.get('/api/support/my-messages', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const { session, userAccount, userPam } = getOrCreateIsolatedUserContext(req);
+    const targetUserId = String(req.query.telegramUserId || session.userKey || '').trim();
+    // Only allow viewing another user's thread if caller is verified Admin
+    const effectiveUserId =
+      session.isAdmin && targetUserId ? targetUserId : session.userKey;
+
+    const scoped = filterSupportMessagesForUser(dbState.supportMessages, effectiveUserId);
+
+    return res.json({
+      ok: true,
+      telegramUserId: effectiveUserId,
+      sessionCode: scoped.sessionCode,
+      messages: scoped.messages,
+      unreadOperatorCount: scoped.unreadOperatorCount,
+      unreadCount: scoped.unreadOperatorCount,
+      supportTelegramUsername:
+        dbState.telegramBotConfig?.supportTelegramUsername || '@LuckyDrop_Support',
+      officialBrandTitle:
+        dbState.telegramBotConfig?.officialBrandTitle ||
+        '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol',
+      userSummary: {
+        telegramUserId: effectiveUserId,
+        firstName: userAccount.displayName || userPam.getState().displayName,
+        username: userAccount.username || '',
+        tonBalance: roundTonClean(userPam.getState().tonBalance),
+        starsBalance: roundStarsClean(userPam.getState().starsBalance),
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در دریافت تاریخچه پیام‌های پشتیبانی',
+    });
+  }
+});
+
+// 2. POST /api/support/send (User sends message -> persists + dispatches real-time Telegram Bot alert to Admin)
+app.post('/api/support/send', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const { session, userKey, userAccount, userPam } = getOrCreateIsolatedUserContext(req);
+    const {
+      message,
+      subject = '💎 پشتیبانی ویژه VIP',
+      diagnosticType = null,
+      diagnosticMetadata = '',
+      username: reqUsername,
+      firstName: reqFirstName,
+    } = req.body || {};
+
+    const cleanMessage = String(message || '').trim();
+    if (!cleanMessage) {
+      return res.status(400).json({ ok: false, error: 'متن پیام پشتیبانی نمی‌تواند خالی باشد.' });
+    }
+
+    const pamState = userPam.getState();
+    const cleanFirstName =
+      String(reqFirstName || userAccount.displayName || pamState.displayName || 'کاربر VIP').trim();
+    const cleanUsername = String(reqUsername || userAccount.username || '')
+      .trim()
+      .replace(/^@/, '');
+    if (cleanUsername && !userAccount.username) {
+      userAccount.username = cleanUsername;
+    }
+
+    const sessionCode = `TG-${userKey}`;
+    const userTicketsCount = dbState.tickets.filter(
+      (t) => t.userUid === pamState.playerId || t.userUid === userKey
+    ).length;
+
+    const inserted: VipSupportMessageRecord = {
+      id: Date.now(),
+      sessionCode,
+      telegramUserId: String(userKey),
+      username: cleanUsername,
+      firstName: cleanFirstName,
+      senderName: cleanUsername ? `${cleanFirstName} (@${cleanUsername})` : cleanFirstName,
+      senderRole: 'USER',
+      vipLevel: pamState.vipTier || 'MEMBER',
+      tonBalance: roundTonClean(pamState.tonBalance),
+      starsBalance: roundStarsClean(pamState.starsBalance),
+      subject: String(subject || '💎 پشتیبانی ویژه VIP').trim(),
+      message: cleanMessage,
+      walletBalanceLabel: `${roundTonClean(pamState.tonBalance).toFixed(2)} TON | ${roundStarsClean(
+        pamState.starsBalance
+      )} ⭐`,
+      historySummary: `${userTicketsCount} بلیت ثبت‌شده`,
+      diagnosticType: (diagnosticType as SupportDiagnosticChipType) || null,
+      diagnosticMetadata: String(diagnosticMetadata || '').trim(),
+      readByUser: true,
+      readByAdmin: false,
+      createdAt: new Date().toLocaleTimeString('fa-IR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      createdAtIso: new Date().toISOString(),
+    };
+
+    dbState.supportMessages.push(inserted);
+    persistAll();
+
+    // Real-Time Admin Alert via Telegram Bot to ADMIN_TELEGRAM_USER_IDS & adminChatId
+    const adminAlertHtml = formatAdminSupportTelegramAlert({
+      firstName: cleanFirstName,
+      username: cleanUsername,
+      telegramUserId: userKey,
+      tonBalance: inserted.tonBalance,
+      starsBalance: inserted.starsBalance,
+      messageText: cleanMessage,
+      diagnosticMetadata: inserted.diagnosticMetadata,
+    });
+
+    const adminTargets = new Set<string>();
+    for (const adminId of getEffectiveAdminTelegramIds()) {
+      if (adminId) adminTargets.add(String(adminId));
+    }
+    const configuredAdminChat = getEffectiveNotificationChatId();
+    if (configuredAdminChat) {
+      adminTargets.add(configuredAdminChat);
+    }
+
+    let adminTelegramNotified = false;
+    for (const chatTarget of Array.from(adminTargets)) {
+      const sendRes = await sendDirectTelegramBotMessage({
+        chatId: chatTarget,
+        text: adminAlertHtml,
+        parseMode: 'HTML',
+      });
+      if (sendRes.delivered) {
+        adminTelegramNotified = true;
+      }
+    }
+
+    const scoped = filterSupportMessagesForUser(dbState.supportMessages, userKey);
+    return res.json({
+      ok: true,
+      message: inserted,
+      messages: scoped.messages,
+      unreadOperatorCount: scoped.unreadOperatorCount,
+      adminTelegramNotified,
+      supportMessages: session.isAdmin ? dbState.supportMessages : scoped.messages,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در ارسال پیام به پشتیبانی',
+    });
+  }
+});
+
+// 3. POST /api/support/reply (Admin replies -> persists + sends direct Telegram Bot message to user's Telegram ID)
 app.post('/api/support/reply', optionalAuth, async (req: AuthRequest, res) => {
   try {
-    const { userPam } = getOrCreateIsolatedUserContext(req);
+    const { session, userPam } = getOrCreateIsolatedUserContext(req);
     const {
       sessionCode = 'VIP-SUPPORT',
+      targetTelegramUserId,
       senderName = 'اپراتور ارشد LuckyDrop',
       senderRole = 'OPERATOR',
       subject = 'پشتیبانی ویژه VIP',
       message,
     } = req.body || {};
-    if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: 'متن پیام الزامی است' });
+
+    const cleanReplyText = String(message || '').trim();
+    if (!cleanReplyText) {
+      return res.status(400).json({ ok: false, error: 'متن پیام الزامی است' });
     }
-    const inserted = {
-      id: Date.now(),
+
+    const resolvedTargetUserId = resolveSupportThreadUserId({
+      telegramUserId: targetTelegramUserId,
       sessionCode,
-      senderName,
-      senderRole,
-      vipLevel: userPam.getState().vipTier,
-      subject,
-      message: String(message).trim(),
-      walletBalanceLabel: `${userPam.getState().tonBalance.toFixed(2)} TON | ${userPam.getState().starsBalance} ⭐`,
+    });
+    const canonicalSessionCode =
+      resolvedTargetUserId && resolvedTargetUserId !== 'VIP-SUPPORT'
+        ? `TG-${resolvedTargetUserId}`
+        : String(sessionCode || 'VIP-SUPPORT');
+
+    const targetUserAcc = dbState.users?.[resolvedTargetUserId];
+    const targetTon = roundTonClean(
+      targetUserAcc?.pamState?.tonBalance ?? targetUserAcc?.tonBalance ?? userPam.getState().tonBalance
+    );
+    const targetStars = roundStarsClean(
+      targetUserAcc?.pamState?.starsBalance ??
+        targetUserAcc?.starsBalance ??
+        userPam.getState().starsBalance
+    );
+    const targetFirstName =
+      targetUserAcc?.displayName || `کاربر #${String(resolvedTargetUserId).slice(-4)}`;
+    const targetUsername = targetUserAcc?.username || '';
+
+    const normalizedRole = String(senderRole || 'OPERATOR').toUpperCase();
+    const isOperatorReply = normalizedRole === 'OPERATOR';
+
+    // If Admin replies, mark all previous user messages in this session as readByAdmin = true
+    if (isOperatorReply) {
+      for (const m of dbState.supportMessages) {
+        if (m.sessionCode === canonicalSessionCode || m.telegramUserId === resolvedTargetUserId) {
+          m.readByAdmin = true;
+        }
+      }
+    }
+
+    const inserted: VipSupportMessageRecord = {
+      id: Date.now(),
+      sessionCode: canonicalSessionCode,
+      telegramUserId: resolvedTargetUserId,
+      username: targetUsername,
+      firstName: targetFirstName,
+      senderName: String(senderName || 'اپراتور ارشد LuckyDrop').trim(),
+      senderRole: isOperatorReply ? 'OPERATOR' : 'USER',
+      vipLevel: targetUserAcc?.pamState?.vipTier || userPam.getState().vipTier || 'MEMBER',
+      tonBalance: targetTon,
+      starsBalance: targetStars,
+      subject: String(subject || 'پشتیبانی ویژه VIP').trim(),
+      message: cleanReplyText,
+      walletBalanceLabel: `${targetTon.toFixed(2)} TON | ${targetStars} ⭐`,
       historySummary: `${dbState.tickets.length} بلیت ثبت‌شده`,
-      createdAt: 'همین الان',
+      readByUser: !isOperatorReply,
+      readByAdmin: isOperatorReply,
+      createdAt: new Date().toLocaleTimeString('fa-IR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      createdAtIso: new Date().toISOString(),
     };
+
     dbState.supportMessages.push(inserted);
     persistAll();
-    res.json({ message: inserted, supportMessages: dbState.supportMessages });
+
+    // Real-Time User Notification on Admin Reply via Telegram Bot (`sendMessage`)
+    let userTelegramNotified = false;
+    let userTelegramDescription = '';
+    if (isOperatorReply && /^\d+$/.test(resolvedTargetUserId)) {
+      const pushText = formatUserSupportReplyTelegramPush(cleanReplyText);
+      const pushRes = await sendDirectTelegramBotMessage({
+        chatId: resolvedTargetUserId,
+        text: pushText,
+      });
+      userTelegramNotified = pushRes.delivered;
+      userTelegramDescription = pushRes.description;
+    }
+
+    const scoped = filterSupportMessagesForUser(dbState.supportMessages, resolvedTargetUserId);
+    return res.json({
+      ok: true,
+      message: inserted,
+      messages: scoped.messages,
+      userTelegramNotified,
+      userTelegramDescription,
+      supportMessages: session.isAdmin ? dbState.supportMessages : scoped.messages,
+    });
   } catch (error: any) {
-    res.status(500).json({ error: error.message || 'خطا در ثبت پیام' });
+    return res.status(500).json({ ok: false, error: error.message || 'خطا در ثبت پیام' });
+  }
+});
+
+// 4. POST /api/support/mark-read (Clears unread badge for User or Admin)
+app.post('/api/support/mark-read', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const { session } = getOrCreateIsolatedUserContext(req);
+    const role = String(req.body?.role || 'USER').toUpperCase();
+    const targetUid = resolveSupportThreadUserId({
+      telegramUserId: req.body?.telegramUserId || session.userKey,
+      sessionCode: req.body?.sessionCode,
+    });
+
+    let updatedCount = 0;
+    for (const msg of dbState.supportMessages) {
+      const msgUid = resolveSupportThreadUserId({
+        telegramUserId: msg.telegramUserId,
+        sessionCode: msg.sessionCode,
+      });
+      if (msgUid === targetUid) {
+        if (role === 'ADMIN' && session.isAdmin && !msg.readByAdmin) {
+          msg.readByAdmin = true;
+          updatedCount++;
+        } else if (role === 'USER' && !msg.readByUser) {
+          msg.readByUser = true;
+          updatedCount++;
+        }
+      }
+    }
+
+    if (updatedCount > 0) {
+      persistAll();
+    }
+
+    const scoped = filterSupportMessagesForUser(dbState.supportMessages, session.userKey);
+    return res.json({
+      ok: true,
+      updatedCount,
+      unreadOperatorCount: scoped.unreadOperatorCount,
+      supportMessages: session.isAdmin ? dbState.supportMessages : scoped.messages,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error.message || 'خطا در بروزرسانی وضعیت پیام' });
   }
 });
 

@@ -83,7 +83,7 @@ export const MyTicketsView: React.FC = () => {
       </div>
 
       {/* Hero Summary */}
-      <section className="rounded-3xl p-4 bg-gradient-to-br from-[#16102C] via-[#0E091E] to-[#080512] border border-[#FFD700]/25 space-y-3">
+      <section className="rounded-3xl p-4 luckydrop-obsidian-glass luckydrop-specular-gold luckydrop-microgrid-watermark space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FFD700]/15 border border-[#FFD700]/30 text-[10px] font-black text-[#FFE066]">
@@ -171,7 +171,9 @@ export const MyTicketsView: React.FC = () => {
                 key={t.ticketCode}
                 className={`p-3.5 rounded-2xl border space-y-3 transition-all ${
                   isWon
-                    ? 'bg-emerald-950/20 border-emerald-400/40'
+                    ? 'bg-emerald-950/20 border-emerald-400/40 luckydrop-holographic-shimmer'
+                    : !isLost
+                    ? 'luckydrop-obsidian-glass luckydrop-specular-gold luckydrop-holographic-shimmer'
                     : 'bg-[#110C22]/90 border-white/10'
                 }`}
               >

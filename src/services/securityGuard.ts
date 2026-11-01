@@ -1819,3 +1819,191 @@ export function resolveStrictNativeTicketCost(params: {
     nominalUnitUsdt: Number((nominalTotalUsdt / count).toFixed(2)),
   };
 }
+
+// ============================================================================
+// TWO-WAY LIVE VIP SUPPORT & TELEGRAM PUSH NOTIFICATION HELPERS
+// ============================================================================
+
+export type SupportDiagnosticChipType = 'DEPOSIT_TON' | 'WITHDRAWAL' | 'FAIRNESS_RTP';
+
+export interface VipSupportMessageRecord {
+  id: number;
+  sessionCode: string;
+  telegramUserId: string;
+  username: string;
+  firstName: string;
+  senderName: string;
+  senderRole: 'USER' | 'OPERATOR' | string;
+  vipLevel: string;
+  tonBalance: number;
+  starsBalance: number;
+  subject: string;
+  message: string;
+  walletBalanceLabel: string;
+  historySummary: string;
+  diagnosticType?: SupportDiagnosticChipType | null;
+  diagnosticMetadata?: string;
+  readByUser?: boolean;
+  readByAdmin?: boolean;
+  createdAt: string;
+  createdAtIso?: string;
+}
+
+/**
+ * Normalizes a ` telegramUserId ` or ` sessionCode ` (`TG-12345`) into a canonical user ID string.
+ */
+export function resolveSupportThreadUserId(input: {
+  telegramUserId?: string | number | null;
+  sessionCode?: string | null;
+}): string {
+  const rawUid = String(input.telegramUserId ?? '').trim();
+  if (rawUid && rawUid !== 'undefined' && rawUid !== 'null') {
+    return rawUid.replace(/^TG-/i, '').replace(/^tg_/i, '');
+  }
+  const rawSession = String(input.sessionCode ?? '').trim();
+  if (rawSession.toUpperCase().startsWith('TG-')) {
+    return rawSession.slice(3).trim();
+  }
+  return rawSession || 'guest_isolated';
+}
+
+/**
+ * Strictly filters support messages for a specific `telegramUserId` and computes unread operator replies.
+ */
+export function filterSupportMessagesForUser(
+  allMessages: VipSupportMessageRecord[],
+  telegramUserId: string | number
+): {
+  messages: VipSupportMessageRecord[];
+  unreadOperatorCount: number;
+  sessionCode: string;
+} {
+  const cleanUserId = resolveSupportThreadUserId({ telegramUserId });
+  const expectedSessionCode = `TG-${cleanUserId}`;
+  const safeList = Array.isArray(allMessages) ? allMessages : [];
+
+  const messages = safeList.filter((m) => {
+    const msgUid = resolveSupportThreadUserId({
+      telegramUserId: m.telegramUserId,
+      sessionCode: m.sessionCode,
+    });
+    return msgUid === cleanUserId || m.sessionCode === expectedSessionCode;
+  });
+
+  const unreadOperatorCount = messages.filter(
+    (m) => String(m.senderRole).toUpperCase() === 'OPERATOR' && m.readByUser === false
+  ).length;
+
+  return {
+    messages,
+    unreadOperatorCount,
+    sessionCode: expectedSessionCode,
+  };
+}
+
+/**
+ * Formats the exact Telegram Bot direct message sent to the user when an Admin replies in Cockpit.
+ */
+export function formatUserSupportReplyTelegramPush(replyText: string): string {
+  const cleanReply = String(replyText || '').trim();
+  return `📩 پاسخ جدید از پشتیبانی LuckyDrop:\n\n${cleanReply}`;
+}
+
+/**
+ * Formats the real-time Telegram Bot alert sent to Admin (`ADMIN_TELEGRAM_USER_IDS` / `adminChatId`)
+ * whenever a user submits a new support message in the Mini App.
+ */
+export function formatAdminSupportTelegramAlert(params: {
+  firstName: string;
+  username?: string;
+  telegramUserId: string | number;
+  tonBalance: number;
+  starsBalance: number;
+  messageText: string;
+  diagnosticMetadata?: string;
+}): string {
+  const cleanHandle = params.username
+    ? `@${String(params.username).replace(/^@/, '')}`
+    : 'بدون یوزرنیم';
+  const lines = [
+    `💎 <b>پیام جدید پشتیبانی VIP در LuckyDrop</b>`,
+    `👤 نام کاربر: <b>${params.firstName || 'کاربر تلگرام'}</b> (${cleanHandle})`,
+    `🆔 آیدی تلگرام: <code>${params.telegramUserId}</code>`,
+    `💰 موجودی فعلی: <b>${roundTonClean(params.tonBalance).toFixed(2)} TON</b> | <b>${roundStarsClean(params.starsBalance)} ⭐</b>`,
+  ];
+  if (params.diagnosticMetadata && params.diagnosticMetadata.trim()) {
+    lines.push(`📎 <b>اطلاعات پیگیری خودکار:</b> <code>${params.diagnosticMetadata.trim()}</code>`);
+  }
+  lines.push(`\n💬 <b>متن پیام کاربر:</b>\n${String(params.messageText || '').trim()}`);
+  return lines.join('\n');
+}
+
+/**
+ * Builds the 1-tap quick diagnostic summary & prefilled message for the 3 Support Drawer chips.
+ */
+export function buildQuickDiagnosticSupportAttachment(params: {
+  chipType: SupportDiagnosticChipType;
+  connectedWalletAddress?: string;
+  latestDeposit?: {
+    depositCode: string;
+    amountCrypto?: string;
+    amountUsdt?: number;
+    status: string;
+    txHash: string;
+  } | null;
+  latestWithdrawal?: {
+    withdrawalCode: string;
+    netAmountCrypto?: string;
+    netAmountUsdt?: number;
+    status: string;
+    destinationAddress?: string;
+  } | null;
+  serverSeedHash?: string;
+}): {
+  chipType: SupportDiagnosticChipType;
+  subjectFa: string;
+  diagnosticMetadata: string;
+  prefilledMessageFa: string;
+  instantGuideFa?: string;
+} {
+  if (params.chipType === 'DEPOSIT_TON') {
+    const walletStr = params.connectedWalletAddress?.trim() || 'کیف پول TON متصل نیست';
+    const depStr = params.latestDeposit
+      ? `کد واریز: ${params.latestDeposit.depositCode} | وضعیت: ${params.latestDeposit.status} | هش: ${params.latestDeposit.txHash.slice(0, 18)}...`
+      : 'هنوز تراکنش واریزی در لیست ثبت نشده است';
+    const metadata = `Wallet: ${walletStr} | ${depStr}`;
+    return {
+      chipType: 'DEPOSIT_TON',
+      subjectFa: '🔍 پیگیری واریز TON',
+      diagnosticMetadata: metadata,
+      prefilledMessageFa: `سلام وقت بخیر، لطفاً وضعیت آخرین واریز TON من را بررسی بفرمایید.\n[${metadata}]`,
+    };
+  }
+
+  if (params.chipType === 'WITHDRAWAL') {
+    const wdStr = params.latestWithdrawal
+      ? `کد برداشت: ${params.latestWithdrawal.withdrawalCode} | مبلغ: ${params.latestWithdrawal.netAmountCrypto || `${params.latestWithdrawal.netAmountUsdt} USDT`} | وضعیت: ${params.latestWithdrawal.status}`
+      : 'درخواست برداشت در انتظار بررسی یافت نشد';
+    const metadata = `${wdStr}${params.connectedWalletAddress ? ` | Wallet: ${params.connectedWalletAddress}` : ''}`;
+    return {
+      chipType: 'WITHDRAWAL',
+      subjectFa: '💸 پیگیری برداشت',
+      diagnosticMetadata: metadata,
+      prefilledMessageFa: `سلام، لطفاً وضعیت تسویه درخواست برداشت من را پیگیری بفرمایید.\n[${metadata}]`,
+    };
+  }
+
+  const hashPreview = params.serverSeedHash
+    ? `${params.serverSeedHash.slice(0, 20)}...`
+    : 'HMAC-SHA256 52-Bit Verified';
+  const metadata = `Provably Fair RNG: ${hashPreview} | Lottery Pool: 85% Direct Payout | Casino RTP: 97.5%–99.0%`;
+  return {
+    chipType: 'FAIRNESS_RTP',
+    subjectFa: '🎰 راهنمای بازی و ضرایب',
+    diagnosticMetadata: metadata,
+    prefilledMessageFa: `سلام، درباره نحوه محاسبه ضرایب و اثبات عدالت (Provably Fair) سوال داشتم.`,
+    instantGuideFa:
+      '🛡️ خلاصه فوری قوانین و ضرایب LuckyDrop:\n• لاتاری (Pari-Mutuel): دقیقاً ۸۵٪ کل فروش هر دور مستقیماً بین برندگان تقسیم می‌شود.\n• ۹ بازی آنی کازینو (Plinko, Crash, Mines, Dice, Wheel, Tower, HiLo, CoinFlip, Scratch): بازگشت به بازیکن (RTP) بین ۹۷.۵٪ تا ۹۹.۰٪ قفل شده و با امضای ۵۲ بیتی HMAC-SHA256 قابل راستی‌آزمایی است.',
+  };
+}
+

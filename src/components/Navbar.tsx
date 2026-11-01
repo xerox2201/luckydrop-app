@@ -15,6 +15,7 @@ import {
   FileText,
   Target,
   Globe,
+  Headset,
 } from 'lucide-react';
 import { useLottery, AppRoute } from '../context/LotteryContext';
 import { HapticEngine } from '../utils/telegramTma';
@@ -40,6 +41,10 @@ export const Navbar: React.FC = () => {
     tonChange24hPercent,
     liveStarsPerTon,
     portfolioUsdValue,
+    unreadSupportCount,
+    aiChatOpen,
+    setAiChatOpen,
+    officialBrandTitle,
   } = useLottery();
 
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -96,6 +101,7 @@ export const Navbar: React.FC = () => {
             {isTelegramAdmin && (
               <button
                 type="button"
+                data-testid="navbar-admin-cockpit-btn"
                 onClick={() => handleTabNav('cockpit')}
                 title={tr(lang, 'پنل مدیریت ادمین', 'Admin Cockpit')}
                 className={`flex items-center gap-0.5 px-1.5 py-1 rounded-lg text-[9px] font-black transition-all cursor-pointer shrink-0 ${
@@ -179,6 +185,33 @@ export const Navbar: React.FC = () => {
               {tickets.length > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[#00F5D4] text-slate-950 font-mono text-[9px] font-black flex items-center justify-center">
                   {tickets.length}
+                </span>
+              )}
+            </button>
+
+            {/* Quick Live VIP Support Button with Unread Red Badge */}
+            <button
+              type="button"
+              onClick={() => {
+                HapticEngine.selectionChanged();
+                setMoreMenuOpen(false);
+                setAiChatOpen(!aiChatOpen);
+              }}
+              title={tr(lang, 'پشتیبانی زنده VIP', 'VIP Live Support')}
+              data-testid="header-support-btn"
+              className={`relative p-1.5 rounded-xl border transition-all cursor-pointer ${
+                aiChatOpen
+                  ? 'bg-[#FFE066]/20 border-[#FFE066]/60 text-[#FFE066]'
+                  : 'bg-white/5 border-white/10 text-slate-300 hover:text-[#FFE066]'
+              }`}
+            >
+              <Headset className="w-4 h-4" />
+              {unreadSupportCount > 0 && (
+                <span
+                  data-testid="header-support-unread-badge"
+                  className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black flex items-center justify-center animate-pulse"
+                >
+                  {unreadSupportCount}
                 </span>
               )}
             </button>
@@ -310,6 +343,32 @@ export const Navbar: React.FC = () => {
               </button>
               <button
                 type="button"
+                data-testid="more-nav-support"
+                onClick={() => {
+                  HapticEngine.selectionChanged();
+                  setMoreMenuOpen(false);
+                  setAiChatOpen(true);
+                }}
+                className="col-span-2 flex items-center justify-between gap-2 p-2.5 rounded-xl bg-gradient-to-r from-[#1A1230] to-[#120D24] hover:brightness-110 border border-[#FFE066]/35 text-xs font-black text-[#FFE066] cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Headset className="w-4 h-4 text-[#00F5D4] shrink-0" />
+                  <span>
+                    {tr(
+                      lang,
+                      '💎 کنسیرج VIP و پشتیبانی دوطرفه زنده (چت + تلگرام)',
+                      '💎 24/7 VIP Concierge & Two-Way Live Support'
+                    )}
+                  </span>
+                </div>
+                {unreadSupportCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[10px] font-black">
+                    {unreadSupportCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
                 data-testid="more-nav-terms"
                 onClick={() => handleTabNav('terms')}
                 className="col-span-2 flex items-center justify-center gap-2 p-2 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/10 text-[11px] font-bold text-slate-300 cursor-pointer"
@@ -323,6 +382,14 @@ export const Navbar: React.FC = () => {
                   )}
                 </span>
               </button>
+            </div>
+            {/* Official Proprietary Brand Signature Badge inside Header Menu */}
+            <div
+              data-testid="header-menu-brand-badge"
+              className="mt-2 pt-2 border-t border-white/10 flex items-center justify-center gap-1.5 text-[10px] font-mono font-bold text-[#FFE066]/90 text-center"
+            >
+              <LuckyDropLogo size={16} />
+              <span className="truncate">{officialBrandTitle}</span>
             </div>
           </div>
         )}

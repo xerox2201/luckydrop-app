@@ -199,13 +199,22 @@ export interface TransactionItem {
 export interface SupportMessageItem {
   id: number;
   sessionCode: string;
+  telegramUserId?: string;
+  username?: string;
+  firstName?: string;
   senderName: string;
   senderRole: string;
   vipLevel: string;
   subject: string;
   message: string;
   walletBalanceLabel: string;
+  tonBalance?: number;
+  starsBalance?: number;
   historySummary: string;
+  diagnosticType?: string | null;
+  diagnosticMetadata?: string;
+  readByUser?: boolean;
+  readByAdmin?: boolean;
   createdAt: string;
 }
 
@@ -249,6 +258,8 @@ export interface TelegramBotAlertConfig {
   adminChatId: string;
   botUsername?: string;
   officialChannelUrl?: string;
+  supportTelegramUsername?: string;
+  officialBrandTitle?: string;
   enabled: boolean;
   notifyOnDeposit?: boolean;
   notifyOnWithdrawal?: boolean;
@@ -520,6 +531,21 @@ interface LotteryContextType {
   drawHistory: VerifiableDrawHistoryRecord[];
   transactions: TransactionItem[];
   supportMessages: SupportMessageItem[];
+  mySupportMessages: SupportMessageItem[];
+  unreadSupportCount: number;
+  supportTelegramUsername: string;
+  officialBrandTitle: string;
+  fetchMySupportMessages: () => Promise<SupportMessageItem[]>;
+  sendUserSupportMessage: (params: {
+    message: string;
+    subject?: string;
+    diagnosticType?: string | null;
+    diagnosticMetadata?: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
+  markSupportMessagesRead: (
+    role?: 'USER' | 'ADMIN',
+    targetTelegramUserId?: string
+  ) => Promise<void>;
   deposits: DepositRecordItem[];
   withdrawals: WithdrawalRecord[];
   claimedTicketCodes: string[];
@@ -628,7 +654,8 @@ interface LotteryContextType {
     sessionCode: string,
     message: string,
     senderRole?: string,
-    senderName?: string
+    senderName?: string,
+    targetTelegramUserId?: string
   ) => Promise<boolean>;
   officialWallets: OfficialSiteWallets;
   updateOfficialWallets: (next: Partial<OfficialSiteWallets>) => void;
@@ -844,6 +871,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [drawHistory, setDrawHistory] = useState<VerifiableDrawHistoryRecord[]>([]);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [supportMessages, setSupportMessages] = useState<SupportMessageItem[]>([]);
+  const [mySupportMessages, setMySupportMessages] = useState<SupportMessageItem[]>([]);
+  const [unreadSupportCount, setUnreadSupportCount] = useState<number>(0);
   const [deposits, setDeposits] = useState<DepositRecordItem[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRecord[]>(
     () => loadLocalState(telegramUser.id).withdrawals
@@ -1163,6 +1192,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     adminChatId: '',
     botUsername: 'LuckyDrop_TON_Bot',
     officialChannelUrl: 'https://t.me/LuckyDrop_TON_Official',
+    supportTelegramUsername: '@LuckyDrop_Support',
+    officialBrandTitle: '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol',
     enabled: true,
     notifyOnDeposit: true,
     notifyOnWithdrawal: true,
@@ -1170,6 +1201,11 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
   const [telegramAlertsLog, setTelegramAlertsLog] = useState<TelegramAlertLogItem[]>([]);
   const [viralCardTicket, setViralCardTicket] = useState<TicketItem | null>(null);
+  const supportTelegramUsername =
+    telegramBotConfig.supportTelegramUsername?.trim() || '@LuckyDrop_Support';
+  const officialBrandTitle =
+    telegramBotConfig.officialBrandTitle?.trim() ||
+    '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol';
 
   const [depositModalOpen, setDepositModalOpen] = useState<boolean>(false);
   const [withdrawModalOpen, setWithdrawModalOpen] = useState<boolean>(false);
@@ -1533,11 +1569,37 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setDrawHistory(data.drawHistory);
       }
       if (Array.isArray(data.transactions)) setTransactions(data.transactions);
-      if (Array.isArray(data.supportMessages)) setSupportMessages(data.supportMessages);
+      if (Array.isArray(data.supportMessages)) {
+        setSupportMessages(data.supportMessages);
+        const myIdStr = String(telegramUser.id);
+        const myScoped = data.supportMessages.filter(
+          (m: SupportMessageItem) =>
+            String(m.telegramUserId || '') === myIdStr ||
+            String(m.sessionCode || '').includes(myIdStr)
+        );
+        if (myScoped.length > 0 || !data.isAdmin) {
+          setMySupportMessages(myScoped);
+        }
+      }
+      if (typeof data.unreadSupportCount === 'number') {
+        setUnreadSupportCount(data.unreadSupportCount);
+      }
       if (Array.isArray(data.deposits)) setDeposits(data.deposits);
       if (Array.isArray(data.referralEvents)) setReferralEvents(data.referralEvents);
       if (data.telegramBotConfig && typeof data.telegramBotConfig === 'object') {
         setTelegramBotConfig((prev) => ({ ...prev, ...data.telegramBotConfig }));
+      }
+      if (typeof data.supportTelegramUsername === 'string' && data.supportTelegramUsername.trim()) {
+        setTelegramBotConfig((prev) => ({
+          ...prev,
+          supportTelegramUsername: data.supportTelegramUsername.trim(),
+        }));
+      }
+      if (typeof data.officialBrandTitle === 'string' && data.officialBrandTitle.trim()) {
+        setTelegramBotConfig((prev) => ({
+          ...prev,
+          officialBrandTitle: data.officialBrandTitle.trim(),
+        }));
       }
       if (Array.isArray(data.telegramAlertsLog)) {
         setTelegramAlertsLog(data.telegramAlertsLog);
@@ -1617,9 +1679,19 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
 
       const baseHeaders = await getHeaders();
+      const fallbackInitData =
+        user.id > 0
+          ? `user=${encodeURIComponent(
+              JSON.stringify({
+                id: user.id,
+                first_name: user.first_name || 'User',
+                username: user.username || `tg_${user.id}`,
+              })
+            )}`
+          : '';
       const snapshotHeaders: Record<string, string> = {
         ...baseHeaders,
-        'X-Telegram-Init-Data': rawInitData,
+        'X-Telegram-Init-Data': rawInitData || fallbackInitData || baseHeaders['X-Telegram-Init-Data'] || '',
         'X-Telegram-User-Id': String(user.id || ''),
       };
       const controller = new AbortController();
@@ -1701,6 +1773,34 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (Array.isArray(data.tickets)) setTickets(data.tickets);
       if (Array.isArray(data.drawHistory)) setDrawHistory(data.drawHistory);
       if (Array.isArray(data.transactions)) setTransactions(data.transactions);
+      if (Array.isArray(data.supportMessages)) {
+        setSupportMessages(data.supportMessages);
+        const myIdStr = String(user.id || telegramUser.id);
+        const myScoped = data.supportMessages.filter(
+          (m: SupportMessageItem) =>
+            String(m.telegramUserId || '') === myIdStr ||
+            String(m.sessionCode || '').includes(myIdStr)
+        );
+        setMySupportMessages(myScoped);
+      }
+      if (typeof data.unreadSupportCount === 'number') {
+        setUnreadSupportCount(data.unreadSupportCount);
+      }
+      if (data.telegramBotConfig && typeof data.telegramBotConfig === 'object') {
+        setTelegramBotConfig((prev) => ({ ...prev, ...data.telegramBotConfig }));
+      }
+      if (typeof data.supportTelegramUsername === 'string' && data.supportTelegramUsername.trim()) {
+        setTelegramBotConfig((prev) => ({
+          ...prev,
+          supportTelegramUsername: data.supportTelegramUsername.trim(),
+        }));
+      }
+      if (typeof data.officialBrandTitle === 'string' && data.officialBrandTitle.trim()) {
+        setTelegramBotConfig((prev) => ({
+          ...prev,
+          officialBrandTitle: data.officialBrandTitle.trim(),
+        }));
+      }
       if (Array.isArray(data.deposits)) setDeposits(data.deposits);
       if (Array.isArray(data.withdrawals)) setWithdrawals(data.withdrawals);
       if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
@@ -1907,8 +2007,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           !autoDrawingRoundsRef.current.has(r.roundCode)
         ) {
           autoDrawingRoundsRef.current.add(r.roundCode);
-          triggerDraw(r.roundCode).finally(() => {
-            autoDrawingRoundsRef.current.delete(r.roundCode);
+          const syncTask = isTelegramAdmin
+            ? triggerDraw(r.roundCode)
+            : refreshSnapshot();
+          Promise.resolve(syncTask).finally(() => {
+            setTimeout(() => {
+              autoDrawingRoundsRef.current.delete(r.roundCode);
+            }, 5000);
           });
         }
       }
@@ -1930,7 +2035,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [refreshPriceOracleNow, triggerDraw, rounds]);
+  }, [refreshPriceOracleNow, triggerDraw, refreshSnapshot, isTelegramAdmin, rounds]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -3738,18 +3843,120 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const fetchMySupportMessages = useCallback(async (): Promise<SupportMessageItem[]> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/support/my-messages', { headers });
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (Array.isArray(data.messages)) {
+        setMySupportMessages(data.messages);
+      }
+      if (typeof data.unreadCount === 'number') {
+        setUnreadSupportCount(data.unreadCount);
+      }
+      if (typeof data.supportTelegramUsername === 'string' && data.supportTelegramUsername.trim()) {
+        setTelegramBotConfig((prev) =>
+          prev.supportTelegramUsername === data.supportTelegramUsername.trim()
+            ? prev
+            : { ...prev, supportTelegramUsername: data.supportTelegramUsername.trim() }
+        );
+      }
+      if (typeof data.officialBrandTitle === 'string' && data.officialBrandTitle.trim()) {
+        setTelegramBotConfig((prev) =>
+          prev.officialBrandTitle === data.officialBrandTitle.trim()
+            ? prev
+            : { ...prev, officialBrandTitle: data.officialBrandTitle.trim() }
+        );
+      }
+      return Array.isArray(data.messages) ? data.messages : [];
+    } catch {
+      return [];
+    }
+  }, [getHeaders]);
+
+  const sendUserSupportMessage = useCallback(
+    async (params: {
+      message: string;
+      subject?: string;
+      diagnosticType?: string | null;
+      diagnosticMetadata?: string;
+    }): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        const headers = await getHeaders();
+        const res = await fetch('/api/support/send', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            message: params.message,
+            subject: params.subject,
+            diagnosticType: params.diagnosticType || null,
+            diagnosticMetadata: params.diagnosticMetadata || '',
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          return {
+            ok: false,
+            error: data.error || 'خطا در ارسال پیام به پشتیبانی VIP.',
+          };
+        }
+        if (Array.isArray(data.messages)) {
+          setMySupportMessages(data.messages);
+        }
+        await refreshSnapshot();
+        return { ok: true };
+      } catch {
+        return {
+          ok: false,
+          error: 'خطا در ارتباط شبکه با سرور پشتیبانی.',
+        };
+      }
+    },
+    [getHeaders, refreshSnapshot]
+  );
+
+  const markSupportMessagesRead = useCallback(
+    async (role: 'USER' | 'ADMIN' = 'USER', targetTelegramUserId?: string): Promise<void> => {
+      try {
+        const headers = await getHeaders();
+        await fetch('/api/support/mark-read', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ role, targetTelegramUserId }),
+        });
+        if (role === 'USER') {
+          setUnreadSupportCount(0);
+          setMySupportMessages((prev) => prev.map((m) => ({ ...m, readByUser: true })));
+        } else {
+          await refreshSnapshot();
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [getHeaders, refreshSnapshot]
+  );
+
   const sendSupportMessage = async (
     sessionCode: string,
     message: string,
     senderRole: string = 'OPERATOR',
-    senderName: string = 'اپراتور ارشد LuckyDrop'
+    senderName: string = 'اپراتور ارشد LuckyDrop',
+    targetTelegramUserId?: string
   ) => {
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/support/reply', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ sessionCode, message, senderRole, senderName }),
+        body: JSON.stringify({
+          sessionCode,
+          targetTelegramUserId,
+          message,
+          senderRole,
+          senderName,
+        }),
       });
       if (!res.ok) return false;
       await refreshSnapshot();
@@ -4292,6 +4499,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         drawHistory,
         transactions,
         supportMessages,
+        mySupportMessages,
+        unreadSupportCount,
+        supportTelegramUsername,
+        officialBrandTitle,
+        fetchMySupportMessages,
+        sendUserSupportMessage,
+        markSupportMessagesRead,
         deposits,
         withdrawals,
         claimedTicketCodes,

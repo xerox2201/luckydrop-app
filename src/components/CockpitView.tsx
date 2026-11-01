@@ -117,6 +117,7 @@ export const CockpitView: React.FC = () => {
     autoWithdrawLimitTon,
     setAutoWithdrawLimitTon,
     refreshSnapshot,
+    markSupportMessagesRead,
   } = useLottery();
 
   const [activeMobileTab, setActiveMobileTab] = useState<AdminMobileSectionTab>('ALL');
@@ -534,10 +535,17 @@ export const CockpitView: React.FC = () => {
     setTimeout(() => setWithdrawLimitSavedBanner(false), 3500);
   };
 
-  // Admin Telegram Bot Alert State
+  // Admin Telegram Bot Alert & Brand Identity State
   const [tgEnabled, setTgEnabled] = useState<boolean>(telegramBotConfig.enabled);
   const [tgBotToken, setTgBotToken] = useState<string>(telegramBotConfig.botToken);
   const [tgChatId, setTgChatId] = useState<string>(telegramBotConfig.adminChatId);
+  const [tgSupportUsername, setTgSupportUsername] = useState<string>(
+    telegramBotConfig.supportTelegramUsername || '@LuckyDrop_Support'
+  );
+  const [tgOfficialBrandTitle, setTgOfficialBrandTitle] = useState<string>(
+    telegramBotConfig.officialBrandTitle ||
+      '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol'
+  );
   const [tgBanner, setTgBanner] = useState<string | null>(null);
   const [sendingTgTest, setSendingTgTest] = useState<boolean>(false);
   const [roundActionBanner, setRoundActionBanner] = useState<string | null>(null);
@@ -546,7 +554,18 @@ export const CockpitView: React.FC = () => {
   React.useEffect(() => {
     if (telegramBotConfig.botToken && !tgBotToken) setTgBotToken(telegramBotConfig.botToken);
     if (telegramBotConfig.adminChatId && !tgChatId) setTgChatId(telegramBotConfig.adminChatId);
-  }, [telegramBotConfig.botToken, telegramBotConfig.adminChatId]);
+    if (telegramBotConfig.supportTelegramUsername) {
+      setTgSupportUsername(telegramBotConfig.supportTelegramUsername);
+    }
+    if (telegramBotConfig.officialBrandTitle) {
+      setTgOfficialBrandTitle(telegramBotConfig.officialBrandTitle);
+    }
+  }, [
+    telegramBotConfig.botToken,
+    telegramBotConfig.adminChatId,
+    telegramBotConfig.supportTelegramUsername,
+    telegramBotConfig.officialBrandTitle,
+  ]);
 
   const handleSaveTelegramBot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -555,10 +574,14 @@ export const CockpitView: React.FC = () => {
       enabled: tgEnabled,
       botToken: safeTokenToSend,
       adminChatId: tgChatId,
+      supportTelegramUsername: tgSupportUsername.trim() || '@LuckyDrop_Support',
+      officialBrandTitle:
+        tgOfficialBrandTitle.trim() ||
+        '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol',
     });
     await fetchWebhookStatus();
     setTgBanner(
-      '✅ تنظیمات ربات و آیدی چنل/گروه تلگرام روی سرور ذخیره شد! اکنون دکمه «تست هشدار تلگرام» را بزنید.'
+      '✅ تنظیمات ربات تلگرام، آیدی پشتیبانی مستقیم و عنوان رسمی برند روی سرور ذخیره شد!'
     );
     setTimeout(() => setTgBanner(null), 5000);
   };
@@ -566,11 +589,15 @@ export const CockpitView: React.FC = () => {
   const handleTestTelegramAlert = async () => {
     setSendingTgTest(true);
     const safeTokenToSend = isMaskedBotTokenInput(tgBotToken) ? '' : tgBotToken.trim();
-    if (safeTokenToSend || tgChatId.trim()) {
+    if (safeTokenToSend || tgChatId.trim() || tgSupportUsername.trim()) {
       await updateTelegramBotConfig({
         enabled: tgEnabled,
         botToken: safeTokenToSend,
         adminChatId: tgChatId,
+        supportTelegramUsername: tgSupportUsername.trim() || '@LuckyDrop_Support',
+        officialBrandTitle:
+          tgOfficialBrandTitle.trim() ||
+          '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol',
       });
     }
     const res = await sendTestTelegramAlert();
@@ -609,27 +636,108 @@ export const CockpitView: React.FC = () => {
   const [newBallFormat, setNewBallFormat] = useState<'5_50' | '5_40' | '5_35' | '4_25'>('5_50');
   const [creatingRound, setCreatingRound] = useState<boolean>(false);
 
-  // Live VIP Customer Chat Console state (dynamically populated from supportMessages)
-  const dynamicSupportSessions = React.useMemo(() => {
-    const codes = Array.from(
-      new Set(
-        supportMessages
-          .map((m) => m.sessionCode)
-          .filter((c): c is string => Boolean(c && c.trim()))
-      )
-    );
-    const currentTgCode = `TG-${telegramUser.id}`;
-    if (!codes.includes(currentTgCode)) {
-      codes.unshift(currentTgCode);
+  // Live VIP Customer Chat Console state (dynamically populated from supportMessages with rich user metadata)
+  const dynamicSupportThreads = React.useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        sessionCode: string;
+        telegramUserId: string;
+        displayName: string;
+        username: string;
+        tonBalance: number;
+        starsBalance: number;
+        walletBalanceLabel: string;
+        unreadAdminCount: number;
+        lastMessageAt: string;
+      }
+    >();
+
+    for (const m of supportMessages) {
+      const code = m.sessionCode || (m.telegramUserId ? `TG-${m.telegramUserId}` : 'TG-UNKNOWN');
+      const extractedId =
+        m.telegramUserId || code.replace(/^#?TG-/i, '').replace(/[^0-9]/g, '') || '';
+      const crmMatch = crmUsers.find((u) => u.telegramUserId === extractedId);
+      const isUnreadUserMsg =
+        String(m.senderRole || '').toUpperCase() === 'USER' && m.readByAdmin === false;
+
+      const existing = map.get(code);
+      if (!existing) {
+        map.set(code, {
+          sessionCode: code,
+          telegramUserId: extractedId || String(telegramUser.id),
+          displayName:
+            crmMatch?.displayName ||
+            m.firstName ||
+            (String(m.senderRole || '').toUpperCase() === 'USER' ? m.senderName : '') ||
+            `User #${extractedId}`,
+          username:
+            crmMatch?.username ||
+            (m.username ? `@${m.username.replace(/^@/, '')}` : `@user_${extractedId}`),
+          tonBalance:
+            typeof crmMatch?.tonBalance === 'number'
+              ? crmMatch.tonBalance
+              : typeof m.tonBalance === 'number'
+              ? m.tonBalance
+              : 0,
+          starsBalance:
+            typeof crmMatch?.starsBalance === 'number'
+              ? crmMatch.starsBalance
+              : typeof m.starsBalance === 'number'
+              ? m.starsBalance
+              : 0,
+          walletBalanceLabel: m.walletBalanceLabel || '',
+          unreadAdminCount: isUnreadUserMsg ? 1 : 0,
+          lastMessageAt: m.createdAt,
+        });
+      } else if (isUnreadUserMsg) {
+        existing.unreadAdminCount += 1;
+      }
     }
-    return codes;
-  }, [supportMessages, telegramUser.id]);
+
+    const currentTgCode = `TG-${telegramUser.id}`;
+    if (!map.has(currentTgCode)) {
+      const selfCrm = crmUsers.find((u) => u.telegramUserId === String(telegramUser.id));
+      map.set(currentTgCode, {
+        sessionCode: currentTgCode,
+        telegramUserId: String(telegramUser.id),
+        displayName: selfCrm?.displayName || telegramUser.first_name || 'Admin VIP',
+        username: selfCrm?.username || `@${telegramUser.username || `tg_${telegramUser.id}`}`,
+        tonBalance: selfCrm?.tonBalance ?? 0,
+        starsBalance: selfCrm?.starsBalance ?? 0,
+        walletBalanceLabel: `${(selfCrm?.tonBalance ?? 0).toFixed(2)} TON`,
+        unreadAdminCount: 0,
+        lastMessageAt: 'همین الان',
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) => {
+      const aIsTg = a.sessionCode.startsWith('TG-') ? 1 : 0;
+      const bIsTg = b.sessionCode.startsWith('TG-') ? 1 : 0;
+      if (aIsTg !== bIsTg) return bIsTg - aIsTg;
+      return b.unreadAdminCount - a.unreadAdminCount;
+    });
+  }, [supportMessages, crmUsers, telegramUser.id, telegramUser.first_name, telegramUser.username]);
 
   const [activeSessionCode, setActiveSessionCode] = useState<string>(
-    () => dynamicSupportSessions[0] || `TG-${telegramUser.id}`
+    () => dynamicSupportThreads[0]?.sessionCode || `TG-${telegramUser.id}`
   );
   const [operatorReply, setOperatorReply] = useState<string>('');
   const [sendingReply, setSendingReply] = useState<boolean>(false);
+  const [supportReplyBanner, setSupportReplyBanner] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (
+      dynamicSupportThreads.length > 0 &&
+      !dynamicSupportThreads.some((t) => t.sessionCode === activeSessionCode)
+    ) {
+      setActiveSessionCode(dynamicSupportThreads[0].sessionCode);
+    }
+  }, [dynamicSupportThreads, activeSessionCode]);
+
+  const activeThreadInfo =
+    dynamicSupportThreads.find((t) => t.sessionCode === activeSessionCode) ||
+    dynamicSupportThreads[0];
 
   const handleExecuteDraw = async (explicitRoundCode?: string) => {
     const targetCode = explicitRoundCode || selectedRoundForDraw || rounds[0]?.roundCode;
@@ -698,14 +806,25 @@ export const CockpitView: React.FC = () => {
     e.preventDefault();
     if (!operatorReply.trim()) return;
     setSendingReply(true);
-    await sendSupportMessage(
+    setSupportReplyBanner(null);
+    const targetUserId =
+      activeThreadInfo?.telegramUserId ||
+      activeSessionCode.replace(/^#?TG-/i, '').replace(/[^0-9]/g, '');
+    const ok = await sendSupportMessage(
       activeSessionCode,
       operatorReply,
       'OPERATOR',
-      'اپراتور ارشد کاکپیت (Stealth Admin)'
+      'اپراتور ارشد LuckyDrop VIP',
+      targetUserId
     );
     setSendingReply(false);
-    setOperatorReply('');
+    if (ok) {
+      setOperatorReply('');
+      setSupportReplyBanner(
+        `✅ پاسخ رسمی به کاربر #${targetUserId} در چت داخل برنامه ثبت شد و هم‌زمان به ربات تلگرام کاربر ارسال گردید!`
+      );
+      setTimeout(() => setSupportReplyBanner(null), 5000);
+    }
   };
 
   const handleSecureAdminExit = () => {
@@ -1908,12 +2027,44 @@ export const CockpitView: React.FC = () => {
                   className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-[#fbbf24] font-mono"
                 />
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                    ✈️ آیدی تلگرام پشتیبانی زنده (`supportTelegramUsername`):
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    data-testid="input-support-telegram-username"
+                    placeholder="@LuckyDrop_Support"
+                    value={tgSupportUsername}
+                    onChange={(e) => setTgSupportUsername(e.target.value)}
+                    className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-cyan-300 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                    🛡️ امضا و عنوان رسمی برند/کمپانی (`officialBrandTitle`):
+                  </label>
+                  <input
+                    type="text"
+                    dir="ltr"
+                    data-testid="input-official-brand-title"
+                    placeholder="🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol"
+                    value={tgOfficialBrandTitle}
+                    onChange={(e) => setTgOfficialBrandTitle(e.target.value)}
+                    className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-[#FFE066] font-mono"
+                  />
+                </div>
+              </div>
+
               <button
                 type="submit"
                 data-testid="save-telegram-config-btn"
                 className="w-full h-9 rounded-xl bg-purple-600/35 border border-purple-400/40 text-white font-bold text-xs cursor-pointer"
               >
-                ذخیره تنظیمات ربات و گروه تلگرام
+                ذخیره تنظیمات ربات، پشتیبانی تلگرام و عنوان رسمی برند
               </button>
             </form>
 
@@ -2214,75 +2365,156 @@ export const CockpitView: React.FC = () => {
             </div>
           </section>
 
-          {/* Live VIP Customer Support Chat Console */}
-          <section className="rounded-2xl bg-[#130d24]/95 border border-purple-500/25 p-3.5 space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-extrabold text-white">💬 کنسول گفتگوی زنده با VIP</h2>
+          {/* Live Two-Way VIP Customer Support Chat Console */}
+          <section
+            data-testid="cockpit-vip-support-console"
+            className="rounded-2xl bg-[#130d24]/95 border border-purple-500/25 p-3.5 space-y-3"
+          >
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h2 className="text-xs font-extrabold text-white">
+                  💬 کنسول پشتیبانی زنده دوطرفه VIP (همگام با ربات تلگرام)
+                </h2>
+                <p className="text-[10px] text-purple-300/75 mt-0.5">
+                  پاسخ ادمین هم در چت داخل برنامه کاربر نمایش داده می‌شود و هم مستقیم به تلگرام کاربر Push می‌گردد.
+                </p>
+              </div>
               <span className="text-[10px] font-bold text-[#00f59b]">
                 ذخیره وفاداری: {usdtToTonFormatted(rolloverReservePoolUsdt)} ({toPersianDigits(chestsClaimedCount)} صندوقچه)
               </span>
             </div>
 
+            {/* Thread Selector Cards with User Profile, Balance & Unread Badge */}
             <div className="flex flex-wrap gap-1.5" dir="ltr">
-              {dynamicSupportSessions.map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  onClick={() => setActiveSessionCode(code)}
-                  className={`h-8 px-2.5 rounded-lg text-[10px] font-mono font-bold border cursor-pointer ${
-                    activeSessionCode === code
-                      ? 'bg-purple-600/35 border-[#fbbf24] text-[#fbbf24]'
-                      : 'bg-[#090612] border-purple-500/20 text-purple-300/60'
-                  }`}
-                >
-                  {code}
-                </button>
-              ))}
+              {dynamicSupportThreads.map((thread) => {
+                const isSelected = activeSessionCode === thread.sessionCode;
+                return (
+                  <button
+                    key={thread.sessionCode}
+                    type="button"
+                    data-testid={`support-thread-btn-${thread.sessionCode}`}
+                    onClick={() => {
+                      setActiveSessionCode(thread.sessionCode);
+                      if (thread.unreadAdminCount > 0) {
+                        markSupportMessagesRead('ADMIN', thread.telegramUserId);
+                      }
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-left border transition-all cursor-pointer flex items-center gap-2 ${
+                      isSelected
+                        ? 'bg-purple-600/35 border-[#fbbf24] text-white shadow-[0_0_12px_rgba(251,191,36,0.2)]'
+                        : 'bg-[#090612] border-purple-500/20 text-purple-200/80 hover:border-purple-400/40'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-[10px] font-black text-[#fbbf24] flex items-center gap-1">
+                        <span>{thread.displayName}</span>
+                        <span className="font-mono text-[9px] text-cyan-300">
+                          ({thread.username})
+                        </span>
+                      </div>
+                      <div className="text-[9px] font-mono text-purple-300/80">
+                        ID: {thread.telegramUserId} • {thread.tonBalance.toFixed(2)} TON |{' '}
+                        {thread.starsBalance} ⭐
+                      </div>
+                    </div>
+                    {thread.unreadAdminCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black">
+                        {thread.unreadAdminCount} NEW
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
+            {/* Active Selected User Telemetry Bar */}
+            {activeThreadInfo && (
+              <div
+                data-testid="cockpit-active-support-user-bar"
+                className="p-2.5 rounded-xl bg-[#090612] border border-cyan-500/30 flex items-center justify-between flex-wrap gap-2 text-[10px] font-mono"
+                dir="ltr"
+              >
+                <div className="text-white font-bold">
+                  👤 {activeThreadInfo.displayName}{' '}
+                  <span className="text-cyan-300">({activeThreadInfo.username})</span> • TG ID:{' '}
+                  <span className="text-[#fbbf24]">{activeThreadInfo.telegramUserId}</span>
+                </div>
+                <div className="text-[#00f59b] font-bold">
+                  💎 {activeThreadInfo.tonBalance.toFixed(2)} TON • ⭐ {activeThreadInfo.starsBalance} Stars
+                </div>
+              </div>
+            )}
+
+            {supportReplyBanner && (
+              <div
+                data-testid="cockpit-support-reply-banner"
+                className="p-2.5 rounded-xl bg-[#00f59b]/15 border border-[#00f59b]/40 text-[#00f59b] text-[11px] font-bold"
+              >
+                {supportReplyBanner}
+              </div>
+            )}
+
+            <div className="space-y-2 max-h-56 overflow-y-auto no-scrollbar">
               {sessionMessages.length === 0 ? (
                 <div className="p-3 rounded-xl bg-[#090612] border border-purple-500/15 text-[11px] text-purple-300/70 text-center">
                   هنوز پیامی در سشن <span className="font-mono text-[#fbbf24]">{activeSessionCode}</span> ثبت نشده است.
                 </div>
               ) : (
-                sessionMessages.map((msg) => {
-                  const isOperator = msg.senderRole === 'OPERATOR';
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`p-2.5 rounded-xl border text-[11px] space-y-1 ${
-                        isOperator
-                          ? 'bg-[#fbbf24]/10 border-[#fbbf24]/35 text-amber-100'
-                          : 'bg-[#090612] border-purple-500/20 text-purple-100'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between font-bold">
-                        <span>{msg.senderName}</span>
-                        <span className="text-[9px] font-mono text-[#fbbf24]">{msg.vipLevel}</span>
+                [...sessionMessages]
+                  .sort((a, b) => a.id - b.id)
+                  .map((msg) => {
+                    const isOperator = msg.senderRole === 'OPERATOR';
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`p-2.5 rounded-xl border text-[11px] space-y-1 ${
+                          isOperator
+                            ? 'bg-[#fbbf24]/10 border-[#fbbf24]/35 text-amber-100'
+                            : 'bg-[#090612] border-purple-500/20 text-purple-100'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-bold gap-2">
+                          <span>
+                            {isOperator ? `👑 ${msg.senderName}` : `👤 ${msg.senderName}`}
+                            {msg.username ? ` (@${msg.username.replace(/^@/, '')})` : ''}
+                          </span>
+                          <span className="text-[9px] font-mono text-[#fbbf24]" dir="ltr">
+                            {msg.walletBalanceLabel || msg.vipLevel} • {msg.createdAt}
+                          </span>
+                        </div>
+                        <p className="leading-relaxed whitespace-pre-wrap">{msg.message}</p>
+                        {msg.diagnosticMetadata && (
+                          <div
+                            className="mt-1 px-2 py-1 rounded bg-black/40 border border-cyan-500/25 font-mono text-[9px] text-cyan-300 break-all"
+                            dir="ltr"
+                          >
+                            📎 {msg.diagnosticMetadata}
+                          </div>
+                        )}
                       </div>
-                      <p className="leading-relaxed">{msg.message}</p>
-                    </div>
-                  );
-                })
+                    );
+                  })
               )}
             </div>
 
             <form onSubmit={handleSendOperatorReply} className="space-y-2">
               <textarea
                 rows={2}
+                data-testid="cockpit-support-reply-input"
                 value={operatorReply}
                 onChange={(e) => setOperatorReply(e.target.value)}
-                placeholder={`پاسخ اپراتور به ${activeSessionCode}...`}
+                placeholder={`پاسخ مستقیم به ${activeThreadInfo?.displayName || activeSessionCode} (ارسال در چت برنامه + ربات تلگرام)...`}
                 className="w-full bg-[#090612] border border-purple-500/25 rounded-xl p-2.5 text-xs text-white"
               />
               <button
                 type="submit"
-                disabled={sendingReply}
+                disabled={sendingReply || !operatorReply.trim()}
                 data-testid="cockpit-send-reply-btn"
-                className="w-full h-9 rounded-xl stake-emerald-cta font-bold text-xs text-[#041f14] cursor-pointer"
+                className="w-full h-9 rounded-xl stake-emerald-cta font-bold text-xs text-[#041f14] cursor-pointer disabled:opacity-50"
               >
-                {sendingReply ? 'در حال ارسال...' : 'ارسال پاسخ رسمی به بازیکن VIP'}
+                {sendingReply
+                  ? 'در حال ارسال به برنامه و تلگرام...'
+                  : `📩 ارسال پاسخ به ${activeThreadInfo?.displayName || activeSessionCode} (چت + نوتیفیکیشن تلگرام)`}
               </button>
             </form>
           </section>

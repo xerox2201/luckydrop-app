@@ -665,6 +665,113 @@ test('14. Strict 1:1 Native Currency Accounting Verification (100.00 TON -> Tick
   assert.equal(pam.getState().tonBalance, 100.92, 'TON balance remains strictly 100.92 TON');
 });
 
+test('15. Two-Way Live VIP Support scoping, unread badges, Telegram push formatting, and quick diagnostic chips', async () => {
+  const {
+    filterSupportMessagesForUser,
+    formatUserSupportReplyTelegramPush,
+    formatAdminSupportTelegramAlert,
+    buildQuickDiagnosticSupportAttachment,
+  } = await import('./securityGuard.ts');
 
+  const sampleMessages = [
+    {
+      id: 1,
+      sessionCode: 'TG-555001',
+      telegramUserId: '555001',
+      username: 'ali_vip',
+      firstName: 'Ali',
+      senderName: 'Ali (@ali_vip)',
+      senderRole: 'USER',
+      vipLevel: 'GOLD',
+      tonBalance: 25.5,
+      starsBalance: 500,
+      subject: 'پیگیری واریز TON',
+      message: 'سلام، واریز ۵ تون انجام دادم.',
+      walletBalanceLabel: '25.50 TON | 500 ⭐',
+      historySummary: '3 بلیت ثبت‌شده',
+      readByUser: true,
+      readByAdmin: false,
+      createdAt: 'همین الان',
+    },
+    {
+      id: 2,
+      sessionCode: 'TG-555001',
+      telegramUserId: '555001',
+      username: 'ali_vip',
+      firstName: 'Ali',
+      senderName: 'اپراتور ارشد LuckyDrop',
+      senderRole: 'OPERATOR',
+      vipLevel: 'GOLD',
+      tonBalance: 25.5,
+      starsBalance: 500,
+      subject: 'پاسخ پشتیبانی VIP',
+      message: 'سلام علی عزیز، واریز شما تایید و به موجودی اضافه شد.',
+      walletBalanceLabel: '25.50 TON | 500 ⭐',
+      historySummary: '3 بلیت ثبت‌شده',
+      readByUser: false,
+      readByAdmin: true,
+      createdAt: 'همین الان',
+    },
+    {
+      id: 3,
+      sessionCode: 'TG-999888',
+      telegramUserId: '999888',
+      username: 'other_user',
+      firstName: 'Sara',
+      senderName: 'Sara (@other_user)',
+      senderRole: 'USER',
+      vipLevel: 'MEMBER',
+      tonBalance: 2,
+      starsBalance: 0,
+      subject: 'سوال',
+      message: 'پیام کاربر دیگر',
+      walletBalanceLabel: '2.00 TON | 0 ⭐',
+      historySummary: '0 بلیت',
+      readByUser: true,
+      readByAdmin: false,
+      createdAt: 'همین الان',
+    },
+  ];
 
+  const user555View = filterSupportMessagesForUser(sampleMessages, '555001');
+  assert.equal(user555View.messages.length, 2, 'User 555001 must only see their own 2 messages');
+  assert.equal(user555View.unreadOperatorCount, 1, 'User 555001 has 1 unread operator reply');
+  assert.equal(user555View.sessionCode, 'TG-555001');
 
+  const user999View = filterSupportMessagesForUser(sampleMessages, 999888);
+  assert.equal(user999View.messages.length, 1, 'User 999888 must only see their own 1 message');
+  assert.equal(user999View.unreadOperatorCount, 0);
+
+  const pushText = formatUserSupportReplyTelegramPush('واریز شما با موفقیت تایید شد 💎');
+  assert.equal(
+    pushText,
+    '📩 پاسخ جدید از پشتیبانی LuckyDrop:\n\nواریز شما با موفقیت تایید شد 💎'
+  );
+
+  const adminAlert = formatAdminSupportTelegramAlert({
+    firstName: 'Ali',
+    username: 'ali_vip',
+    telegramUserId: '555001',
+    tonBalance: 25.5,
+    starsBalance: 500,
+    messageText: 'لطفاً واریز من را بررسی کنید',
+    diagnosticMetadata: 'Wallet: UQ... | کد واریز: DEP-102938',
+  });
+  assert.ok(adminAlert.includes('Ali'));
+  assert.ok(adminAlert.includes('@ali_vip'));
+  assert.ok(adminAlert.includes('555001'));
+  assert.ok(adminAlert.includes('25.50 TON'));
+  assert.ok(adminAlert.includes('DEP-102938'));
+
+  const depDiag = buildQuickDiagnosticSupportAttachment({
+    chipType: 'DEPOSIT_TON',
+    connectedWalletAddress: 'UQD932049203940239402934',
+    latestDeposit: {
+      depositCode: 'DEP-778899',
+      status: 'PENDING_ADMIN',
+      txHash: '0xabcdef1234567890abcdef1234567890',
+    },
+  });
+  assert.ok(depDiag.diagnosticMetadata.includes('DEP-778899'));
+  assert.ok(depDiag.prefilledMessageFa.includes('UQD932049203940239402934'));
+});

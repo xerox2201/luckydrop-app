@@ -139,7 +139,7 @@ export const TmaWalletView: React.FC = () => {
   return (
     <main className="w-full px-3 pt-3 pb-8 space-y-4 select-none">
       {/* 1. UNIFIED DUAL-CURRENCY WALLET HERO CARD */}
-      <section className="relative overflow-hidden rounded-3xl p-4 bg-gradient-to-br from-[#141A35] via-[#0E1024] to-[#070510] border border-[#0098EA]/40 shadow-[0_14px_35px_rgba(0,0,0,0.65)]">
+      <section className="relative overflow-hidden rounded-3xl p-4 luckydrop-obsidian-glass luckydrop-specular-gold luckydrop-microgrid-watermark luckydrop-holographic-shimmer">
         <div className="absolute -top-16 -right-16 w-40 h-40 bg-[#0098EA]/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-16 -left-16 w-40 h-40 bg-[#FFD700]/15 rounded-full blur-3xl pointer-events-none" />
 

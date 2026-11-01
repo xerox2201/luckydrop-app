@@ -14,10 +14,12 @@ import {
   UserCheck,
   HelpCircle,
   FileText,
+  Headset,
 } from 'lucide-react';
 import { useLottery } from '../context/LotteryContext';
 import { generateBulkQuickPickSlips, formatCountdownHMS } from '../utils/lotteryEngine';
 import { HapticEngine } from '../utils/telegramTma';
+import { LuckyDropLogo } from './LuckyDropLogo';
 import { tr } from '../utils/i18n';
 
 export const LobbyView: React.FC = () => {
@@ -36,6 +38,9 @@ export const LobbyView: React.FC = () => {
     mintBulkTickets,
     tickets,
     setViralCardTicket,
+    officialBrandTitle,
+    setAiChatOpen,
+    unreadSupportCount,
   } = useLottery();
 
   const [buyingQty, setBuyingQty] = useState<number | null>(null);
@@ -134,8 +139,8 @@ export const LobbyView: React.FC = () => {
         </div>
       )}
 
-      {/* 2. HERO PARI-MUTUEL JACKPOT CARD WITH 3D VISUALS */}
-      <section className="relative overflow-hidden rounded-3xl p-4 bg-gradient-to-br from-[#16102C] via-[#0E091E] to-[#080512] border border-[#FFD700]/30 shadow-[0_14px_35px_rgba(0,0,0,0.65)]">
+      {/* 2. HERO PARI-MUTUEL JACKPOT CARD WITH 3D VISUALS & BESPOKE OBSIDIAN GLASS */}
+      <section className="relative overflow-hidden rounded-3xl p-4 luckydrop-obsidian-glass luckydrop-specular-gold luckydrop-microgrid-watermark">
         <img
           src="/assets/3d/hero-jackpot-3d.png"
           alt="3D TON Jackpot"
@@ -150,7 +155,7 @@ export const LobbyView: React.FC = () => {
         {/* Top Badge Row */}
         <div className="relative z-10 flex items-center justify-between gap-2 mb-3">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#00F5D4]/12 border border-[#00F5D4]/35 text-[#00F5D4] text-[10px] font-black">
-            <Sparkles className="w-3 h-3" />
+            <LuckyDropLogo size={16} />
             <span>
               {tr(lang, 'استخر جوایز زنده (۸۵٪ توزیع مستقیم)', 'Live Pool (85% Direct Payout)')}
             </span>
@@ -388,7 +393,7 @@ export const LobbyView: React.FC = () => {
                 <div
                   key={t.ticketCode}
                   onClick={() => setViralCardTicket(t)}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 cursor-pointer transition-all"
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-[#FFE066]/25 luckydrop-holographic-shimmer cursor-pointer transition-all"
                 >
                   <div>
                     <div className="flex items-center gap-1.5">
@@ -471,21 +476,60 @@ export const LobbyView: React.FC = () => {
         </button>
       </section>
 
-      {/* 6. PROVABLY FAIR SEED BADGE */}
-      <div className="flex items-center justify-between p-3 rounded-2xl bg-[#0D091A] border border-white/10 text-[11px] text-slate-400">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Lock className="w-3.5 h-3.5 text-[#00F5D4] shrink-0" />
-          <span className="truncate font-mono" dir="ltr">
-            SHA256: {activeLotterySpec.serverSeedHash.slice(0, 18)}...
-          </span>
+      {/* 6. PROVABLY FAIR SEED BADGE & PROPRIETARY BRAND SIGNATURE FOOTER */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between p-3 rounded-2xl luckydrop-obsidian-glass luckydrop-specular-purple text-[11px] text-slate-400">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Lock className="w-3.5 h-3.5 text-[#00F5D4] shrink-0" />
+            <span className="truncate font-mono" dir="ltr">
+              SHA256: {activeLotterySpec.serverSeedHash.slice(0, 18)}...
+            </span>
+          </div>
+          <button
+            onClick={() => navigateTo('transparency')}
+            className="shrink-0 flex items-center gap-1 text-[#00F5D4] font-bold hover:underline cursor-pointer"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>{tr(lang, 'اثبات عدالت', 'Verify RNG')}</span>
+          </button>
         </div>
-        <button
-          onClick={() => navigateTo('transparency')}
-          className="shrink-0 flex items-center gap-1 text-[#00F5D4] font-bold hover:underline cursor-pointer"
+
+        <div
+          data-testid="lobby-official-brand-signature"
+          className="p-3 rounded-2xl luckydrop-obsidian-glass luckydrop-specular-gold flex items-center justify-between gap-2"
         >
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>{tr(lang, 'اثبات عدالت', 'Verify RNG')}</span>
-        </button>
+          <div className="flex items-center gap-2 min-w-0">
+            <LuckyDropLogo size={24} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black text-[#FFE066] truncate">
+                {officialBrandTitle}
+              </div>
+              <div className="text-[9px] font-mono text-slate-400 truncate">
+                {tr(
+                  lang,
+                  'پروتکل اختصاصی Web3 با تسویه آنی TON و پشتیبانی ۲۴/۷',
+                  'Proprietary Web3 Protocol • Instant TON Settlement & 24/7 VIP Concierge'
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              HapticEngine.selectionChanged();
+              setAiChatOpen(true);
+            }}
+            className="shrink-0 relative flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#FFE066]/15 hover:bg-[#FFE066]/25 border border-[#FFE066]/40 text-[#FFE066] text-[10px] font-black cursor-pointer"
+          >
+            <Headset className="w-3.5 h-3.5" />
+            <span>{tr(lang, 'پشتیبانی VIP', 'VIP Support')}</span>
+            {unreadSupportCount > 0 && (
+              <span className="ml-0.5 px-1 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black">
+                {unreadSupportCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
     </main>
   );
