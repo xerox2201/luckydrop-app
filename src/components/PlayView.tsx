@@ -27,6 +27,9 @@ export const PlayView: React.FC = () => {
     setBulkTicketCount,
     triggerBulkAiQuickPick,
     fxRates,
+    activeTmaCurrency,
+    setActiveTmaCurrency,
+    starsUsdRate,
     formatAmount,
     balanceUsdt,
     mintBulkTickets,
@@ -36,10 +39,16 @@ export const PlayView: React.FC = () => {
     provablyFairSeeds,
   } = useLottery();
 
-  const [selectedNetwork, setSelectedNetwork] = useState<string>('TON Network');
+  const [selectedNetwork, setSelectedNetwork] = useState<string>(
+    activeTmaCurrency === 'STARS' ? 'Telegram Stars' : 'TON Network'
+  );
   const [customCountInput, setCustomCountInput] = useState<number>(bulkSlips.length);
   const [minting, setMinting] = useState<boolean>(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    setSelectedNetwork(activeTmaCurrency === 'STARS' ? 'Telegram Stars' : 'TON Network');
+  }, [activeTmaCurrency]);
 
   const mainCount = activeLotterySpec.mainCount;
   const mainMax = activeLotterySpec.mainMax;
@@ -123,12 +132,24 @@ export const PlayView: React.FC = () => {
       }
     }
 
+    const checkoutCurrency = selectedNetwork === 'Telegram Stars' ? 'STARS' : 'TON';
+    const exactAmountTon = Number(cartSummary.totalTon.toFixed(2));
+    const exactAmountStars = Math.max(
+      1,
+      Math.round(cartSummary.totalUsdt / (starsUsdRate || 0.02))
+    );
+
     setMinting(true);
     const result = await mintBulkTickets(
       bulkSlips,
       activeLotterySpec.roundCode,
       cartSummary.totalUsdt,
-      selectedNetwork
+      selectedNetwork,
+      {
+        currency: checkoutCurrency,
+        amountTon: exactAmountTon,
+        amountStars: exactAmountStars,
+      }
     );
     setMinting(false);
 

@@ -253,6 +253,8 @@ export const CrashGameArena: React.FC<{
   const betPlacedRef = useRef<boolean>(false);
   const betQueuedRef = useRef<boolean>(false);
   const activeBetUsdtRef = useRef<number>(0);
+  const activeBetNativeRef = useRef<number>(0);
+  const activeBetCurrencyRef = useRef<'TON' | 'STARS'>(activeTmaCurrency);
   const activeAutoCashoutRef = useRef<number>(2.0);
   const activeDebitUuidRef = useRef<string | null>(null);
   const cashedOutMarkerRef = useRef<PinnedCashoutMarker | null>(null);
@@ -352,9 +354,19 @@ export const CrashGameArena: React.FC<{
 
       const clampedMult = Number(Math.max(1.01, cashoutMultiplier).toFixed(2));
       const wager = activeBetUsdtRef.current;
+      const wagerNative = activeBetNativeRef.current;
+      const wagerCurrency = activeBetCurrencyRef.current;
       // Enforce Treasury Payout Cap so house remains 100% solvent
       const rawPayout = Number((wager * clampedMult).toFixed(2));
       const finalPayoutUsdt = Math.min(TREASURY_MAX_PAYOUT_CAP_USDT, rawPayout);
+      const finalPayoutTon =
+        wagerCurrency === 'TON'
+          ? Math.min(5000, Number((wagerNative * clampedMult).toFixed(2)))
+          : undefined;
+      const finalPayoutStars =
+        wagerCurrency === 'STARS'
+          ? Math.min(1250000, Math.round(wagerNative * clampedMult))
+          : undefined;
       const isLuckyAirdrop = clampedMult >= CRASH_LUCKY_AIRDROP_THRESHOLD;
 
       // Pin marker onto the curve immediately
@@ -372,13 +384,16 @@ export const CrashGameArena: React.FC<{
       // Play emerald cashout synth chord
       crashSoundEngine.playCashout();
 
-      // Credit PAM Seamless Wallet linked to activeDebitUuidRef
+      // Credit PAM Seamless Wallet linked to activeDebitUuidRef with strict 1:1 native currency
       const creditUuid = generateDeterministicUuid('crash_credit');
       await pamCredit({
         transactionUuid: creditUuid,
         referenceTransactionUuid: activeDebitUuidRef.current,
         roundId: roundIdRef.current,
         vertical: 'INSTANT_CRASH_X',
+        currency: wagerCurrency,
+        amountTon: finalPayoutTon,
+        amountStars: finalPayoutStars,
         amountUsdt: finalPayoutUsdt,
         note: `برداشت موفق Crash در ضریب ${clampedMult.toFixed(2)}x${
           isLuckyAirdrop ? ' + چتر طلایی بلیت رایگان لاتاری' : ''
@@ -449,6 +464,9 @@ export const CrashGameArena: React.FC<{
         transactionUuid: debitUuid,
         roundId: rId,
         vertical: 'INSTANT_CRASH_X',
+        currency: activeTmaCurrency,
+        amountTon: activeTmaCurrency === 'TON' ? wagerCurrency : undefined,
+        amountStars: activeTmaCurrency === 'STARS' ? Math.round(wagerCurrency) : undefined,
         amountUsdt: wager,
         note: `ثبت شرط Quantum Crash (${rId}) — Auto @ ${targetAuto.toFixed(2)}x`,
       });
@@ -461,6 +479,8 @@ export const CrashGameArena: React.FC<{
 
       betPlacedRef.current = true;
       activeBetUsdtRef.current = wager;
+      activeBetNativeRef.current = wagerCurrency;
+      activeBetCurrencyRef.current = activeTmaCurrency;
       activeAutoCashoutRef.current = targetAuto;
       activeDebitUuidRef.current = debitUuid;
       cashedOutMarkerRef.current = null;

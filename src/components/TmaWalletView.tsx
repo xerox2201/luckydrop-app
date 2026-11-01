@@ -35,6 +35,14 @@ export const TmaWalletView: React.FC = () => {
     adminTonWalletAddress,
     pamLedger,
     telegramUser,
+    liveTonUsdPrice,
+    tonChange24hPercent,
+    liveStarsUsdPrice,
+    liveStarsPerTon,
+    portfolioUsdValue,
+    liveOracleSnapshot,
+    oracleRefreshing,
+    refreshPriceOracleNow,
   } = useLottery();
 
   const [subTab, setSubTab] = useState<'DEPOSIT' | 'WITHDRAW' | 'HISTORY'>('DEPOSIT');
@@ -140,8 +148,12 @@ export const TmaWalletView: React.FC = () => {
             <Wallet className="w-3.5 h-3.5" />
             <span>{tr(lang, 'کیف پول یکپارچه TON Connect 2.0', 'TON Connect 2.0 Seamless Wallet')}</span>
           </div>
-          <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-lg border border-emerald-400/30">
-            ● PAM Active
+          <span
+            data-testid="wallet-total-portfolio-usd"
+            className="text-[10px] font-mono font-bold text-[#00F5D4] bg-[#00F5D4]/15 px-2.5 py-0.5 rounded-lg border border-[#00F5D4]/30"
+            dir="ltr"
+          >
+            Total Portfolio ≈ ${portfolioUsdValue.toFixed(2)} USD
           </span>
         </div>
 
@@ -149,6 +161,7 @@ export const TmaWalletView: React.FC = () => {
         <div className="relative z-10 grid grid-cols-2 gap-2.5 my-2">
           <div
             onClick={() => setActiveTmaCurrency('TON')}
+            data-testid="wallet-ton-card"
             className={`p-3 rounded-2xl border cursor-pointer transition-all ${
               activeTmaCurrency === 'TON'
                 ? 'bg-[#0098EA]/20 border-[#0098EA] shadow-[0_0_20px_rgba(0,152,234,0.3)]'
@@ -162,13 +175,14 @@ export const TmaWalletView: React.FC = () => {
             <div className="font-mono text-lg font-black text-white mt-1" dir="ltr">
               {tonBalance.toFixed(2)} TON
             </div>
-            <div className="text-[9px] font-mono text-[#38BDF8] mt-0.5" dir="ltr">
-              {tr(lang, 'موجودی آماده بازی و برداشت', 'Available for Play & Payout')}
+            <div className="text-[10px] font-mono text-[#38BDF8] mt-0.5" dir="ltr">
+              ≈ ${(tonBalance * liveTonUsdPrice).toFixed(2)} USD
             </div>
           </div>
 
           <div
             onClick={() => setActiveTmaCurrency('STARS')}
+            data-testid="wallet-stars-card"
             className={`p-3 rounded-2xl border cursor-pointer transition-all ${
               activeTmaCurrency === 'STARS'
                 ? 'bg-[#FFD700]/15 border-[#FFE066] shadow-[0_0_20px_rgba(255,215,0,0.25)]'
@@ -182,9 +196,57 @@ export const TmaWalletView: React.FC = () => {
             <div className="font-mono text-lg font-black text-[#FFE066] mt-1" dir="ltr">
               {starsBalance.toLocaleString('en-US')} ⭐
             </div>
-            <div className="text-[9px] font-mono text-amber-200/80 mt-0.5" dir="ltr">
-              {tr(lang, 'ستاره‌های رسمی تلگرام', 'Official Telegram Stars')}
+            <div className="text-[10px] font-mono text-amber-200/80 mt-0.5" dir="ltr">
+              ≈ ${(starsBalance * liveStarsUsdPrice).toFixed(2)} USD
             </div>
+          </div>
+        </div>
+
+        {/* LIVE MARKET ORACLE TICKER CARD */}
+        <div
+          data-testid="wallet-live-oracle-ticker"
+          className="relative z-10 mt-2.5 p-2.5 rounded-2xl bg-[#070510]/85 border border-white/10 space-y-1.5"
+          dir="ltr"
+        >
+          <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-[#00F5D4] animate-pulse shrink-0" />
+              <span className="font-black text-white">
+                TON/USD: ${liveTonUsdPrice.toFixed(3)}
+              </span>
+              <span
+                className={`px-1.5 py-0.5 rounded font-bold text-[9px] ${
+                  tonChange24hPercent >= 0
+                    ? 'bg-emerald-500/20 text-emerald-300'
+                    : 'bg-rose-500/20 text-rose-300'
+                }`}
+              >
+                {tonChange24hPercent >= 0 ? '+' : ''}
+                {tonChange24hPercent.toFixed(2)}%
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => refreshPriceOracleNow()}
+              className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[9px] font-mono text-[#00F5D4] cursor-pointer shrink-0"
+            >
+              {oracleRefreshing ? 'Syncing...' : '↻ Refresh Oracle'}
+            </button>
+          </div>
+          <div className="flex items-center justify-between text-[9px] font-mono text-slate-400">
+            <span>
+              1 ⭐ ≈ ${liveStarsUsdPrice.toFixed(4)} • 1 TON ≈ {liveStarsPerTon} ⭐
+            </span>
+            <span className="truncate max-w-[155px]">
+              {liveOracleSnapshot?.providerLabel || 'Live Oracle'} •{' '}
+              {liveOracleSnapshot?.updatedAtIso
+                ? new Date(liveOracleSnapshot.updatedAtIso).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })
+                : 'Live'}
+            </span>
           </div>
         </div>
 

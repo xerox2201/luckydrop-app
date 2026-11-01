@@ -36,6 +36,10 @@ export const Navbar: React.FC = () => {
     isTelegramAdmin,
     connectedTonWallet,
     tickets,
+    liveTonUsdPrice,
+    tonChange24hPercent,
+    liveStarsPerTon,
+    portfolioUsdValue,
   } = useLottery();
 
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -141,6 +145,7 @@ export const Navbar: React.FC = () => {
             <button
               type="button"
               onClick={() => handleTabNav('wallet')}
+              data-testid="navbar-balance-pill"
               className="flex items-center gap-1 px-1.5 py-1 rounded-xl bg-gradient-to-r from-[#140F28] to-[#1C1436] border border-white/15 hover:border-[#00F5D4]/50 transition-all cursor-pointer"
             >
               <div className="text-right leading-none" dir="ltr">
@@ -150,7 +155,7 @@ export const Navbar: React.FC = () => {
                     : formatCurrency(starsBalance, 'STARS')}
                 </div>
                 <div className="text-[8px] font-mono text-[#00F5D4]">
-                  {connectedTonWallet ? connectedTonWallet.truncated : tr(lang, '+ شارژ', '+ Top Up')}
+                  ≈ ${portfolioUsdValue.toFixed(2)}
                 </div>
               </div>
               <div className="w-4 h-4 rounded-md bg-[#00F5D4]/20 border border-[#00F5D4]/40 flex items-center justify-center text-[#00F5D4]">
@@ -195,6 +200,38 @@ export const Navbar: React.FC = () => {
             >
               {moreMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
             </button>
+          </div>
+        </div>
+
+        {/* LIVE MARKET ORACLE SUB-BAR (CONSTRAINED TO 440PX) */}
+        <div
+          onClick={() => handleTabNav('wallet')}
+          data-testid="navbar-live-oracle-bar"
+          className="max-w-[440px] mx-auto px-2.5 py-1 bg-[#0B0818]/90 border-t border-white/5 flex items-center justify-between gap-2 text-[9px] font-mono cursor-pointer hover:bg-[#110C24]/90 transition-colors"
+          dir="ltr"
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00F5D4] animate-pulse shrink-0" />
+            <span className="text-slate-400">LIVE ORACLE:</span>
+            <span className="text-white font-bold">
+              TON ${liveTonUsdPrice.toFixed(2)}
+            </span>
+            <span
+              className={`px-1 py-0.2 rounded font-bold ${
+                tonChange24hPercent >= 0
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : 'bg-rose-500/15 text-rose-400'
+              }`}
+            >
+              {tonChange24hPercent >= 0 ? '+' : ''}
+              {tonChange24hPercent.toFixed(2)}%
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 text-slate-300">
+            <span>1 TON ≈ {liveStarsPerTon} ⭐</span>
+            <span className="text-[#FFE066] font-bold">
+              Portfolio ≈ ${portfolioUsdValue.toFixed(2)}
+            </span>
           </div>
         </div>
 

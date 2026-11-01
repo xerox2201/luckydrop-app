@@ -78,6 +78,8 @@ export const Tower3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
     const startRes = await startGameSession({
       gameId: 'TOWER_3D',
       betAmountUsdt: wagerUsdt,
+      betAmountNative: cleanBet,
+      currency: activeTmaCurrency,
       towerDifficulty: difficulty,
     });
     setBusyStep(false);
@@ -139,12 +141,10 @@ export const Tower3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
       if (Array.isArray(revealRes.trapColumnsPerFloor)) {
         setTrapColsPerRow(revealRes.trapColumnsPerFloor);
       }
-      const wonCurr = usdtToTmaCurrency(
-        revealRes.payoutUsdt || 0,
-        activeTmaCurrency,
-        tonUsdRate,
-        starsUsdRate
-      );
+      const wonCurr =
+        activeTmaCurrency === 'TON'
+          ? revealRes.payoutTon ?? Number((betAmount * mult).toFixed(2))
+          : revealRes.payoutStars ?? Math.round(betAmount * mult);
       setCashedOutBanner(
         `🏰 فتح کامل برج کریستالی (طبقه 8/8) با ضریب ${mult.toFixed(2)}x (+${formatTmaCurrency(
           wonCurr,
@@ -178,12 +178,10 @@ export const Tower3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
       setTrapColsPerRow(res.trapColumnsPerFloor);
     }
 
-    const wonCurr = usdtToTmaCurrency(
-      res.payoutUsdt || res.evaluation?.payoutUsdt || 0,
-      activeTmaCurrency,
-      tonUsdRate,
-      starsUsdRate
-    );
+    const wonCurr =
+      activeTmaCurrency === 'TON'
+        ? res.payoutTon ?? Number((betAmount * mult).toFixed(2))
+        : res.payoutStars ?? Math.round(betAmount * mult);
     setCashedOutBanner(
       `🏰 برداشت موفق در طبقه ${currentFloor}/8 با ضریب ${mult.toFixed(2)}x (+${formatTmaCurrency(
         wonCurr,
@@ -551,6 +549,8 @@ export const Wheel3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) 
     const res = await playInstantMiniGame({
       gameId: 'WHEEL_3D',
       betAmountUsdt: wagerUsdt,
+      betAmountNative: cleanBet,
+      currency: activeTmaCurrency,
       wheelRisk: risk,
     });
 
@@ -729,8 +729,9 @@ export const HiLo3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) =
     HapticEngine.impactOccurred('medium');
 
     const minBet = activeTmaCurrency === 'TON' ? 0.01 : 1;
+    const cleanBet = Math.max(minBet, betAmount);
     const wagerUsdt = tmaCurrencyToUsdt(
-      Math.max(minBet, betAmount),
+      cleanBet,
       activeTmaCurrency,
       tonUsdRate,
       starsUsdRate
@@ -742,6 +743,8 @@ export const HiLo3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettled }) =
     const res = await playInstantMiniGame({
       gameId: 'HILO_3D',
       betAmountUsdt: wagerUsdt,
+      betAmountNative: cleanBet,
+      currency: activeTmaCurrency,
       hiloChoice: guess,
       hiloBaseCard: baseCard,
       hiloMultiplier: targetMult,
@@ -900,8 +903,9 @@ export const GoldenCoin3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettle
     plinkoSoundEngine.playDrop();
 
     const minBet = activeTmaCurrency === 'TON' ? 0.01 : 1;
+    const cleanBet = Math.max(minBet, betAmount);
     const wagerUsdt = tmaCurrencyToUsdt(
-      Math.max(minBet, betAmount),
+      cleanBet,
       activeTmaCurrency,
       tonUsdRate,
       starsUsdRate
@@ -910,6 +914,8 @@ export const GoldenCoin3DGameArena: React.FC<ExtraArenaProps> = ({ onRoundSettle
     const res = await playInstantMiniGame({
       gameId: 'GOLDEN_COIN',
       betAmountUsdt: wagerUsdt,
+      betAmountNative: cleanBet,
+      currency: activeTmaCurrency,
       coinSide: choice,
     });
 

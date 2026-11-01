@@ -298,6 +298,11 @@ interface LotteryContextType {
   oracleMarkupPercent: number;
   setOracleMarkupPercent: (pct: number) => void;
   refreshPriceOracleNow: () => Promise<void>;
+  liveTonUsdPrice: number;
+  tonChange24hPercent: number;
+  liveStarsUsdPrice: number;
+  liveStarsPerTon: number;
+  portfolioUsdValue: number;
   formatAmount: (usdt: number) => string;
   formatCurrency: (amount: number, currency?: ActiveTmaCurrency) => string;
   firebaseUser: FirebaseUser | null;
@@ -336,6 +341,9 @@ interface LotteryContextType {
     roundId: string;
     vertical: string;
     amountUsdt: number;
+    amountTon?: number;
+    amountStars?: number;
+    currency?: ActiveTmaCurrency;
     note?: string;
   }) => Promise<PAMOperationResponse>;
   pamCredit: (params: {
@@ -344,6 +352,9 @@ interface LotteryContextType {
     roundId: string;
     vertical: string;
     amountUsdt: number;
+    amountTon?: number;
+    amountStars?: number;
+    currency?: ActiveTmaCurrency;
     note?: string;
     awardLuckyAirdropTicket?: boolean;
   }) => Promise<PAMOperationResponse & { bonusTicketAwarded?: TicketItem | null }>;
@@ -368,6 +379,9 @@ interface LotteryContextType {
   playInstantMiniGame: (params: {
     gameId: InstantMiniGameId;
     betAmountUsdt: number;
+    betAmountNative?: number;
+    amountTon?: number;
+    amountStars?: number;
     diceRollUnder?: number;
     diceTarget?: number;
     diceMode?: 'OVER' | 'UNDER';
@@ -393,7 +407,14 @@ interface LotteryContextType {
   }) => Promise<{
     ok: boolean;
     error?: string;
-    evaluation?: MiniGameEvaluationResult;
+    evaluation?: MiniGameEvaluationResult & {
+      payoutTon?: number;
+      payoutStars?: number;
+      betAmountTon?: number;
+      betAmountStars?: number;
+    };
+    payoutTon?: number;
+    payoutStars?: number;
     bonusTicketAwarded?: TicketItem | null;
     debitTransactionUuid?: string;
     tonBalance: number;
@@ -402,6 +423,9 @@ interface LotteryContextType {
   startGameSession: (params: {
     gameId: 'MINES' | 'TOWER_3D';
     betAmountUsdt: number;
+    betAmountNative?: number;
+    amountTon?: number;
+    amountStars?: number;
     minesCount?: number;
     towerDifficulty?: TowerDifficulty;
   }) => Promise<{
@@ -535,7 +559,12 @@ interface LotteryContextType {
     slips: BulkTicketSlip[],
     roundCode: string,
     totalCostUsdt: number,
-    network: string
+    network: string,
+    nativeOptions?: {
+      currency?: ActiveTmaCurrency;
+      amountTon?: number;
+      amountStars?: number;
+    }
   ) => Promise<{ ok: boolean; error?: string; tickets?: TicketItem[] }>;
   claimTicketPrize: (ticketCode: string, prizeUsdt: number, network?: string) => Promise<boolean>;
   depositCrypto: (amountUsdt: number, network: string) => Promise<boolean>;
@@ -852,20 +881,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return 'TON';
     }
   });
-  const [tonUsdRate, setTonUsdRateState] = useState<number>(() => {
-    try {
-      return Number(localStorage.getItem('luckydrop_ton_usd_rate_v2')) || DEFAULT_TON_USD_RATE;
-    } catch {
-      return DEFAULT_TON_USD_RATE;
-    }
-  });
-  const [starsUsdRate, setStarsUsdRateState] = useState<number>(() => {
-    try {
-      return Number(localStorage.getItem('luckydrop_stars_usd_rate_v2')) || DEFAULT_STARS_USD_RATE;
-    } catch {
-      return DEFAULT_STARS_USD_RATE;
-    }
-  });
+  // Internal settlement parity is strictly locked: 1 TON = 5.00 internal settlement units, 1 Star = 0.02 units (250 Stars = 1 TON).
+  // Live market oracle prices (liveTonUsdPrice, liveStarsUsdPrice) are tracked separately so bets & ticket prices NEVER drift!
+  const [tonUsdRate, setTonUsdRateState] = useState<number>(DEFAULT_TON_USD_RATE);
+  const [starsUsdRate, setStarsUsdRateState] = useState<number>(DEFAULT_STARS_USD_RATE);
+  const [liveTonUsdPrice, setLiveTonUsdPrice] = useState<number>(5.0);
+  const [tonChange24hPercent, setTonChange24hPercent] = useState<number>(2.15);
+  const [liveStarsUsdPrice, setLiveStarsUsdPrice] = useState<number>(0.016);
+  const [liveStarsPerTon, setLiveStarsPerTon] = useState<number>(250);
   const [starsBalance, setStarsBalance] = useState<number>(0);
   const [adminTelegramUserIds, setAdminTelegramUserIdsState] = useState<number[]>(
     DEFAULT_ADMIN_TELEGRAM_USER_IDS
@@ -899,10 +922,19 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
 
   // Primary wallet balances are strictly tonBalance (💎 TON) & starsBalance (⭐ Stars);
-  // balanceUsdt and bonusTokensUsdt are computed read-only helpers for UI compatibility
-  const effectiveTonUsdRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
-  const balanceUsdt = Number((tonBalance * effectiveTonUsdRate).toFixed(2));
-  const bonusTokensUsdt = Number((bonusTokensTon * effectiveTonUsdRate).toFixed(2));
+  // Internal unit helpers use locked 5.0 parity, while portfolioUsdValue uses the live market oracle!
+  const effectiveTonUsdRate = DEFAULT_TON_USD_RATE;
+  const balanceUsdt = Number(
+    (
+      activeTmaCurrency === 'STARS'
+        ? starsBalance * DEFAULT_STARS_USD_RATE
+        : tonBalance * DEFAULT_TON_USD_RATE
+    ).toFixed(2)
+  );
+  const bonusTokensUsdt = Number((bonusTokensTon * DEFAULT_TON_USD_RATE).toFixed(2));
+  const portfolioUsdValue = Number(
+    (tonBalance * liveTonUsdPrice + starsBalance * liveStarsUsdPrice).toFixed(2)
+  );
 
   const setActiveTmaCurrency = (currency: ActiveTmaCurrency) => {
     HapticEngine.selectionChanged();
@@ -917,24 +949,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const setTonUsdRate = (rate: number) => {
-    const safe = Math.max(0.1, Number(rate) || DEFAULT_TON_USD_RATE);
-    setTonUsdRateState(safe);
-    try {
-      localStorage.setItem('luckydrop_ton_usd_rate_v2', String(safe));
-    } catch {
-      // ignore
-    }
+  const setTonUsdRate = (_rate: number) => {
+    // Keep internal settlement parity locked at DEFAULT_TON_USD_RATE (5.0)
+    setTonUsdRateState(DEFAULT_TON_USD_RATE);
   };
 
-  const setStarsUsdRate = (rate: number) => {
-    const safe = Math.max(0.001, Number(rate) || DEFAULT_STARS_USD_RATE);
-    setStarsUsdRateState(safe);
-    try {
-      localStorage.setItem('luckydrop_stars_usd_rate_v2', String(safe));
-    } catch {
-      // ignore
-    }
+  const setStarsUsdRate = (_rate: number) => {
+    // Keep internal settlement parity locked at DEFAULT_STARS_USD_RATE (0.02)
+    setStarsUsdRateState(DEFAULT_STARS_USD_RATE);
   };
 
   const setAdminTelegramUserIds = (ids: number[]) => {
@@ -1355,14 +1377,23 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
     setOracleSnapshot(snap);
     setFxRates(snap.rates);
-    if (
-      snap.source !== 'FALLBACK_ORACLE_FEED' &&
-      Number.isFinite(snap.rates.TON) &&
-      snap.rates.TON > 0.2
-    ) {
-      setTonUsdRateState(Number(snap.rates.TON.toFixed(3)));
+    if (Number.isFinite(snap.tonUsdPrice) && snap.tonUsdPrice > 0.1) {
+      setLiveTonUsdPrice(Number(snap.tonUsdPrice.toFixed(4)));
+    } else if (Number.isFinite(snap.rates.TON) && snap.rates.TON > 0.1) {
+      setLiveTonUsdPrice(Number(snap.rates.TON.toFixed(4)));
     }
-    setOracleCountdownSec(15);
+    if (Number.isFinite(snap.tonChange24hPercent)) {
+      setTonChange24hPercent(Number(snap.tonChange24hPercent.toFixed(2)));
+    } else if (Number.isFinite(snap.changes24h?.TON)) {
+      setTonChange24hPercent(Number(snap.changes24h.TON.toFixed(2)));
+    }
+    if (Number.isFinite(snap.starsUsdPrice) && snap.starsUsdPrice > 0.001) {
+      setLiveStarsUsdPrice(Number(snap.starsUsdPrice.toFixed(4)));
+    }
+    if (Number.isFinite(snap.starsPerTon) && snap.starsPerTon > 10) {
+      setLiveStarsPerTon(Math.round(snap.starsPerTon));
+    }
+    setOracleCountdownSec(30);
   }, [oracleMarkupPercent]);
 
   const setOracleMarkupPercent = (pct: number) => {
@@ -1530,6 +1561,20 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (typeof data.publicTonTreasuryWallet === 'string' && data.publicTonTreasuryWallet.trim()) {
         setAdminTonWalletAddressState(data.publicTonTreasuryWallet.trim());
+      }
+      if (data.liveOracle && typeof data.liveOracle === 'object') {
+        if (Number.isFinite(Number(data.liveOracle.tonUsdPrice)) && Number(data.liveOracle.tonUsdPrice) > 0.1) {
+          setLiveTonUsdPrice(Number(Number(data.liveOracle.tonUsdPrice).toFixed(4)));
+        }
+        if (Number.isFinite(Number(data.liveOracle.tonChange24hPercent))) {
+          setTonChange24hPercent(Number(Number(data.liveOracle.tonChange24hPercent).toFixed(2)));
+        }
+        if (Number.isFinite(Number(data.liveOracle.starsUsdPrice)) && Number(data.liveOracle.starsUsdPrice) > 0.001) {
+          setLiveStarsUsdPrice(Number(Number(data.liveOracle.starsUsdPrice).toFixed(4)));
+        }
+        if (Number.isFinite(Number(data.liveOracle.starsPerTon)) && Number(data.liveOracle.starsPerTon) > 10) {
+          setLiveStarsPerTon(Math.round(Number(data.liveOracle.starsPerTon)));
+        }
       }
       if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
     } catch (error) {
@@ -1974,32 +2019,53 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     roundId: string;
     vertical: string;
     amountUsdt: number;
+    amountTon?: number;
+    amountStars?: number;
+    currency?: ActiveTmaCurrency;
     note?: string;
   }): Promise<PAMOperationResponse> => {
     const txUuid = params.transactionUuid || generateDeterministicUuid('tx_debit');
-    if (activeTmaCurrency === 'STARS') {
-      const neededStars = usdtToTmaCurrency(params.amountUsdt, 'STARS', tonUsdRate, starsUsdRate);
-      if (starsBalance < neededStars) {
-        return {
-          ok: false,
-          operation: 'DEBIT',
-          error: `موجودی ستاره‌های تلگرام شما (${starsBalance} ⭐) کافی نیست.`,
-          currency: 'STARS',
-          tonBalance,
-          starsBalance,
-          referralEarningsTon,
-          referralEarningsStars,
-          bonusTokensTon,
-        };
-      }
-      setStarsBalance((prev) => {
-        const next = Math.max(0, prev - neededStars);
-        try {
-          localStorage.setItem('luckydrop_stars_balance_v1', String(next));
-        } catch {}
-        return next;
-      });
+    const effectiveCurrency: ActiveTmaCurrency = params.currency || activeTmaCurrency;
+    const exactTon =
+      effectiveCurrency === 'TON'
+        ? typeof params.amountTon === 'number' && params.amountTon > 0
+          ? Number(params.amountTon.toFixed(4))
+          : Number((params.amountUsdt / 5.0).toFixed(4))
+        : undefined;
+    const exactStars =
+      effectiveCurrency === 'STARS'
+        ? typeof params.amountStars === 'number' && params.amountStars > 0
+          ? Math.round(params.amountStars)
+          : Math.round(params.amountUsdt / 0.02)
+        : undefined;
+
+    if (effectiveCurrency === 'STARS' && exactStars !== undefined && starsBalance < exactStars) {
+      return {
+        ok: false,
+        operation: 'DEBIT',
+        error: `موجودی ستاره‌های تلگرام شما (${starsBalance} ⭐) کافی نیست.`,
+        currency: 'STARS',
+        tonBalance,
+        starsBalance,
+        referralEarningsTon,
+        referralEarningsStars,
+        bonusTokensTon,
+      };
     }
+    if (effectiveCurrency === 'TON' && exactTon !== undefined && tonBalance < exactTon) {
+      return {
+        ok: false,
+        operation: 'DEBIT',
+        error: `موجودی TON شما (${tonBalance.toFixed(2)} TON) کافی نیست.`,
+        currency: 'TON',
+        tonBalance,
+        starsBalance,
+        referralEarningsTon,
+        referralEarningsStars,
+        bonusTokensTon,
+      };
+    }
+
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/pam/debit', {
@@ -2009,11 +2075,19 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           transaction_uuid: txUuid,
           round_id: params.roundId,
           vertical: params.vertical,
-          amountUsdt: params.amountUsdt,
+          currency: effectiveCurrency,
+          amountTon: exactTon,
+          amountStars: exactStars,
+          amountUsdt:
+            effectiveCurrency === 'TON'
+              ? Number(((exactTon || 0) * 5.0).toFixed(4))
+              : Number(((exactStars || 0) * 0.02).toFixed(4)),
           note: params.note,
         }),
       });
       const data = await res.json();
+      if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+      if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
       await refreshSnapshot();
       return data;
     } catch {
@@ -2021,6 +2095,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         transactionUuid: txUuid,
         roundId: params.roundId,
         vertical: params.vertical,
+        currency: effectiveCurrency,
+        amountTon: exactTon,
+        amountStars: exactStars,
         amountUsdt: params.amountUsdt,
         note: params.note,
       });
@@ -2035,20 +2112,27 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     roundId: string;
     vertical: string;
     amountUsdt: number;
+    amountTon?: number;
+    amountStars?: number;
+    currency?: ActiveTmaCurrency;
     note?: string;
     awardLuckyAirdropTicket?: boolean;
   }): Promise<PAMOperationResponse & { bonusTicketAwarded?: TicketItem | null }> => {
     const txUuid = params.transactionUuid || generateDeterministicUuid('tx_credit');
-    if (activeTmaCurrency === 'STARS' && params.amountUsdt > 0) {
-      const creditStars = usdtToTmaCurrency(params.amountUsdt, 'STARS', tonUsdRate, starsUsdRate);
-      setStarsBalance((prev) => {
-        const next = prev + creditStars;
-        try {
-          localStorage.setItem('luckydrop_stars_balance_v1', String(next));
-        } catch {}
-        return next;
-      });
-    }
+    const effectiveCurrency: ActiveTmaCurrency = params.currency || activeTmaCurrency;
+    const exactTon =
+      effectiveCurrency === 'TON'
+        ? typeof params.amountTon === 'number' && params.amountTon >= 0
+          ? Number(params.amountTon.toFixed(4))
+          : Number((params.amountUsdt / 5.0).toFixed(4))
+        : undefined;
+    const exactStars =
+      effectiveCurrency === 'STARS'
+        ? typeof params.amountStars === 'number' && params.amountStars >= 0
+          ? Math.round(params.amountStars)
+          : Math.round(params.amountUsdt / 0.02)
+        : undefined;
+
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/pam/credit', {
@@ -2059,7 +2143,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           reference_transaction_uuid: params.referenceTransactionUuid || null,
           round_id: params.roundId,
           vertical: params.vertical,
-          amountUsdt: params.amountUsdt,
+          currency: effectiveCurrency,
+          amountTon: exactTon,
+          amountStars: exactStars,
+          amountUsdt:
+            effectiveCurrency === 'TON'
+              ? Number(((exactTon || 0) * 5.0).toFixed(4))
+              : Number(((exactStars || 0) * 0.02).toFixed(4)),
           note: params.note,
           awardLuckyAirdropTicket: Boolean(params.awardLuckyAirdropTicket),
         }),
@@ -2068,6 +2158,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (data.bonusTicketAwarded) {
         setTickets((prev) => [data.bonusTicketAwarded, ...prev]);
       }
+      if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+      if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
       await refreshSnapshot();
       return data;
     } catch {
@@ -2076,6 +2168,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         referenceTransactionUuid: params.referenceTransactionUuid || null,
         roundId: params.roundId,
         vertical: params.vertical,
+        currency: effectiveCurrency,
+        amountTon: exactTon,
+        amountStars: exactStars,
         amountUsdt: params.amountUsdt,
         note: params.note,
       });
@@ -2253,6 +2348,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const playInstantMiniGame = async (params: {
     gameId: InstantMiniGameId;
     betAmountUsdt: number;
+    betAmountNative?: number;
+    amountTon?: number;
+    amountStars?: number;
     diceRollUnder?: number;
     diceTarget?: number;
     diceMode?: 'OVER' | 'UNDER';
@@ -2287,8 +2385,31 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     const isFreeBonusRound = Boolean(params.usedFreeBonusToken);
-    const numericBet = Number(params.betAmountUsdt);
-    if (!isFreeBonusRound && (!Number.isFinite(numericBet) || Number.isNaN(numericBet) || numericBet <= 0)) {
+    const numericBetUsdt = Number(params.betAmountUsdt);
+
+    const exactBetTon =
+      activeTmaCurrency === 'TON'
+        ? typeof params.amountTon === 'number' && params.amountTon > 0
+          ? Number(params.amountTon.toFixed(4))
+          : typeof params.betAmountNative === 'number' && params.betAmountNative > 0
+          ? Number(params.betAmountNative.toFixed(4))
+          : Number((numericBetUsdt / 5.0).toFixed(4))
+        : 0;
+
+    const exactBetStars =
+      activeTmaCurrency === 'STARS'
+        ? typeof params.amountStars === 'number' && params.amountStars > 0
+          ? Math.round(params.amountStars)
+          : typeof params.betAmountNative === 'number' && params.betAmountNative > 0
+          ? Math.round(params.betAmountNative)
+          : Math.round(numericBetUsdt / 0.02)
+        : 0;
+
+    if (
+      !isFreeBonusRound &&
+      ((activeTmaCurrency === 'TON' && (!Number.isFinite(exactBetTon) || exactBetTon <= 0)) ||
+        (activeTmaCurrency === 'STARS' && (!Number.isFinite(exactBetStars) || exactBetStars <= 0)))
+    ) {
       HapticEngine.notificationOccurred('error');
       return {
         ok: false,
@@ -2297,11 +2418,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         starsBalance,
       };
     }
-    const effectiveDebitUsdt = isFreeBonusRound ? 0 : Number(numericBet.toFixed(4));
+
+    const effectiveDebitUsdt = isFreeBonusRound
+      ? 0
+      : activeTmaCurrency === 'TON'
+      ? Number((exactBetTon * 5.0).toFixed(4))
+      : Number((exactBetStars * 0.02).toFixed(4));
 
     if (!isFreeBonusRound && activeTmaCurrency === 'STARS') {
-      const neededStars = usdtToTmaCurrency(effectiveDebitUsdt, 'STARS', tonUsdRate, starsUsdRate);
-      if (starsBalance < neededStars) {
+      if (starsBalance < exactBetStars) {
         HapticEngine.notificationOccurred('error');
         setDepositModalOpen(true);
         return {
@@ -2313,13 +2438,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
 
-    const effectiveDebitTon = Number((effectiveDebitUsdt / effectiveTonUsdRate).toFixed(4));
     const currentLiveTonBalance = localPamEngineRef.current.getState().tonBalance;
     if (
       !isFreeBonusRound &&
       activeTmaCurrency === 'TON' &&
-      currentLiveTonBalance < effectiveDebitTon &&
-      tonBalance < effectiveDebitTon
+      currentLiveTonBalance < exactBetTon &&
+      tonBalance < exactBetTon
     ) {
       HapticEngine.notificationOccurred('error');
       setDepositModalOpen(true);
@@ -2333,7 +2457,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const txUuid = generateDeterministicUuid('mg_debit');
 
-    // 100% Server-Authoritative RNG Execution: Frontend NEVER sends outcomes or multipliers to credit balances
+    // 100% Server-Authoritative RNG & 1:1 Native Currency Execution
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/pam/mini-game/play', {
@@ -2342,6 +2466,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         body: JSON.stringify({
           gameId: params.gameId,
           currency: activeTmaCurrency,
+          amountTon: activeTmaCurrency === 'TON' ? exactBetTon : undefined,
+          betAmountTon: activeTmaCurrency === 'TON' ? exactBetTon : undefined,
+          amountStars: activeTmaCurrency === 'STARS' ? exactBetStars : undefined,
+          betAmountStars: activeTmaCurrency === 'STARS' ? exactBetStars : undefined,
           betAmountUsdt: effectiveDebitUsdt,
           usedFreeBonusToken: isFreeBonusRound,
           transaction_uuid: txUuid,
@@ -2407,7 +2535,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         return {
           ok: true,
-          evaluation: data.evaluation as MiniGameEvaluationResult,
+          evaluation: data.evaluation,
+          payoutTon: data.payoutTon,
+          payoutStars: data.payoutStars,
           bonusTicketAwarded: data.bonusTicketAwarded || null,
           debitTransactionUuid: data.debitTransactionUuid || txUuid,
           tonBalance: data.tonBalance ?? tonBalance,
@@ -2435,9 +2565,29 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const startGameSession = async (params: {
     gameId: 'MINES' | 'TOWER_3D';
     betAmountUsdt: number;
+    betAmountNative?: number;
+    amountTon?: number;
+    amountStars?: number;
     minesCount?: number;
     towerDifficulty?: TowerDifficulty;
   }) => {
+    const exactBetTon =
+      activeTmaCurrency === 'TON'
+        ? typeof params.amountTon === 'number' && params.amountTon > 0
+          ? Number(params.amountTon.toFixed(4))
+          : typeof params.betAmountNative === 'number' && params.betAmountNative > 0
+          ? Number(params.betAmountNative.toFixed(4))
+          : Number((params.betAmountUsdt / 5.0).toFixed(4))
+        : undefined;
+    const exactBetStars =
+      activeTmaCurrency === 'STARS'
+        ? typeof params.amountStars === 'number' && params.amountStars > 0
+          ? Math.round(params.amountStars)
+          : typeof params.betAmountNative === 'number' && params.betAmountNative > 0
+          ? Math.round(params.betAmountNative)
+          : Math.round(params.betAmountUsdt / 0.02)
+        : undefined;
+
     try {
       const headers = await getHeaders();
       const res = await fetch('/api/games/session/start', {
@@ -2446,6 +2596,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         body: JSON.stringify({
           gameId: params.gameId,
           currency: activeTmaCurrency,
+          amountTon: exactBetTon,
+          betAmountTon: exactBetTon,
+          amountStars: exactBetStars,
+          betAmountStars: exactBetStars,
           betAmountUsdt: Number(params.betAmountUsdt.toFixed(4)),
           minesCount: params.minesCount,
           towerDifficulty: params.towerDifficulty,
@@ -2963,7 +3117,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     slips: BulkTicketSlip[],
     roundCode: string,
     totalCostUsdt: number,
-    network: string = 'USDT (TRC-20)'
+    network: string = 'USDT (TRC-20)',
+    nativeOptions?: {
+      currency?: ActiveTmaCurrency;
+      amountTon?: number;
+      amountStars?: number;
+    }
   ) => {
     if (killSwitchActive) {
       return {
@@ -2971,7 +3130,36 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: فروش بلیت موقتاً متوقف است.',
       };
     }
-    if (balanceUsdt < totalCostUsdt) {
+
+    const effectiveCurrency: ActiveTmaCurrency =
+      nativeOptions?.currency ||
+      (String(network).toUpperCase().includes('STARS') ? 'STARS' : activeTmaCurrency);
+
+    const roundObj = rounds.find((r) => r.roundCode === roundCode) || activeRound;
+    const roundUnitPriceUsdt = Math.max(
+      0.1,
+      parseFloat(String(roundObj?.ticketPriceUsdt || totalCostUsdt / Math.max(1, slips.length))) || 5
+    );
+    const unitPriceTon = Number((roundUnitPriceUsdt / 5.0).toFixed(4));
+    const unitPriceStars = Math.max(1, Math.round(unitPriceTon * 250));
+
+    const exactTotalTon =
+      effectiveCurrency === 'TON'
+        ? typeof nativeOptions?.amountTon === 'number' && nativeOptions.amountTon > 0
+          ? Number(nativeOptions.amountTon.toFixed(4))
+          : Number((slips.length * unitPriceTon).toFixed(4))
+        : 0;
+    const exactTotalStars =
+      effectiveCurrency === 'STARS'
+        ? typeof nativeOptions?.amountStars === 'number' && nativeOptions.amountStars > 0
+          ? Math.round(nativeOptions.amountStars)
+          : Math.round(slips.length * unitPriceStars)
+        : 0;
+
+    if (
+      (effectiveCurrency === 'TON' && tonBalance < exactTotalTon) ||
+      (effectiveCurrency === 'STARS' && starsBalance < exactTotalStars)
+    ) {
       setDepositModalOpen(true);
       return {
         ok: false,
@@ -2990,6 +3178,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           roundCode,
           mainNumbers: slips[0].mainNumbers,
           goldenBall: slips[0].goldenBall,
+          currency: effectiveCurrency,
+          amountTon: effectiveCurrency === 'TON' ? exactTotalTon : undefined,
+          amountStars: effectiveCurrency === 'STARS' ? exactTotalStars : undefined,
           costUsdt: totalCostUsdt,
           currencyNetwork: network,
           clientSeed: slips[0].clientSeed || pamState.seeds.clientSeed,
@@ -3006,8 +3197,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (data.pamState) {
         syncPamStateEverywhere(data.pamState);
-      } else if (typeof data.tonBalance === 'number') {
-        setTonBalance(data.tonBalance);
+      } else {
+        if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+        if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
       }
       if (referredByCode && referredByCode !== referralCode) {
         const split = calculateZeroLossTicketSplit(totalCostUsdt, true, 85, 2);
@@ -3031,6 +3223,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         transactionUuid: txUuid,
         roundId: roundCode,
         vertical: 'LUCKYDROP_LOTTERY',
+        currency: effectiveCurrency,
+        amountTon: effectiveCurrency === 'TON' ? exactTotalTon : undefined,
+        amountStars: effectiveCurrency === 'STARS' ? exactTotalStars : undefined,
         amountUsdt: totalCostUsdt,
         note: `خرید ${slips.length} کوپن لاتاری (${roundCode})`,
       });
@@ -3982,9 +4177,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (Array.isArray(data.telegramAlertsLog)) {
         setTelegramAlertsLog(data.telegramAlertsLog);
       }
+      const rawDesc = String(data.apiDescription || '');
       const msg = data.deliveredToTelegramApi
-        ? `✅ پیام هشدار با موفقیت به تلگرام (${data.apiDescription}) ارسال شد!`
-        : `⚠️ نتیجه اتصال به API تلگرام: ${data.apiDescription || 'لطفاً Bot Token و آیدی چنل (@ChannelName یا -100...) را بررسی کرده و ربات را در کانال Admin کنید.'}`;
+        ? rawDesc.includes('پیام به پیوی ادمین ارسال شد')
+          ? `✅ ${rawDesc}`
+          : `✅ پیام هشدار با موفقیت به تلگرام (${rawDesc}) ارسال شد!`
+        : rawDesc.includes('پیام به پیوی ادمین ارسال شد')
+        ? `ℹ️ ${rawDesc}`
+        : `⚠️ نتیجه اتصال به API تلگرام: ${rawDesc || 'لطفاً Bot Token و آیدی چنل (@ChannelName یا -100...) را بررسی کرده و ربات را در کانال Admin کنید.'}`;
       return {
         ok: Boolean(data.deliveredToTelegramApi),
         message: msg,
@@ -4015,6 +4215,11 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         oracleMarkupPercent,
         setOracleMarkupPercent,
         refreshPriceOracleNow,
+        liveTonUsdPrice,
+        tonChange24hPercent,
+        liveStarsUsdPrice,
+        liveStarsPerTon,
+        portfolioUsdValue,
         formatAmount,
         formatCurrency,
         firebaseUser,

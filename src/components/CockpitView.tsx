@@ -48,6 +48,7 @@ interface AdminAuditLogItem {
 
 interface TelegramWebhookStatusInfo {
   ok: boolean;
+  configured?: boolean;
   botTokenConfigured: boolean;
   url: string;
   expectedWebhookUrl: string;
@@ -55,6 +56,24 @@ interface TelegramWebhookStatusInfo {
   lastErrorDate: number | null;
   lastErrorMessage: string;
 }
+
+const normalizeDigits = (val: string): string => {
+  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  let out = String(val ?? '').trim();
+  for (let i = 0; i < 10; i++) {
+    out = out.replace(new RegExp(persianDigits[i], 'g'), String(i));
+    out = out.replace(new RegExp(arabicDigits[i], 'g'), String(i));
+  }
+  return out.replace(/[,٬]/g, '');
+};
+
+const isMaskedBotTokenInput = (val: string): boolean => {
+  const trimmed = String(val || '').trim();
+  if (!trimmed) return false;
+  if (/^[*•]+/.test(trimmed) || trimmed.includes('CONFIGURED_IN_ENV')) return true;
+  return !/^\d{5,}:[A-Za-z0-9_-]{10,}$/.test(trimmed);
+};
 
 export const CockpitView: React.FC = () => {
   const {
@@ -140,6 +159,7 @@ export const CockpitView: React.FC = () => {
   const [adjustDeltaAmount, setAdjustDeltaAmount] = useState<string>('10');
   const [adjustReason, setAdjustReason] = useState<string>('');
   const [adjustSubmitting, setAdjustSubmitting] = useState<boolean>(false);
+  const [adjustBanner, setAdjustBanner] = useState<string | null>(null);
 
   // Mass Telegram Bot Broadcast State
   const [broadcastMessageText, setBroadcastMessageText] = useState<string>('');
@@ -246,15 +266,23 @@ export const CockpitView: React.FC = () => {
 
   const handleAdjustUserBalance = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanTarget = adjustTargetUserId.trim();
-    const numericDelta = Number(adjustDeltaAmount);
-    const cleanReason = adjustReason.trim();
-    if (!cleanTarget || !Number.isFinite(numericDelta) || numericDelta === 0 || !cleanReason) {
-      setCrmBanner('⚠️ لطفاً آیدی کاربر، مقدار غیرصفر و دلیل حسابرسی را وارد کنید.');
-      setTimeout(() => setCrmBanner(null), 4500);
+    const cleanTarget = normalizeDigits(adjustTargetUserId);
+    const numericDelta = Number(normalizeDigits(adjustDeltaAmount));
+    const cleanReason =
+      String(adjustReason ?? '').trim() || 'اصلاح دستی توسط ادمین (Admin Adjustment)';
+
+    if (!cleanTarget || !Number.isFinite(numericDelta) || numericDelta === 0) {
+      const warnMsg = '⚠️ لطفاً آیدی کاربر هدف و مقدار عددی غیرصفر را وارد کنید.';
+      setCrmBanner(warnMsg);
+      setAdjustBanner(warnMsg);
+      setTimeout(() => {
+        setCrmBanner(null);
+        setAdjustBanner(null);
+      }, 4500);
       return;
     }
     setAdjustSubmitting(true);
+    setAdjustBanner(null);
     try {
       const res = await fetch('/api/admin/users/adjust-balance', {
         method: 'POST',
@@ -268,25 +296,31 @@ export const CockpitView: React.FC = () => {
       });
       const data = await res.json().catch(() => null);
       if (res.ok && data?.ok) {
-        setCrmBanner(
-          `✅ موجودی کاربر #${cleanTarget} (${adjustCurrency}: ${
-            numericDelta >= 0 ? `+${numericDelta}` : numericDelta
-          }) تغییر یافت و در لاگ حسابرسی ثبت شد (موجودی جدید: ${data.newBalance}).`
-        );
+        const successMsg = `✅ موجودی کاربر #${cleanTarget} (${adjustCurrency}: ${
+          numericDelta >= 0 ? `+${numericDelta}` : numericDelta
+        }) با موفقیت تغییر یافت (موجودی جدید: ${data.newBalance}).`;
+        setCrmBanner(successMsg);
+        setAdjustBanner(successMsg);
         setAdjustReason('');
         if (Array.isArray(data.adminAuditLogs)) {
           setAdminAuditLogs(data.adminAuditLogs);
         }
-        void fetchAdminUsersCrm();
-        void refreshSnapshot();
+        await Promise.all([fetchAdminUsersCrm(), refreshSnapshot()]);
       } else {
-        setCrmBanner(`❌ خطا در تغییر موجودی: ${data?.error || 'خطای سرور'}`);
+        const errMsg = `❌ خطا در تغییر موجودی: ${data?.error || 'خطای سرور'}`;
+        setCrmBanner(errMsg);
+        setAdjustBanner(errMsg);
       }
     } catch (err: any) {
-      setCrmBanner(`❌ خطا: ${err?.message || 'Network Error'}`);
+      const errMsg = `❌ خطا: ${err?.message || 'Network Error'}`;
+      setCrmBanner(errMsg);
+      setAdjustBanner(errMsg);
     } finally {
       setAdjustSubmitting(false);
-      setTimeout(() => setCrmBanner(null), 5500);
+      setTimeout(() => {
+        setCrmBanner(null);
+        setAdjustBanner(null);
+      }, 6500);
     }
   };
 
@@ -356,30 +390,67 @@ export const CockpitView: React.FC = () => {
     setDbBackupDownloading(true);
     setDbBackupBanner(null);
     try {
-      const res = await fetch('/api/admin/db/backup', {
+      const res = await fetch('/api/admin/db/backup-to-telegram', {
+        method: 'POST',
         headers: getAdminFetchHeaders(),
+        body: JSON.stringify({ targetAdminId: String(telegramUser.id || '6176189129') }),
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        setDbBackupBanner(`❌ خطا در دانلود بکاپ: ${errData?.error || res.statusText}`);
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setDbBackupBanner(`❌ خطا در تهیه بکاپ: ${data?.error || res.statusText}`);
         return;
       }
-      const rawJson = await res.text();
-      const blob = new Blob([rawJson], { type: 'application/json;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `luckydrop_backup_${Date.now()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setDbBackupBanner('✅ فایل پشتیبان کامل دیتابیس (JSON) با موفقیت دانلود شد.');
+
+      const fileName = data.fileName || `luckydrop_backup_${Date.now()}.json`;
+      const rawJson = JSON.stringify(data.backup || data, null, 2);
+      const signedPath = String(data.downloadUrl || '');
+      const fullDownloadUrl =
+        typeof window !== 'undefined' && signedPath
+          ? `${window.location.origin}${signedPath}`
+          : '';
+
+      const tgWebApp = typeof window !== 'undefined' ? (window as any)?.Telegram?.WebApp : null;
+      const isInsideTelegramWebView = Boolean(tgWebApp?.initData);
+
+      // Method B: Direct URL / Telegram WebApp downloadFile or openLink for Mobile WebView + Blob fallback for Desktop
+      if (isInsideTelegramWebView && fullDownloadUrl) {
+        if (typeof tgWebApp.downloadFile === 'function') {
+          try {
+            tgWebApp.downloadFile({ url: fullDownloadUrl, file_name: fileName });
+          } catch {
+            if (typeof tgWebApp.openLink === 'function') {
+              tgWebApp.openLink(fullDownloadUrl);
+            }
+          }
+        } else if (typeof tgWebApp.openLink === 'function') {
+          tgWebApp.openLink(fullDownloadUrl);
+        }
+      } else {
+        const blob = new Blob([rawJson], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      if (data.telegramSent) {
+        setDbBackupBanner(
+          `✅ فایل پشتیبان (${fileName}) مستقیماً به پیوی تلگرام ادمین (#${data.recipientChatId}) ارسال شد و لینک دانلود مستقیم فعال گردید!`
+        );
+      } else {
+        setDbBackupBanner(
+          `✅ فایل پشتیبان آماده و دانلود شد (${data.telegramDescription || 'ذخیره محلی انجام شد'}).`
+        );
+      }
     } catch (err: any) {
       setDbBackupBanner(`❌ خطا در دانلود بکاپ: ${err?.message || 'Network Error'}`);
     } finally {
       setDbBackupDownloading(false);
-      setTimeout(() => setDbBackupBanner(null), 5500);
+      setTimeout(() => setDbBackupBanner(null), 7500);
     }
   };
 
@@ -479,11 +550,13 @@ export const CockpitView: React.FC = () => {
 
   const handleSaveTelegramBot = async (e: React.FormEvent) => {
     e.preventDefault();
+    const safeTokenToSend = isMaskedBotTokenInput(tgBotToken) ? '' : tgBotToken.trim();
     await updateTelegramBotConfig({
       enabled: tgEnabled,
-      botToken: tgBotToken,
+      botToken: safeTokenToSend,
       adminChatId: tgChatId,
     });
+    await fetchWebhookStatus();
     setTgBanner(
       '✅ تنظیمات ربات و آیدی چنل/گروه تلگرام روی سرور ذخیره شد! اکنون دکمه «تست هشدار تلگرام» را بزنید.'
     );
@@ -492,17 +565,19 @@ export const CockpitView: React.FC = () => {
 
   const handleTestTelegramAlert = async () => {
     setSendingTgTest(true);
-    if (tgBotToken.trim() || tgChatId.trim()) {
+    const safeTokenToSend = isMaskedBotTokenInput(tgBotToken) ? '' : tgBotToken.trim();
+    if (safeTokenToSend || tgChatId.trim()) {
       await updateTelegramBotConfig({
         enabled: tgEnabled,
-        botToken: tgBotToken,
+        botToken: safeTokenToSend,
         adminChatId: tgChatId,
       });
     }
     const res = await sendTestTelegramAlert();
+    await fetchWebhookStatus();
     setSendingTgTest(false);
     setTgBanner(res.message || res.note);
-    setTimeout(() => setTgBanner(null), 8000);
+    setTimeout(() => setTgBanner(null), 8500);
   };
 
   // Draw execution state
@@ -971,18 +1046,27 @@ export const CockpitView: React.FC = () => {
 
               <div>
                 <label className="text-[10px] font-bold text-purple-200 block mb-1">
-                  دلیل رسمی حسابرسی (`reason`):
+                  دلیل حسابرسی (`reason` - اختیاری):
                 </label>
                 <input
                   type="text"
                   data-testid="adjust-reason-input"
-                  placeholder="مثلاً: پاداش VIP یا اصلاح خطا"
+                  placeholder="اصلاح دستی توسط ادمین (اختیاری)"
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
                   className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-white"
                 />
               </div>
             </div>
+
+            {adjustBanner && (
+              <div
+                data-testid="cockpit-adjust-balance-banner"
+                className="p-2.5 rounded-xl bg-[#00f59b]/15 border border-[#00f59b]/40 text-[#00f59b] text-[11px] font-bold"
+              >
+                {adjustBanner}
+              </div>
+            )}
 
             <button
               type="submit"
@@ -1889,8 +1973,17 @@ export const CockpitView: React.FC = () => {
             <div className="bg-[#090612] border border-purple-500/20 rounded-xl p-2.5 space-y-1.5 text-[11px]" dir="ltr">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-purple-300/70">Bot Token Configured:</span>
-                <span className={`font-mono font-bold ${webhookStatus?.configured ? 'text-[#00f59b]' : 'text-rose-400'}`}>
-                  {webhookStatus?.configured ? 'YES (ACTIVE)' : 'NO TOKEN'}
+                <span
+                  data-testid="cockpit-webhook-token-status"
+                  className={`font-mono font-bold ${
+                    webhookStatus?.configured || webhookStatus?.botTokenConfigured || Boolean(telegramBotConfig.botToken)
+                      ? 'text-[#00f59b]'
+                      : 'text-rose-400'
+                  }`}
+                >
+                  {webhookStatus?.configured || webhookStatus?.botTokenConfigured || Boolean(telegramBotConfig.botToken)
+                    ? 'ACTIVE ✅'
+                    : 'NO TOKEN'}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">

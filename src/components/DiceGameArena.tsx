@@ -392,6 +392,8 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       const res = await playInstantMiniGame({
         gameId: 'DICE_52',
         betAmountUsdt: wagerUsdt,
+        betAmountNative: currentBet,
+        currency: activeTmaCurrency,
         diceRollUnder: targetValue,
         diceTarget: targetValue,
         diceMode,

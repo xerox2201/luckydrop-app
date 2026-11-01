@@ -74,6 +74,8 @@ export const ScratchCardArena: React.FC<ScratchCardArenaProps> = ({ onRoundSettl
     const res = await playInstantMiniGame({
       gameId: 'SCRATCH',
       betAmountUsdt: betUsdt,
+      betAmountNative: useFreeBonus ? 0 : cleanBet,
+      currency: activeTmaCurrency,
       usedFreeBonusToken: useFreeBonus,
     });
 

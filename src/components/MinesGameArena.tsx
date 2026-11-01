@@ -87,6 +87,8 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
     const startRes = await startGameSession({
       gameId: 'MINES',
       betAmountUsdt: betUsdt,
+      betAmountNative: betAmountCurrency,
+      currency: activeTmaCurrency,
       minesCount,
     });
     setBusyStep(false);
@@ -147,12 +149,10 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
       if (Array.isArray(revealRes.mineIndices)) {
         setMineIndices(revealRes.mineIndices);
       }
-      const payoutCurr = usdtToTmaCurrency(
-        revealRes.payoutUsdt || 0,
-        activeTmaCurrency,
-        tonUsdRate,
-        starsUsdRate
-      );
+      const payoutCurr =
+        activeTmaCurrency === 'TON'
+          ? revealRes.payoutTon ?? Number((betAmountCurrency * mult).toFixed(2))
+          : revealRes.payoutStars ?? Math.round(betAmountCurrency * mult);
       setCashedOutWin({
         multiplier: mult,
         payoutCurrency: payoutCurr,
@@ -184,12 +184,10 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
       setMineIndices(res.mineIndices);
     }
 
-    const payoutCurr = usdtToTmaCurrency(
-      res.payoutUsdt || res.evaluation?.payoutUsdt || 0,
-      activeTmaCurrency,
-      tonUsdRate,
-      starsUsdRate
-    );
+    const payoutCurr =
+      activeTmaCurrency === 'TON'
+        ? res.payoutTon ?? Number((betAmountCurrency * mult).toFixed(2))
+        : res.payoutStars ?? Math.round(betAmountCurrency * mult);
     setCashedOutWin({
       multiplier: mult,
       payoutCurrency: payoutCurr,

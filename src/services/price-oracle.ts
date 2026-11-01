@@ -3,6 +3,11 @@ import { ExchangeRates, DEFAULT_FX_RATES, getCnyToTomanRate } from '../utils/lot
 export interface LiveOracleSnapshot {
   rates: ExchangeRates;
   cnyToTomanRate: number;
+  tonUsdPrice: number;
+  tonChange24hPercent: number;
+  starsUsdPrice: number;
+  starsPerTon: number;
+  providerLabel: string;
   source:
     | 'TETHERLAND_WALLEX_BINANCE_LIVE'
     | 'BINANCE_AND_OPEN_FX'
@@ -58,10 +63,8 @@ export function computeOracleExchangeRates(
 }
 
 /**
- * Fetches live market prices from our CORS-free backend Oracle proxy (/api/oracle/live)
- * which aggregates live Iranian Tether/Toman exchanges (TetherLand, Wallex, Nobitex),
- * live USD/CNY feeds (Frankfurter ECB, KuCoin, OpenER, Coinbase), and live Binance/CoinGecko
- * crypto spot prices. Includes direct client-side fallback if backend is offline.
+ * Fetches live market prices from our CORS-free backend Oracle proxy (/api/oracle/prices & /api/oracle/live)
+ * which polls TonAPI -> Binance -> CoinGecko every 30 seconds in the background.
  */
 export async function fetchLivePriceOracle(
   config: Partial<OracleConfig> = {}
@@ -72,6 +75,9 @@ export async function fetchLivePriceOracle(
   let ton = DEFAULT_FX_RATES.TON;
   let trx = DEFAULT_FX_RATES.TRX;
   let bnb = DEFAULT_FX_RATES.BNB;
+  let starsUsdPrice = 0.016;
+  let starsPerTon = 250;
+  let providerLabel = 'TonAPI + Binance';
   let tomanBase = config.baseTomanRate || DEFAULT_FX_RATES.TOMAN;
   let cnyBase = config.baseCnyRate || DEFAULT_FX_RATES.CNY;
   let source: LiveOracleSnapshot['source'] = 'FALLBACK_ORACLE_FEED';
@@ -82,41 +88,57 @@ export async function fetchLivePriceOracle(
     BNB: 0.94,
   };
 
-  // 1. Primary: Query server-side /api/oracle/live (CORS-free aggregation of TetherLand, Wallex, Nobitex, Binance, KuCoin, Frankfurter)
+  // 1. Primary: Query server-side /api/oracle/prices & /api/oracle/live
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    const serverRes = await fetch('/api/oracle/live', { signal: controller.signal });
+    const [pricesRes, liveRes] = await Promise.all([
+      fetch('/api/oracle/prices', { signal: controller.signal }).catch(() => null),
+      fetch('/api/oracle/live', { signal: controller.signal }).catch(() => null),
+    ]);
     clearTimeout(timeout);
 
-    if (serverRes.ok) {
-      const data = await serverRes.json();
-      if (Number.isFinite(Number(data.toman)) && Number(data.toman) > 50000) {
+    const pricesData = pricesRes && pricesRes.ok ? await pricesRes.json().catch(() => null) : null;
+    const data = liveRes && liveRes.ok ? await liveRes.json().catch(() => null) : pricesData;
+
+    if (data || pricesData) {
+      if (Number.isFinite(Number(data?.toman)) && Number(data.toman) > 50000) {
         tomanBase = Math.round(Number(data.toman));
       }
-      if (Number.isFinite(Number(data.cny)) && Number(data.cny) > 1) {
+      if (Number.isFinite(Number(data?.cny)) && Number(data.cny) > 1) {
         cnyBase = Number(Number(data.cny).toFixed(4));
       }
-      if (Number.isFinite(Number(data.btc)) && Number(data.btc) > 100) {
+      if (Number.isFinite(Number(data?.btc)) && Number(data.btc) > 100) {
         btc = Number(data.btc);
       }
-      if (Number.isFinite(Number(data.ton)) && Number(data.ton) > 0.05) {
-        ton = Number(data.ton);
+      const resolvedTon = Number(pricesData?.tonUsdPrice ?? data?.tonUsdPrice ?? data?.ton);
+      if (Number.isFinite(resolvedTon) && resolvedTon > 0.05) {
+        ton = resolvedTon;
       }
-      if (Number.isFinite(Number(data.trx)) && Number(data.trx) > 0.005) {
+      if (Number.isFinite(Number(pricesData?.starsUsdPrice ?? data?.starsUsdPrice))) {
+        starsUsdPrice = Number(pricesData?.starsUsdPrice ?? data?.starsUsdPrice);
+      }
+      if (Number.isFinite(Number(pricesData?.starsPerTon ?? data?.starsPerTon))) {
+        starsPerTon = Math.round(Number(pricesData?.starsPerTon ?? data?.starsPerTon));
+      } else if (ton > 0 && starsUsdPrice > 0) {
+        starsPerTon = Math.max(50, Math.round(ton / starsUsdPrice));
+      }
+      if (pricesData?.source || data?.source) {
+        providerLabel = String(pricesData?.source || data?.source);
+      }
+      if (Number.isFinite(Number(data?.trx)) && Number(data.trx) > 0.005) {
         trx = Number(data.trx);
       }
-      if (Number.isFinite(Number(data.bnb)) && Number(data.bnb) > 10) {
+      if (Number.isFinite(Number(data?.bnb)) && Number(data.bnb) > 10) {
         bnb = Number(data.bnb);
       }
-      if (data.changes24h) {
-        changes24h = {
-          BTC: Number(data.changes24h.BTC ?? changes24h.BTC),
-          TON: Number(data.changes24h.TON ?? changes24h.TON),
-          TRX: Number(data.changes24h.TRX ?? changes24h.TRX),
-          BNB: Number(data.changes24h.BNB ?? changes24h.BNB),
-        };
-      }
+      const tonDiff = Number(pricesData?.tonChange24hPercent ?? data?.tonChange24hPercent ?? data?.changes24h?.TON);
+      changes24h = {
+        BTC: Number(data?.changes24h?.BTC ?? changes24h.BTC),
+        TON: Number.isFinite(tonDiff) ? tonDiff : changes24h.TON,
+        TRX: Number(data?.changes24h?.TRX ?? changes24h.TRX),
+        BNB: Number(data?.changes24h?.BNB ?? changes24h.BNB),
+      };
       source = 'TETHERLAND_WALLEX_BINANCE_LIVE';
 
       const rates = computeOracleExchangeRates(
@@ -131,8 +153,14 @@ export async function fetchLivePriceOracle(
       return {
         rates,
         cnyToTomanRate: getCnyToTomanRate(rates),
+        tonUsdPrice: rates.TON,
+        tonChange24hPercent: changes24h.TON,
+        starsUsdPrice,
+        starsPerTon,
+        providerLabel,
         source,
-        lastUpdatedIso: data.timestamp || new Date().toISOString(),
+        lastUpdatedIso:
+          pricesData?.lastUpdatedIso || data?.timestamp || new Date().toISOString(),
         adminMarkupPercent: markupPct,
         baseTomanRate: tomanBase,
         baseCnyRate: cnyBase,
@@ -140,7 +168,7 @@ export async function fetchLivePriceOracle(
       };
     }
   } catch {
-    // Proceed to direct client-side public API calls if /api/oracle/live is unreachable
+    // Proceed to direct client-side public API calls if /api/oracle/prices is unreachable
   }
 
   // 2. Direct client-side fallback for Tether/Toman (TetherLand & Wallex & Nobitex)
@@ -271,6 +299,11 @@ export async function fetchLivePriceOracle(
   return {
     rates,
     cnyToTomanRate: getCnyToTomanRate(rates),
+    tonUsdPrice: rates.TON,
+    tonChange24hPercent: changes24h.TON,
+    starsUsdPrice,
+    starsPerTon: Math.max(50, Math.round(rates.TON / starsUsdPrice)),
+    providerLabel,
     source,
     lastUpdatedIso: new Date().toISOString(),
     adminMarkupPercent: markupPct,

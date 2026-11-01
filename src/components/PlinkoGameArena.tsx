@@ -316,6 +316,8 @@ export const PlinkoGameArena: React.FC<{
     const res = await playInstantMiniGame({
       gameId: 'PLINKO',
       betAmountUsdt: wagerUsdt,
+      betAmountNative: cleanBetCurrency,
+      currency: activeTmaCurrency,
       plinkoRows: currentRows,
       plinkoRisk: currentRisk,
     });

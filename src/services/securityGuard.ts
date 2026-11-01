@@ -23,6 +23,8 @@ export interface ActiveGameSessionState {
   sessionId: string;
   gameId: 'MINES' | 'TOWER_3D';
   currency: 'TON' | 'STARS';
+  betAmountTon?: number;
+  betAmountStars?: number;
   betAmountUsdt: number;
   debitTransactionUuid: string;
   roundId: string;
@@ -1371,6 +1373,39 @@ export function evaluateHardenedAdminSession(params: {
 }
 
 /**
+ * Checks whether a candidate botToken string is empty or a masked UI placeholder
+ * (e.g., `"********"`, `"•••••••••••• (CONFIGURED_IN_ENV)"`) so saving the form in CockpitView
+ * never overwrites a real token with asterisks or bullets.
+ */
+export function isMaskedOrPlaceholderBotToken(rawToken: unknown): boolean {
+  const clean = String(rawToken ?? '').trim();
+  if (!clean) return true;
+  if (
+    clean.includes('*') ||
+    clean.includes('•') ||
+    clean.includes('CONFIGURED_IN_ENV') ||
+    clean.toLowerCase() === 'hidden' ||
+    clean.toLowerCase() === 'masked'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Normalizes Persian (`۰-۹`) and Arabic (`٠-٩`) digits in numeric strings so mobile keyboards work seamlessly.
+ */
+export function normalizeNumericInputString(raw: unknown): number {
+  if (typeof raw === 'number') return raw;
+  const normalized = String(raw ?? '')
+    .trim()
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632))
+    .replace(/,/g, '');
+  return Number(normalized);
+}
+
+/**
  * Executes an atomic manual balance credit or debit (`TON`, `STARS`, or `FREE_TICKETS`)
  * on a target user's account and appends an explicit immutable audit entry to both
  * `user.pamState.ledger` and `adminAuditLogs`.
@@ -1378,8 +1413,8 @@ export function evaluateHardenedAdminSession(params: {
 export function executeAdminBalanceAdjustment(params: {
   userAccount: IsolatedUserAccountRecord;
   currency: 'TON' | 'STARS' | 'FREE_TICKETS';
-  deltaAmount: number;
-  reason: string;
+  deltaAmount: number | string;
+  reason?: string | number;
   adminUserId: string | number;
   tonUsdRate?: number;
 }): {
@@ -1392,8 +1427,9 @@ export function executeAdminBalanceAdjustment(params: {
   auditEntry?: AdminAuditLogEntry;
 } {
   const { userAccount, currency } = params;
-  const rawDelta = Number(params.deltaAmount);
-  const cleanReason = String(params.reason || '').trim() || 'Manual Admin Balance Adjustment';
+  const rawDelta = normalizeNumericInputString(params.deltaAmount);
+  const cleanReason =
+    String(params.reason ?? '').trim() || 'اصلاح دستی توسط ادمین (Admin Adjustment)';
   const tonRate = Number(params.tonUsdRate) > 0 ? Number(params.tonUsdRate) : 5.0;
 
   if (!userAccount) {
@@ -1517,4 +1553,269 @@ export function executeAdminBalanceAdjustment(params: {
   };
 }
 
+// ============================================================================
+// 8. STRICT 1:1 NATIVE CURRENCY ACCOUNTING ENGINE (ZERO USDT MIDDLEMAN DRIFT)
+// ============================================================================
 
+export interface NativeBetResolution {
+  valid: boolean;
+  error?: string;
+  currency: 'TON' | 'STARS';
+  amountTon: number;
+  amountStars: number;
+  nominalUsdt: number;
+}
+
+/**
+ * Resolves a user's bet strictly 1:1 in their chosen native currency (`TON` or `STARS`).
+ * Never multiplies or divides a native `amountTon` or `amountStars` bet by an external exchange rate!
+ */
+export function resolveStrictNativeBetAmount(params: {
+  currency?: string;
+  amountTon?: number;
+  betAmountTon?: number;
+  amountStars?: number;
+  betAmountStars?: number;
+  bet?: number;
+  amount?: number;
+  betAmountUsdt?: number;
+  availableTonBalance: number;
+  availableStarsBalance: number;
+}): NativeBetResolution {
+  const activeCurrency: 'TON' | 'STARS' = params.currency === 'STARS' ? 'STARS' : 'TON';
+
+  if (activeCurrency === 'TON') {
+    const rawTon =
+      params.amountTon !== undefined && Number.isFinite(Number(params.amountTon)) && Number(params.amountTon) > 0
+        ? Number(params.amountTon)
+        : params.betAmountTon !== undefined && Number.isFinite(Number(params.betAmountTon)) && Number(params.betAmountTon) > 0
+        ? Number(params.betAmountTon)
+        : params.bet !== undefined && Number.isFinite(Number(params.bet)) && Number(params.bet) > 0
+        ? Number(params.bet)
+        : params.amount !== undefined && Number.isFinite(Number(params.amount)) && Number(params.amount) > 0
+        ? Number(params.amount)
+        : params.betAmountUsdt !== undefined && Number.isFinite(Number(params.betAmountUsdt)) && Number(params.betAmountUsdt) > 0
+        ? Number(params.betAmountUsdt) / 5.0
+        : NaN;
+
+    const validation = validateStrictFinancialAmount({
+      rawAmount: rawTon,
+      currency: 'TON',
+      minAmount: 0.001,
+      maxAvailableBalance: roundTonClean(params.availableTonBalance),
+    });
+
+    if (!validation.valid) {
+      return {
+        valid: false,
+        error: validation.error,
+        currency: 'TON',
+        amountTon: 0,
+        amountStars: 0,
+        nominalUsdt: 0,
+      };
+    }
+
+    const cleanTon = roundTonClean(validation.cleanAmount);
+    return {
+      valid: true,
+      currency: 'TON',
+      amountTon: cleanTon,
+      amountStars: 0,
+      nominalUsdt: Number((cleanTon * 5.0).toFixed(4)),
+    };
+  }
+
+  // Active Currency === 'STARS'
+  const rawStars =
+    params.amountStars !== undefined && Number.isFinite(Number(params.amountStars)) && Number(params.amountStars) > 0
+      ? Number(params.amountStars)
+      : params.betAmountStars !== undefined && Number.isFinite(Number(params.betAmountStars)) && Number(params.betAmountStars) > 0
+      ? Number(params.betAmountStars)
+      : params.bet !== undefined && Number.isFinite(Number(params.bet)) && Number(params.bet) > 0
+      ? Number(params.bet)
+      : params.amount !== undefined && Number.isFinite(Number(params.amount)) && Number(params.amount) > 0
+      ? Number(params.amount)
+      : params.betAmountUsdt !== undefined && Number.isFinite(Number(params.betAmountUsdt)) && Number(params.betAmountUsdt) > 0
+      ? Math.round(Number(params.betAmountUsdt) / 0.02)
+      : NaN;
+
+  const validation = validateStrictFinancialAmount({
+    rawAmount: rawStars,
+    currency: 'STARS',
+    minAmount: 1,
+    maxAvailableBalance: roundStarsClean(params.availableStarsBalance),
+  });
+
+  if (!validation.valid) {
+    return {
+      valid: false,
+      error: validation.error,
+      currency: 'STARS',
+      amountTon: 0,
+      amountStars: 0,
+      nominalUsdt: 0,
+    };
+  }
+
+  const cleanStars = roundStarsClean(validation.cleanAmount);
+  return {
+    valid: true,
+    currency: 'STARS',
+    amountTon: 0,
+    amountStars: cleanStars,
+    nominalUsdt: Number((cleanStars * 0.02).toFixed(4)),
+  };
+}
+
+/**
+ * Computes exact 1:1 native currency payout (`X * multiplier` in TON or `Math.round(Y * multiplier)` in STARS).
+ */
+export function computeStrictNativePayout(params: {
+  currency: 'TON' | 'STARS';
+  betAmountTon: number;
+  betAmountStars: number;
+  multiplier: number;
+  won: boolean;
+}): {
+  payoutTon: number;
+  payoutStars: number;
+  payoutNominalUsdt: number;
+} {
+  if (!params.won || !Number.isFinite(params.multiplier) || params.multiplier <= 0) {
+    return { payoutTon: 0, payoutStars: 0, payoutNominalUsdt: 0 };
+  }
+  if (params.currency === 'TON') {
+    const payoutTon = roundTonClean(params.betAmountTon * params.multiplier);
+    return {
+      payoutTon,
+      payoutStars: 0,
+      payoutNominalUsdt: Number((payoutTon * 5.0).toFixed(4)),
+    };
+  }
+  const payoutStars = roundStarsClean(Math.round(params.betAmountStars * params.multiplier));
+  return {
+    payoutTon: 0,
+    payoutStars,
+    payoutNominalUsdt: Number((payoutStars * 0.02).toFixed(4)),
+  };
+}
+
+/**
+ * Resolves exact 1:1 native lottery ticket purchase cost (`total = ticketCount * unitPriceTon` or `ticketCount * unitPriceStars`).
+ */
+export function resolveStrictNativeTicketCost(params: {
+  currency?: string;
+  ticketCount: number;
+  roundTicketPriceTon?: number;
+  roundTicketPriceUsdt?: string | number;
+  requestedAmountTon?: number;
+  requestedAmountStars?: number;
+  availableTonBalance: number;
+  availableStarsBalance: number;
+}): {
+  valid: boolean;
+  error?: string;
+  currency: 'TON' | 'STARS';
+  unitPriceTon: number;
+  unitPriceStars: number;
+  totalTon: number;
+  totalStars: number;
+  nominalTotalUsdt: number;
+  nominalUnitUsdt: number;
+} {
+  const count = Math.max(1, Math.floor(Number(params.ticketCount) || 1));
+  const activeCurrency: 'TON' | 'STARS' = params.currency === 'STARS' ? 'STARS' : 'TON';
+
+  const parsedRoundUsdt = Math.max(0.05, parseFloat(String(params.roundTicketPriceUsdt ?? '5')) || 5);
+  const unitPriceTon =
+    typeof params.roundTicketPriceTon === 'number' && params.roundTicketPriceTon > 0
+      ? roundTonClean(params.roundTicketPriceTon)
+      : roundTonClean(parsedRoundUsdt / 5.0);
+  const unitPriceStars = Math.max(1, Math.round(unitPriceTon * 250));
+
+  if (activeCurrency === 'TON') {
+    const expectedTotalTon = roundTonClean(count * unitPriceTon);
+    const totalTon =
+      typeof params.requestedAmountTon === 'number' &&
+      Number.isFinite(params.requestedAmountTon) &&
+      params.requestedAmountTon >= expectedTotalTon
+        ? roundTonClean(params.requestedAmountTon)
+        : expectedTotalTon;
+
+    const validation = validateStrictFinancialAmount({
+      rawAmount: totalTon,
+      currency: 'TON',
+      minAmount: 0.01,
+      maxAvailableBalance: roundTonClean(params.availableTonBalance),
+    });
+
+    if (!validation.valid) {
+      return {
+        valid: false,
+        error: validation.error,
+        currency: 'TON',
+        unitPriceTon,
+        unitPriceStars,
+        totalTon: 0,
+        totalStars: 0,
+        nominalTotalUsdt: 0,
+        nominalUnitUsdt: 0,
+      };
+    }
+
+    const nominalTotalUsdt = Number((totalTon * 5.0).toFixed(2));
+    return {
+      valid: true,
+      currency: 'TON',
+      unitPriceTon,
+      unitPriceStars,
+      totalTon,
+      totalStars: 0,
+      nominalTotalUsdt,
+      nominalUnitUsdt: Number((nominalTotalUsdt / count).toFixed(2)),
+    };
+  }
+
+  // Active Currency === 'STARS'
+  const expectedTotalStars = Math.round(count * unitPriceStars);
+  const totalStars =
+    typeof params.requestedAmountStars === 'number' &&
+    Number.isFinite(params.requestedAmountStars) &&
+    params.requestedAmountStars >= expectedTotalStars
+      ? roundStarsClean(params.requestedAmountStars)
+      : expectedTotalStars;
+
+  const validation = validateStrictFinancialAmount({
+    rawAmount: totalStars,
+    currency: 'STARS',
+    minAmount: 1,
+    maxAvailableBalance: roundStarsClean(params.availableStarsBalance),
+  });
+
+  if (!validation.valid) {
+    return {
+      valid: false,
+      error: validation.error,
+      currency: 'STARS',
+      unitPriceTon,
+      unitPriceStars,
+      totalTon: 0,
+      totalStars: 0,
+      nominalTotalUsdt: 0,
+      nominalUnitUsdt: 0,
+    };
+  }
+
+  const nominalTotalUsdt = Number((totalStars * 0.02).toFixed(2));
+  return {
+    valid: true,
+    currency: 'STARS',
+    unitPriceTon,
+    unitPriceStars,
+    totalTon: 0,
+    totalStars,
+    nominalTotalUsdt,
+    nominalUnitUsdt: Number((nominalTotalUsdt / count).toFixed(2)),
+  };
+}

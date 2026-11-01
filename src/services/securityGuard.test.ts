@@ -459,6 +459,23 @@ test('12. Phase 3 Admin Manual Balance Adjustment credits/debits TON, STARS, and
   });
   assert.equal(creditFreeTickets.ok, true);
   assert.equal(user.freeLotteryTickets, 3);
+
+  // Empty reason uses default Persian/English fallback and Persian digits normalize cleanly
+  const { isMaskedOrPlaceholderBotToken } = await import('./securityGuard.ts');
+  const emptyReasonCredit = executeAdminBalanceAdjustment({
+    userAccount: user,
+    currency: 'TON',
+    deltaAmount: '۵.۵' as any,
+    reason: '   ',
+    adminUserId: '6176189129',
+  });
+  assert.equal(emptyReasonCredit.ok, true);
+  assert.equal(user.tonBalance, 15.5);
+  assert.equal(emptyReasonCredit.auditEntry?.reason, 'اصلاح دستی توسط ادمین (Admin Adjustment)');
+
+  assert.equal(isMaskedOrPlaceholderBotToken('********'), true);
+  assert.equal(isMaskedOrPlaceholderBotToken('•••••••••••• (CONFIGURED_IN_ENV)'), true);
+  assert.equal(isMaskedOrPlaceholderBotToken('123456789:AAH_real_bot_token_secret'), false);
 });
 
 test('13. Phase 3 Hardened Admin Authentication rejects raw X-Telegram-User-Id header spoofing', async () => {
@@ -503,6 +520,151 @@ test('13. Phase 3 Hardened Admin Authentication rejects raw X-Telegram-User-Id h
   });
   assert.equal(spoofedHeaderWithoutToken, false, 'Raw X-Telegram-User-Id header alone can never grant admin');
 });
+
+test('14. Strict 1:1 Native Currency Accounting Verification (100.00 TON -> Ticket 1.00 TON -> 99.00 TON -> Bet 2.00 TON -> 97.00 TON + exact 2.00 * multiplier TON)', async () => {
+  const {
+    resolveStrictNativeBetAmount,
+    computeStrictNativePayout,
+    resolveStrictNativeTicketCost,
+  } = await import('./securityGuard.ts');
+
+  const pam = new PAMSeamlessWalletEngine({
+    playerId: 'tg_accounting_audit',
+    genesisTonBalance: 100.0,
+    tonBalance: 100.0,
+    starsBalance: 1000,
+    tonUsdRate: 5.0,
+    starsUsdRate: 0.02,
+  });
+
+  assert.equal(pam.getState().tonBalance, 100.0, 'Initial balance must be strictly 100.00 TON');
+
+  // Step 1: Buy 1 lottery ticket priced at 1.00 TON (5.00 USDT internal parity)
+  const ticketCost = resolveStrictNativeTicketCost({
+    currency: 'TON',
+    ticketCount: 1,
+    roundTicketPriceTon: 1.0,
+    roundTicketPriceUsdt: 5.0,
+    requestedAmountTon: 1.0,
+    availableTonBalance: pam.getState().tonBalance,
+    availableStarsBalance: pam.getState().starsBalance,
+  });
+  assert.equal(ticketCost.valid, true);
+  assert.equal(ticketCost.currency, 'TON');
+  assert.equal(ticketCost.totalTon, 1.0);
+
+  const ticketDebit = pam.debit({
+    transactionUuid: 'tx_ticket_1ton',
+    roundId: '#RD-1048',
+    vertical: 'LOTTERY_SINGLE',
+    currency: 'TON',
+    amountTon: ticketCost.totalTon,
+  });
+  assert.equal(ticketDebit.ok, true);
+  assert.equal(
+    pam.getState().tonBalance,
+    99.0,
+    'After buying 1 ticket at 1.00 TON, balance must be strictly 99.00 TON'
+  );
+  assert.equal(
+    pam.getState().starsBalance,
+    1000,
+    'Stars balance must remain 100% independent and untouched (1000 ⭐)'
+  );
+
+  // Step 2: Place a 2.00 TON bet on Plinko / Crash / Mines
+  const resolvedBet = resolveStrictNativeBetAmount({
+    currency: 'TON',
+    amountTon: 2.0,
+    betAmountUsdt: 3.12, // Even if a mismatched USDT value was sent alongside, amountTon=2.0 wins 1:1!
+    availableTonBalance: pam.getState().tonBalance,
+    availableStarsBalance: pam.getState().starsBalance,
+  });
+  assert.equal(resolvedBet.valid, true);
+  assert.equal(resolvedBet.currency, 'TON');
+  assert.equal(resolvedBet.amountTon, 2.0, 'Must resolve strictly to 2.00 TON without USDT distortion');
+
+  const betDebit = pam.debit({
+    transactionUuid: 'tx_bet_2ton',
+    roundId: 'MG-PLINKO-1',
+    vertical: 'INSTANT_PLINKO',
+    currency: 'TON',
+    amountTon: resolvedBet.amountTon,
+  });
+  assert.equal(betDebit.ok, true);
+  assert.equal(
+    pam.getState().tonBalance,
+    97.0,
+    'After betting 2.00 TON from 99.00 TON, balance before payout must be strictly 97.00 TON'
+  );
+
+  // Step 3: Win with multiplier 1.96x -> must credit strictly 2.00 * 1.96 = 3.92 TON -> 97.00 + 3.92 = 100.92 TON
+  const multiplier = 1.96;
+  const payout = computeStrictNativePayout({
+    currency: 'TON',
+    betAmountTon: resolvedBet.amountTon,
+    betAmountStars: 0,
+    multiplier,
+    won: true,
+  });
+  assert.equal(payout.payoutTon, 3.92, '2.00 TON * 1.96x must equal strictly 3.92 TON');
+
+  const winCredit = pam.credit({
+    transactionUuid: 'tx_win_2ton_196x',
+    referenceTransactionUuid: 'tx_bet_2ton',
+    roundId: 'MG-PLINKO-1',
+    vertical: 'INSTANT_PLINKO',
+    currency: 'TON',
+    amountTon: payout.payoutTon,
+  });
+  assert.equal(winCredit.ok, true);
+  assert.equal(
+    pam.getState().tonBalance,
+    100.92,
+    'After winning 3.92 TON on 97.00 TON balance, balance must be strictly 100.92 TON'
+  );
+
+  // Step 4: Verify 1:1 STARS accounting is 100% independent of TON
+  const starsBet = resolveStrictNativeBetAmount({
+    currency: 'STARS',
+    amountStars: 150,
+    availableTonBalance: pam.getState().tonBalance,
+    availableStarsBalance: pam.getState().starsBalance,
+  });
+  assert.equal(starsBet.valid, true);
+  assert.equal(starsBet.amountStars, 150);
+
+  pam.debit({
+    transactionUuid: 'tx_stars_150',
+    roundId: 'MG-MINES-1',
+    vertical: 'INSTANT_MINES',
+    currency: 'STARS',
+    amountStars: starsBet.amountStars,
+  });
+  assert.equal(pam.getState().starsBalance, 850, '1000 - 150 Stars = strictly 850 Stars');
+  assert.equal(pam.getState().tonBalance, 100.92, 'TON balance remains strictly 100.92 TON');
+
+  const starsPayout = computeStrictNativePayout({
+    currency: 'STARS',
+    betAmountTon: 0,
+    betAmountStars: 150,
+    multiplier: 2.0,
+    won: true,
+  });
+  assert.equal(starsPayout.payoutStars, 300);
+
+  pam.credit({
+    transactionUuid: 'tx_stars_win_300',
+    referenceTransactionUuid: 'tx_stars_150',
+    roundId: 'MG-MINES-1',
+    vertical: 'INSTANT_MINES',
+    currency: 'STARS',
+    amountStars: starsPayout.payoutStars,
+  });
+  assert.equal(pam.getState().starsBalance, 1150, '850 + 300 Stars = strictly 1150 Stars');
+  assert.equal(pam.getState().tonBalance, 100.92, 'TON balance remains strictly 100.92 TON');
+});
+
 
 
 

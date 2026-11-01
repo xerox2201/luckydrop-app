@@ -63,6 +63,11 @@ import {
   checkUserBannedGuard,
   evaluateHardenedAdminSession,
   executeAdminBalanceAdjustment,
+  isMaskedOrPlaceholderBotToken,
+  normalizeNumericInputString,
+  resolveStrictNativeBetAmount,
+  computeStrictNativePayout,
+  resolveStrictNativeTicketCost,
   type IsolatedUserAccountRecord,
   type AdminAuditLogEntry,
 } from './src/services/securityGuard.ts';
@@ -413,6 +418,12 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
         if (!Array.isArray(parsed.adminAuditLogs)) {
           parsed.adminAuditLogs = [];
         }
+        if (
+          parsed.telegramBotConfig &&
+          isMaskedOrPlaceholderBotToken(parsed.telegramBotConfig.botToken)
+        ) {
+          parsed.telegramBotConfig.botToken = '';
+        }
         const deletedSet = new Set(
           Array.isArray(parsed.deletedRoundCodes) ? parsed.deletedRoundCodes : []
         );
@@ -571,12 +582,49 @@ function normalizeTelegramChatId(rawChatId: string): string {
 }
 
 function getEffectiveBotToken(): string {
-  return (
-    serverSecurityConfig.telegramBotToken ||
+  const dbToken = (dbState.telegramBotConfig?.botToken || '').trim();
+  const validDbToken = isMaskedOrPlaceholderBotToken(dbToken) ? '' : dbToken;
+  const envToken = (
     process.env.TELEGRAM_BOT_TOKEN ||
-    dbState.telegramBotConfig.botToken ||
+    serverSecurityConfig.telegramBotToken ||
     ''
   ).trim();
+  const validEnvToken = isMaskedOrPlaceholderBotToken(envToken) ? '' : envToken;
+  return validDbToken || validEnvToken || '';
+}
+
+function getEffectiveAdminTelegramIds(): number[] {
+  const liveCfg = loadServerSecurityConfig(process.env);
+  if (liveCfg.adminTelegramUserIds.length > 0) {
+    return liveCfg.adminTelegramUserIds;
+  }
+  return [6176189129, 778899101, 700192837, 104928311];
+}
+
+function createSignedBackupDownloadToken(adminId: string | number): string {
+  const exp = Date.now() + 10 * 60 * 1000; // 10 minutes validity
+  const payload = `${adminId}:${exp}`;
+  const secret = getEffectiveBotToken() || 'luckydrop_backup_download_hmac_secret';
+  const sig = sha256Hex(`${secret}:${payload}`).slice(0, 32);
+  return Buffer.from(`${payload}:${sig}`, 'utf-8').toString('base64url');
+}
+
+function verifySignedBackupDownloadToken(rawToken: unknown): boolean {
+  const token = String(rawToken || '').trim();
+  if (!token) return false;
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+    const [adminId, expStr, sig] = decoded.split(':');
+    const exp = Number(expStr);
+    if (!adminId || !Number.isFinite(exp) || Date.now() > exp || !sig) {
+      return false;
+    }
+    const secret = getEffectiveBotToken() || 'luckydrop_backup_download_hmac_secret';
+    const expectedSig = sha256Hex(`${secret}:${adminId}:${expStr}`).slice(0, 32);
+    return sig === expectedSig;
+  } catch {
+    return false;
+  }
 }
 
 function getEffectiveNotificationChatId(): string {
@@ -634,12 +682,24 @@ function resolveVerifiedTelegramSession(req: express.Request): {
     (req.body?.initData as string | undefined) ||
     '';
   const activeBotToken = getEffectiveBotToken();
+  const envBotToken = !isMaskedOrPlaceholderBotToken(liveSecurityCfg.telegramBotToken)
+    ? liveSecurityCfg.telegramBotToken
+    : '';
+  const hasSignedHashParam = initDataRaw.includes('hash=');
+  const authBotToken = hasSignedHashParam ? activeBotToken || envBotToken : envBotToken;
 
-  const verification = verifyTelegramWebAppInitData({
+  let verification = verifyTelegramWebAppInitData({
     initDataRaw,
-    botToken: activeBotToken,
+    botToken: authBotToken,
     strictMode: liveSecurityCfg.strictTelegramInitDataAuth,
   });
+  if (!verification.valid && hasSignedHashParam && envBotToken && envBotToken !== authBotToken) {
+    verification = verifyTelegramWebAppInitData({
+      initDataRaw,
+      botToken: envBotToken,
+      strictMode: liveSecurityCfg.strictTelegramInitDataAuth,
+    });
+  }
 
   let initDataUserId: number | null = verification.user?.id ?? null;
   let candidateUserId: number | null = verification.user?.id ?? null;
@@ -705,13 +765,10 @@ function resolveVerifiedTelegramSession(req: express.Request): {
 
   // Hardened Admin Auth: Raw X-Telegram-User-Id headers can NEVER grant admin privileges,
   // and when TELEGRAM_BOT_TOKEN is configured, cryptographic HMAC-SHA256 verification of X-Telegram-Init-Data is mandatory.
-  const effectiveAdminIds =
-    liveSecurityCfg.adminTelegramUserIds.length > 0
-      ? liveSecurityCfg.adminTelegramUserIds
-      : [778899101, 700192837, 104928311];
+  const effectiveAdminIds = getEffectiveAdminTelegramIds();
   const isAdmin = evaluateHardenedAdminSession({
     verification,
-    botToken: activeBotToken,
+    botToken: authBotToken,
     initDataUserId,
     adminTelegramUserIds: effectiveAdminIds,
   });
@@ -811,6 +868,14 @@ function requireAdminAuth(
   res: express.Response,
   next: express.NextFunction
 ) {
+  // Allow signed short-lived downloadLink token on GET /api/admin/db/backup for Telegram Mobile WebView openLink/downloadFile
+  if (
+    req.method === 'GET' &&
+    req.path.startsWith('/db/backup') &&
+    verifySignedBackupDownloadToken(req.query.downloadToken)
+  ) {
+    return next();
+  }
   const session = resolveVerifiedTelegramSession(req);
   if (!session.isAdmin) {
     return res.status(403).json({
@@ -932,17 +997,27 @@ async function dispatchAdminTelegramAlert(params: {
   seedHash?: string;
   withdrawalCode?: string;
   destinationAddress?: string;
-}): Promise<{ delivered: boolean; apiDescription: string; logItem: TelegramAlertLogItem }> {
+  fallbackAdminUserId?: string | number | null;
+}): Promise<{
+  delivered: boolean;
+  usedPersonalDmFallback?: boolean;
+  apiDescription: string;
+  logItem: TelegramAlertLogItem;
+}> {
   const cfg = dbState.telegramBotConfig;
   const activeBotToken = getEffectiveBotToken();
   const normalizedChatId = getEffectiveNotificationChatId();
+  const adminIds = getEffectiveAdminTelegramIds();
+  const fallbackPersonalChatId =
+    params.fallbackAdminUserId || (adminIds.length > 0 ? adminIds[0] : 6176189129);
 
   const mappedEventType: LiveBroadcastEventType =
     params.eventType === 'WITHDRAWAL' ? 'HIGH_VALUE_WITHDRAWAL' : params.eventType;
 
+  const primaryTargetChat = normalizedChatId || String(fallbackPersonalChatId);
   const payload = buildLiveChannelBroadcastPayload({
     eventType: mappedEventType,
-    chatId: normalizedChatId || '@LuckyDropWinners',
+    chatId: primaryTargetChat,
     appDomain: serverSecurityConfig.appDomain,
     userDisplayName: params.userDisplayName,
     amountTon:
@@ -965,28 +1040,82 @@ async function dispatchAdminTelegramAlert(params: {
   });
 
   let delivered = false;
+  let usedPersonalDmFallback = false;
   let apiDescription =
-    'متغیر محیطی TELEGRAM_BOT_TOKEN یا TELEGRAM_NOTIFICATION_CHAT_ID در فایل .env سرور تنظیم نشده است.';
+    'متغیر محیطی TELEGRAM_BOT_TOKEN در تنظیمات سرور ثبت نشده است.';
 
-  if (cfg.enabled && activeBotToken.length > 10 && normalizedChatId.length > 2) {
+  const CHANNEL_FALLBACK_HELPER_FA =
+    'برای ارسال به کانال/گروه، ابتدا ربات را در آن کانال Admin کنید؛ پیام به پیوی ادمین ارسال شد.';
+
+  if (cfg.enabled && activeBotToken.length > 10) {
     try {
-      const resp = await fetch(
-        `https://api.telegram.org/bot${encodeURIComponent(activeBotToken)}/sendMessage`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+      if (normalizedChatId.length > 2) {
+        const resp = await fetch(
+          `https://api.telegram.org/bot${encodeURIComponent(activeBotToken)}/sendMessage`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }
+        );
+        const respData: any = await resp.json().catch(() => ({}));
+        if (resp.ok && respData?.ok) {
+          delivered = true;
+          apiDescription = `ارسال موفق به تلگرام (${normalizedChatId})`;
+        } else {
+          // Automatic fallback to Admin's personal Telegram DM when channel/group returns 'Bad Request: chat not found' or permission error
+          usedPersonalDmFallback = true;
+          const dmPayload = {
+            ...payload,
+            chat_id: fallbackPersonalChatId,
+          };
+          const dmResp = await fetch(
+            `https://api.telegram.org/bot${encodeURIComponent(activeBotToken)}/sendMessage`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(dmPayload),
+            }
+          ).catch(() => null);
+          const dmData: any = dmResp ? await dmResp.json().catch(() => ({})) : {};
+          if (dmResp && dmResp.ok && dmData?.ok) {
+            delivered = true;
+            apiDescription = CHANNEL_FALLBACK_HELPER_FA;
+          } else {
+            delivered = false;
+            const errDesc = String(respData?.description || '');
+            apiDescription =
+              errDesc.toLowerCase().includes('chat not found') ||
+              errDesc.toLowerCase().includes('forbidden') ||
+              errDesc.toLowerCase().includes('administrator')
+                ? `${CHANNEL_FALLBACK_HELPER_FA} (پاسخ تلگرام برای ${normalizedChatId}: ${errDesc})`
+                : errDesc ||
+                  `خطای API تلگرام (کد ${resp.status}) — ${CHANNEL_FALLBACK_HELPER_FA}`;
+          }
         }
-      );
-      const respData: any = await resp.json().catch(() => ({}));
-      if (resp.ok && respData?.ok) {
-        delivered = true;
-        apiDescription = `ارسال موفق به تلگرام (${normalizedChatId})`;
-      } else {
-        delivered = false;
-        apiDescription =
-          respData?.description ||
-          `خطای API تلگرام (کد ${resp.status}) — مطمئن شوید ربات را در کانال/گروه Admin کرده‌اید و آیدی چنل (${normalizedChatId}) صحیح است.`;
+      } else if (fallbackPersonalChatId) {
+        // No group/channel configured yet -> send directly to Admin's personal Telegram chat
+        usedPersonalDmFallback = true;
+        const dmPayload = {
+          ...payload,
+          chat_id: fallbackPersonalChatId,
+        };
+        const dmResp = await fetch(
+          `https://api.telegram.org/bot${encodeURIComponent(activeBotToken)}/sendMessage`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dmPayload),
+          }
+        );
+        const dmData: any = await dmResp.json().catch(() => ({}));
+        if (dmResp.ok && dmData?.ok) {
+          delivered = true;
+          apiDescription = CHANNEL_FALLBACK_HELPER_FA;
+        } else {
+          delivered = false;
+          apiDescription = `${CHANNEL_FALLBACK_HELPER_FA} (${dmData?.description || `کد ${dmResp.status}`})`;
+        }
       }
     } catch (err: any) {
       delivered = false;
@@ -1007,7 +1136,7 @@ async function dispatchAdminTelegramAlert(params: {
   };
   dbState.telegramAlertsLog.unshift(logItem);
   persistAll();
-  return { delivered, apiDescription, logItem };
+  return { delivered, usedPersonalDmFallback, apiDescription, logItem };
 }
 
 // ============================================================================
@@ -1081,25 +1210,21 @@ app.post(
       } = req.body || {};
 
       const activeCurrency = currency === 'STARS' ? 'STARS' : 'TON';
-      const rawAmount =
-        activeCurrency === 'STARS'
-          ? amountStars ?? (typeof amountUsdt === 'number' ? Math.round(amountUsdt / 0.02) : NaN)
-          : amountTon ?? (typeof amountUsdt === 'number' ? amountUsdt / DEFAULT_FX_RATES.TON : NaN);
-
-      const validation = validateStrictFinancialAmount({
-        rawAmount,
+      const betResolution = resolveStrictNativeBetAmount({
         currency: activeCurrency,
-        minAmount: activeCurrency === 'STARS' ? 1 : 0.001,
-        maxAvailableBalance:
-          activeCurrency === 'STARS'
-            ? userPam.getState().starsBalance
-            : userPam.getState().tonBalance,
+        amountTon: typeof amountTon === 'number' ? amountTon : req.body?.betAmountTon,
+        amountStars: typeof amountStars === 'number' ? amountStars : req.body?.betAmountStars,
+        bet: req.body?.bet,
+        amount: req.body?.amount,
+        betAmountUsdt: typeof amountUsdt === 'number' ? amountUsdt : undefined,
+        availableTonBalance: userPam.getState().tonBalance,
+        availableStarsBalance: userPam.getState().starsBalance,
       });
 
-      if (!validation.valid) {
+      if (!betResolution.valid) {
         return res.status(400).json({
           ok: false,
-          error: validation.error,
+          error: betResolution.error,
           tonBalance: userPam.getState().tonBalance,
           starsBalance: userPam.getState().starsBalance,
         });
@@ -1111,9 +1236,9 @@ app.post(
         roundId: String(round_id || roundId),
         vertical,
         currency: activeCurrency,
-        amountTon: activeCurrency === 'TON' ? validation.cleanAmount : undefined,
-        amountStars: activeCurrency === 'STARS' ? validation.cleanAmount : undefined,
-        amountUsdt: Number(amountUsdt) || 0,
+        amountTon: activeCurrency === 'TON' ? betResolution.amountTon : undefined,
+        amountStars: activeCurrency === 'STARS' ? betResolution.amountStars : undefined,
+        amountUsdt: betResolution.nominalUsdt,
         note,
         incrementNonce: Boolean(incrementNonce),
       });
@@ -1166,16 +1291,32 @@ app.post(
         amountUsdt = 0,
         note,
       } = req.body || {};
+      const activeCurrency = currency === 'STARS' ? 'STARS' : 'TON';
+      const cleanTon =
+        activeCurrency === 'TON'
+          ? typeof amountTon === 'number' && Number.isFinite(amountTon) && amountTon >= 0
+            ? roundTonClean(amountTon)
+            : roundTonClean(Number(amountUsdt || 0) / 5.0)
+          : undefined;
+      const cleanStars =
+        activeCurrency === 'STARS'
+          ? typeof amountStars === 'number' && Number.isFinite(amountStars) && amountStars >= 0
+            ? roundStarsClean(amountStars)
+            : roundStarsClean(Math.round(Number(amountUsdt || 0) / 0.02))
+          : undefined;
       const uuid = String(transaction_uuid || transactionUuid || '').trim();
       const result = userPam.credit({
         transactionUuid: uuid,
         referenceTransactionUuid: refUuidRaw ? String(refUuidRaw) : null,
         roundId: String(round_id || roundId),
         vertical,
-        currency: currency === 'STARS' ? 'STARS' : 'TON',
-        amountTon: typeof amountTon === 'number' ? Number(amountTon) : undefined,
-        amountStars: typeof amountStars === 'number' ? Number(amountStars) : undefined,
-        amountUsdt: Number(amountUsdt),
+        currency: activeCurrency,
+        amountTon: cleanTon,
+        amountStars: cleanStars,
+        amountUsdt:
+          activeCurrency === 'TON'
+            ? Number(((cleanTon || 0) * 5.0).toFixed(4))
+            : Number(((cleanStars || 0) * 0.02).toFixed(4)),
         note,
       });
 
@@ -1368,6 +1509,10 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
     const {
       gameId = 'PLINKO',
       currency = 'TON',
+      amountTon,
+      betAmountTon,
+      amountStars,
+      betAmountStars,
       betAmountUsdt,
       bet,
       amount,
@@ -1398,46 +1543,45 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
       ((gameId === 'PLINKO' && userAccount.freePlinkoDrops > 0) ||
         (gameId === 'SCRATCH' && userAccount.freeScratchCards > 0));
 
-    // Resolve raw bet amount in USDT or native currency
-    const rawBetUsdt =
-      betAmountUsdt !== undefined
-        ? Number(betAmountUsdt)
-        : bet !== undefined
-        ? Number(bet)
-        : amount !== undefined
-        ? Number(amount)
-        : NaN;
-
+    let safeBetTon = 0;
+    let safeBetStars = 0;
     let safeBetUsdt = 0;
+
     if (isFreeDrop) {
       if (gameId === 'PLINKO') {
         userAccount.freePlinkoDrops = Math.max(0, userAccount.freePlinkoDrops - 1);
       } else if (gameId === 'SCRATCH') {
         userAccount.freeScratchCards = Math.max(0, userAccount.freeScratchCards - 1);
       }
+      safeBetTon = activeCurrency === 'TON' ? 0.05 : 0;
+      safeBetStars = activeCurrency === 'STARS' ? 12 : 0;
       safeBetUsdt = 0.25; // Play-only nominal value for free drop
     } else {
-      const currentBalanceUsdt =
-        activeCurrency === 'STARS'
-          ? Number((userPam.getState().starsBalance * 0.02).toFixed(4))
-          : Number((userPam.getState().tonBalance * DEFAULT_FX_RATES.TON).toFixed(4));
-
-      const betValidation = validateStrictFinancialAmount({
-        rawAmount: rawBetUsdt,
-        currency: 'USDT',
-        minAmount: 0.01,
-        maxBalance: currentBalanceUsdt,
+      const betResolution = resolveStrictNativeBetAmount({
+        currency: activeCurrency,
+        amountTon: typeof amountTon === 'number' ? amountTon : undefined,
+        betAmountTon: typeof betAmountTon === 'number' ? betAmountTon : undefined,
+        amountStars: typeof amountStars === 'number' ? amountStars : undefined,
+        betAmountStars: typeof betAmountStars === 'number' ? betAmountStars : undefined,
+        bet: typeof bet === 'number' ? bet : undefined,
+        amount: typeof amount === 'number' ? amount : undefined,
+        betAmountUsdt: typeof betAmountUsdt === 'number' ? betAmountUsdt : undefined,
+        availableTonBalance: userPam.getState().tonBalance,
+        availableStarsBalance: userPam.getState().starsBalance,
       });
 
-      if (!betValidation.valid) {
+      if (!betResolution.valid) {
         return res.status(400).json({
           ok: false,
-          error: betValidation.error,
+          error: betResolution.error,
           tonBalance: userPam.getState().tonBalance,
           starsBalance: userPam.getState().starsBalance,
         });
       }
-      safeBetUsdt = betValidation.cleanAmount;
+
+      safeBetTon = betResolution.amountTon;
+      safeBetStars = betResolution.amountStars;
+      safeBetUsdt = betResolution.nominalUsdt;
     }
 
     const debitUuid = String(transaction_uuid || generateDeterministicUuid('mg_debit')).trim();
@@ -1452,8 +1596,10 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
         roundId,
         vertical: verticalName,
         currency: activeCurrency,
+        amountTon: activeCurrency === 'TON' ? safeBetTon : undefined,
+        amountStars: activeCurrency === 'STARS' ? safeBetStars : undefined,
         amountUsdt: safeBetUsdt,
-        note: `شرط بازی آنی ${gameId} (${roundId} • ${activeCurrency})`,
+        note: `شرط بازی آنی ${gameId} (${roundId} • ${activeCurrency === 'TON' ? `${safeBetTon} TON` : `${safeBetStars} ⭐`})`,
         incrementNonce: true,
       });
 
@@ -1505,9 +1651,20 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
       hiloSummaryLabel: typeof hiloSummaryLabel === 'string' ? hiloSummaryLabel : undefined,
     });
 
-    // Step 3: Credit payout on the server
+    // Step 3: Strict 1:1 Native Currency Payout (`safeBetTon * multiplier` or `Math.round(safeBetStars * multiplier)`)
+    const nativePayout = computeStrictNativePayout({
+      currency: activeCurrency,
+      betAmountTon: safeBetTon,
+      betAmountStars: safeBetStars,
+      multiplier: evaluation.multiplier,
+      won: evaluation.won,
+    });
+
     let creditEntry = null;
-    if (evaluation.payoutUsdt > 0) {
+    if (
+      (activeCurrency === 'TON' && nativePayout.payoutTon > 0) ||
+      (activeCurrency === 'STARS' && nativePayout.payoutStars > 0)
+    ) {
       const creditUuid = generateDeterministicUuid('mg_credit');
       const creditRes = userPam.credit({
         transactionUuid: creditUuid,
@@ -1515,8 +1672,10 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
         roundId,
         vertical: verticalName,
         currency: activeCurrency,
-        amountUsdt: evaluation.payoutUsdt,
-        note: `تسویه ضریب ${gameId} (${evaluation.multiplier}x • ${activeCurrency}) — مرجع: ${debitUuid.slice(0, 14)}`,
+        amountTon: activeCurrency === 'TON' ? nativePayout.payoutTon : undefined,
+        amountStars: activeCurrency === 'STARS' ? nativePayout.payoutStars : undefined,
+        amountUsdt: nativePayout.payoutNominalUsdt,
+        note: `تسویه ضریب ${gameId} (${evaluation.multiplier}x • ${activeCurrency === 'TON' ? `${nativePayout.payoutTon} TON` : `${nativePayout.payoutStars} ⭐`}) — مرجع: ${debitUuid.slice(0, 14)}`,
       });
       creditEntry = creditRes.ledgerEntry || null;
     }
@@ -1587,7 +1746,9 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
       void dispatchAdminTelegramAlert({
         eventType: 'BIG_MULTIPLIER_WIN',
         userDisplayName: userPam.getState().displayName,
-        amountUsdt: evaluation.payoutUsdt,
+        amountUsdt: nativePayout.payoutNominalUsdt || evaluation.payoutUsdt,
+        amountTon: activeCurrency === 'TON' ? nativePayout.payoutTon : undefined,
+        amountStars: activeCurrency === 'STARS' ? nativePayout.payoutStars : undefined,
         network: 'TON Mini-Games Arena',
         multiplierX: evaluation.multiplier,
         gameTitle: String(gameId),
@@ -1597,8 +1758,20 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
     }
 
     const latestPam = userPam.getState();
-    const redactedEvaluation: MiniGameEvaluationResult = {
+    const redactedEvaluation: MiniGameEvaluationResult & {
+      currency?: 'TON' | 'STARS';
+      betAmountTon?: number;
+      betAmountStars?: number;
+      payoutTon?: number;
+      payoutStars?: number;
+    } = {
       ...evaluation,
+      payoutUsdt: nativePayout.payoutNominalUsdt,
+      currency: activeCurrency,
+      betAmountTon: safeBetTon,
+      betAmountStars: safeBetStars,
+      payoutTon: nativePayout.payoutTon,
+      payoutStars: nativePayout.payoutStars,
       // Never leak the active unrevealed serverSeed before the user rotates it!
       serverSeed: '',
     };
@@ -1606,6 +1779,11 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
     return res.json({
       ok: true,
       evaluation: redactedEvaluation,
+      currency: activeCurrency,
+      betAmountTon: safeBetTon,
+      betAmountStars: safeBetStars,
+      payoutTon: nativePayout.payoutTon,
+      payoutStars: nativePayout.payoutStars,
       bonusTicketAwarded,
       debitTransactionUuid: debitUuid,
       debitEntry,
@@ -1669,6 +1847,10 @@ app.post(
       const {
         gameId = 'MINES',
         currency = 'TON',
+        amountTon,
+        betAmountTon,
+        amountStars,
+        betAmountStars,
         betAmountUsdt,
         bet,
         amount,
@@ -1685,37 +1867,31 @@ app.post(
       }
 
       const activeCurrency = currency === 'STARS' ? 'STARS' : 'TON';
-      const rawBetUsdt =
-        betAmountUsdt !== undefined
-          ? Number(betAmountUsdt)
-          : bet !== undefined
-          ? Number(bet)
-          : amount !== undefined
-          ? Number(amount)
-          : NaN;
-
-      const currentBalanceUsdt =
-        activeCurrency === 'STARS'
-          ? Number((userPam.getState().starsBalance * 0.02).toFixed(4))
-          : Number((userPam.getState().tonBalance * DEFAULT_FX_RATES.TON).toFixed(4));
-
-      const betValidation = validateStrictFinancialAmount({
-        rawAmount: rawBetUsdt,
-        currency: 'USDT',
-        minAmount: 0.01,
-        maxBalance: currentBalanceUsdt,
+      const betResolution = resolveStrictNativeBetAmount({
+        currency: activeCurrency,
+        amountTon: typeof amountTon === 'number' ? amountTon : undefined,
+        betAmountTon: typeof betAmountTon === 'number' ? betAmountTon : undefined,
+        amountStars: typeof amountStars === 'number' ? amountStars : undefined,
+        betAmountStars: typeof betAmountStars === 'number' ? betAmountStars : undefined,
+        bet: typeof bet === 'number' ? bet : undefined,
+        amount: typeof amount === 'number' ? amount : undefined,
+        betAmountUsdt: typeof betAmountUsdt === 'number' ? betAmountUsdt : undefined,
+        availableTonBalance: userPam.getState().tonBalance,
+        availableStarsBalance: userPam.getState().starsBalance,
       });
 
-      if (!betValidation.valid) {
+      if (!betResolution.valid) {
         return res.status(400).json({
           ok: false,
-          error: betValidation.error,
+          error: betResolution.error,
           tonBalance: userPam.getState().tonBalance,
           starsBalance: userPam.getState().starsBalance,
         });
       }
 
-      const safeBetUsdt = betValidation.cleanAmount;
+      const safeBetTon = betResolution.amountTon;
+      const safeBetStars = betResolution.amountStars;
+      const safeBetUsdt = betResolution.nominalUsdt;
       const seedsBefore = { ...userPam.getState().seeds };
       const debitUuid = String(
         transaction_uuid || generateDeterministicUuid('sess_debit')
@@ -1727,8 +1903,10 @@ app.post(
         roundId,
         vertical: `INSTANT_${gameId}`,
         currency: activeCurrency,
+        amountTon: activeCurrency === 'TON' ? safeBetTon : undefined,
+        amountStars: activeCurrency === 'STARS' ? safeBetStars : undefined,
         amountUsdt: safeBetUsdt,
-        note: `شروع نشست بازی ${gameId} (${roundId} • ${activeCurrency})`,
+        note: `شروع نشست بازی ${gameId} (${roundId} • ${activeCurrency === 'TON' ? `${safeBetTon} TON` : `${safeBetStars} ⭐`})`,
         incrementNonce: true,
       });
 
@@ -1763,6 +1941,8 @@ app.post(
           sessionId,
           gameId: 'MINES',
           currency: activeCurrency,
+          betAmountTon: safeBetTon,
+          betAmountStars: safeBetStars,
           betAmountUsdt: safeBetUsdt,
           debitTransactionUuid: debitUuid,
           roundId,
@@ -1791,6 +1971,8 @@ app.post(
           sessionId,
           gameId: 'TOWER_3D',
           currency: activeCurrency,
+          betAmountTon: safeBetTon,
+          betAmountStars: safeBetStars,
           betAmountUsdt: safeBetUsdt,
           debitTransactionUuid: debitUuid,
           roundId,
@@ -1815,6 +1997,8 @@ app.post(
           sessionId: userAccount.activeGameSession.sessionId,
           gameId: userAccount.activeGameSession.gameId,
           currency: userAccount.activeGameSession.currency,
+          betAmountTon: userAccount.activeGameSession.betAmountTon,
+          betAmountStars: userAccount.activeGameSession.betAmountStars,
           betAmountUsdt: userAccount.activeGameSession.betAmountUsdt,
           roundId: userAccount.activeGameSession.roundId,
           serverSeedHash: userAccount.activeGameSession.serverSeedHash,
@@ -1901,6 +2085,8 @@ app.post(
             revealedTiles: revealed,
             currentMultiplier: 0,
             payoutUsdt: 0,
+            payoutTon: 0,
+            payoutStars: 0,
             evaluation: {
               ...evalResult,
               serverSeed: '',
@@ -1923,16 +2109,31 @@ app.post(
 
         // Auto-cashout if all safe gems are uncovered
         if (nextRevealed.length >= maxSafe) {
-          const payoutUsdt = Math.min(
-            DICE_TREASURY_MAX_PAYOUT_USDT,
-            Number((activeSess.betAmountUsdt * currentMultiplier).toFixed(2))
-          );
+          const sessBetTon =
+            typeof activeSess.betAmountTon === 'number' && activeSess.betAmountTon > 0
+              ? activeSess.betAmountTon
+              : roundTonClean(activeSess.betAmountUsdt / 5.0);
+          const sessBetStars =
+            typeof activeSess.betAmountStars === 'number' && activeSess.betAmountStars > 0
+              ? activeSess.betAmountStars
+              : roundStarsClean(Math.round(activeSess.betAmountUsdt / 0.02));
+          const nativePayout = computeStrictNativePayout({
+            currency: activeSess.currency,
+            betAmountTon: sessBetTon,
+            betAmountStars: sessBetStars,
+            multiplier: currentMultiplier,
+            won: true,
+          });
+          const payoutUsdt = nativePayout.payoutNominalUsdt;
+
           const creditRes = userPam.credit({
             transactionUuid: generateDeterministicUuid('sess_credit'),
             referenceTransactionUuid: activeSess.debitTransactionUuid,
             roundId: activeSess.roundId,
             vertical: 'INSTANT_MINES',
             currency: activeSess.currency,
+            amountTon: activeSess.currency === 'TON' ? nativePayout.payoutTon : undefined,
+            amountStars: activeSess.currency === 'STARS' ? nativePayout.payoutStars : undefined,
             amountUsdt: payoutUsdt,
             note: `برد کامل Mines (${currentMultiplier}x • ${nextRevealed.length}💎)`,
           });
@@ -1959,8 +2160,11 @@ app.post(
             mineIndices,
             currentMultiplier,
             payoutUsdt,
+            payoutTon: nativePayout.payoutTon,
+            payoutStars: nativePayout.payoutStars,
             evaluation: {
               ...evalResult,
+              payoutUsdt,
               serverSeed: '',
             },
             creditEntry: creditRes.ledgerEntry,
@@ -2029,6 +2233,8 @@ app.post(
           selectedColumns: [...selectedCols, colIndex],
           currentMultiplier: 0,
           payoutUsdt: 0,
+          payoutTon: 0,
+          payoutStars: 0,
           evaluation: {
             ...evalResult,
             serverSeed: '',
@@ -2049,16 +2255,31 @@ app.post(
       const currentMultiplier = calculateTowerStepMultiplier(diff, clearedFloors);
 
       if (clearedFloors >= 8) {
-        const payoutUsdt = Math.min(
-          DICE_TREASURY_MAX_PAYOUT_USDT,
-          Number((activeSess.betAmountUsdt * currentMultiplier).toFixed(2))
-        );
+        const sessBetTon =
+          typeof activeSess.betAmountTon === 'number' && activeSess.betAmountTon > 0
+            ? activeSess.betAmountTon
+            : roundTonClean(activeSess.betAmountUsdt / 5.0);
+        const sessBetStars =
+          typeof activeSess.betAmountStars === 'number' && activeSess.betAmountStars > 0
+            ? activeSess.betAmountStars
+            : roundStarsClean(Math.round(activeSess.betAmountUsdt / 0.02));
+        const nativePayout = computeStrictNativePayout({
+          currency: activeSess.currency,
+          betAmountTon: sessBetTon,
+          betAmountStars: sessBetStars,
+          multiplier: currentMultiplier,
+          won: true,
+        });
+        const payoutUsdt = nativePayout.payoutNominalUsdt;
+
         const creditRes = userPam.credit({
           transactionUuid: generateDeterministicUuid('sess_credit'),
           referenceTransactionUuid: activeSess.debitTransactionUuid,
           roundId: activeSess.roundId,
           vertical: 'INSTANT_TOWER_3D',
           currency: activeSess.currency,
+          amountTon: activeSess.currency === 'TON' ? nativePayout.payoutTon : undefined,
+          amountStars: activeSess.currency === 'STARS' ? nativePayout.payoutStars : undefined,
           amountUsdt: payoutUsdt,
           note: `فتح کامل برج کریستالی Tower 3D (${currentMultiplier}x • طبقه 8/8)`,
         });
@@ -2086,8 +2307,11 @@ app.post(
           trapColumnsPerFloor: trapCols,
           currentMultiplier,
           payoutUsdt,
+          payoutTon: nativePayout.payoutTon,
+          payoutStars: nativePayout.payoutStars,
           evaluation: {
             ...evalResult,
+            payoutUsdt,
             serverSeed: '',
           },
           creditEntry: creditRes.ledgerEntry,
@@ -2132,6 +2356,15 @@ app.post(
         });
       }
 
+      const sessBetTon =
+        typeof activeSess.betAmountTon === 'number' && activeSess.betAmountTon > 0
+          ? activeSess.betAmountTon
+          : roundTonClean(activeSess.betAmountUsdt / 5.0);
+      const sessBetStars =
+        typeof activeSess.betAmountStars === 'number' && activeSess.betAmountStars > 0
+          ? activeSess.betAmountStars
+          : roundStarsClean(Math.round(activeSess.betAmountUsdt / 0.02));
+
       if (activeSess.gameId === 'MINES') {
         const revealed = activeSess.revealedTiles || [];
         if (revealed.length <= 0) {
@@ -2151,13 +2384,23 @@ app.post(
           selectedTiles: revealed,
         });
 
+        const nativePayout = computeStrictNativePayout({
+          currency: activeSess.currency,
+          betAmountTon: sessBetTon,
+          betAmountStars: sessBetStars,
+          multiplier: evalResult.multiplier,
+          won: evalResult.won,
+        });
+
         const creditRes = userPam.credit({
           transactionUuid: generateDeterministicUuid('sess_credit'),
           referenceTransactionUuid: activeSess.debitTransactionUuid,
           roundId: activeSess.roundId,
           vertical: 'INSTANT_MINES',
           currency: activeSess.currency,
-          amountUsdt: evalResult.payoutUsdt,
+          amountTon: activeSess.currency === 'TON' ? nativePayout.payoutTon : undefined,
+          amountStars: activeSess.currency === 'STARS' ? nativePayout.payoutStars : undefined,
+          amountUsdt: nativePayout.payoutNominalUsdt,
           note: `برداشت موفق Mines (${evalResult.multiplier}x • ${revealed.length}💎)`,
         });
 
@@ -2170,7 +2413,9 @@ app.post(
           void dispatchAdminTelegramAlert({
             eventType: 'BIG_MULTIPLIER_WIN',
             userDisplayName: userPam.getState().displayName,
-            amountUsdt: evalResult.payoutUsdt,
+            amountUsdt: nativePayout.payoutNominalUsdt,
+            amountTon: activeSess.currency === 'TON' ? nativePayout.payoutTon : undefined,
+            amountStars: activeSess.currency === 'STARS' ? nativePayout.payoutStars : undefined,
             network: 'TON Mini-Games Arena',
             multiplierX: evalResult.multiplier,
             gameTitle: 'MINES',
@@ -2186,9 +2431,12 @@ app.post(
           mineIndices,
           revealedTiles: revealed,
           multiplier: evalResult.multiplier,
-          payoutUsdt: evalResult.payoutUsdt,
+          payoutUsdt: nativePayout.payoutNominalUsdt,
+          payoutTon: nativePayout.payoutTon,
+          payoutStars: nativePayout.payoutStars,
           evaluation: {
             ...evalResult,
+            payoutUsdt: nativePayout.payoutNominalUsdt,
             serverSeed: '',
           },
           creditEntry: creditRes.ledgerEntry,
@@ -2221,13 +2469,23 @@ app.post(
         selectedColumns: selectedCols,
       });
 
+      const nativePayout = computeStrictNativePayout({
+        currency: activeSess.currency,
+        betAmountTon: sessBetTon,
+        betAmountStars: sessBetStars,
+        multiplier: evalResult.multiplier,
+        won: evalResult.won,
+      });
+
       const creditRes = userPam.credit({
         transactionUuid: generateDeterministicUuid('sess_credit'),
         referenceTransactionUuid: activeSess.debitTransactionUuid,
         roundId: activeSess.roundId,
         vertical: 'INSTANT_TOWER_3D',
         currency: activeSess.currency,
-        amountUsdt: evalResult.payoutUsdt,
+        amountTon: activeSess.currency === 'TON' ? nativePayout.payoutTon : undefined,
+        amountStars: activeSess.currency === 'STARS' ? nativePayout.payoutStars : undefined,
+        amountUsdt: nativePayout.payoutNominalUsdt,
         note: `برداشت موفق Tower 3D (${evalResult.multiplier}x • طبقه ${selectedCols.length}/8)`,
       });
 
@@ -2240,7 +2498,9 @@ app.post(
         void dispatchAdminTelegramAlert({
           eventType: 'BIG_MULTIPLIER_WIN',
           userDisplayName: userPam.getState().displayName,
-          amountUsdt: evalResult.payoutUsdt,
+          amountUsdt: nativePayout.payoutNominalUsdt,
+          amountTon: activeSess.currency === 'TON' ? nativePayout.payoutTon : undefined,
+          amountStars: activeSess.currency === 'STARS' ? nativePayout.payoutStars : undefined,
           network: 'TON Mini-Games Arena',
           multiplierX: evalResult.multiplier,
           gameTitle: 'TOWER_3D',
@@ -2256,9 +2516,12 @@ app.post(
         trapColumnsPerFloor,
         selectedColumns: selectedCols,
         multiplier: evalResult.multiplier,
-        payoutUsdt: evalResult.payoutUsdt,
+        payoutUsdt: nativePayout.payoutNominalUsdt,
+        payoutTon: nativePayout.payoutTon,
+        payoutStars: nativePayout.payoutStars,
         evaluation: {
           ...evalResult,
+          payoutUsdt: nativePayout.payoutNominalUsdt,
           serverSeed: '',
         },
         creditEntry: creditRes.ledgerEntry,
@@ -2275,159 +2538,199 @@ app.post(
 );
 
 // ============================================================================
-// LIVE PRICE ORACLE & PLATFORM SNAPSHOT (WITH TONAPI + COINGECKO + BINANCE)
+// REAL-TIME LIVE PRICE ORACLE (30s BACKGROUND POLLING + FALLBACK CHAIN)
 // ============================================================================
 
-app.get('/api/oracle/live', async (_req, res) => {
-  let toman = DEFAULT_FX_RATES.TOMAN;
-  let cny = DEFAULT_FX_RATES.CNY;
-  let btc = DEFAULT_FX_RATES.BTC;
-  let ton = DEFAULT_FX_RATES.TON;
-  let trx = DEFAULT_FX_RATES.TRX;
-  let bnb = DEFAULT_FX_RATES.BNB;
-  const changes24h = { BTC: 1.42, TON: 2.15, TRX: 1.18, BNB: 0.94 };
-  const activeSources: string[] = [];
+interface ServerLiveMarketOracleState {
+  tonUsdPrice: number;
+  tonChange24hPercent: number;
+  starsUsdPrice: number;
+  starsPerTon: number;
+  btcUsdPrice: number;
+  btcChange24hPercent: number;
+  trxUsdPrice: number;
+  bnbUsdPrice: number;
+  tomanPerUsdt: number;
+  cnyPerUsdt: number;
+  source: string;
+  sources: string[];
+  lastUpdatedIso: string;
+}
 
-  const fetchJsonWithTimeout = async (url: string, timeoutMs = 3500) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LuckyDropTonOracle/5.0)' },
-      });
-      clearTimeout(timer);
-      if (!response.ok) return null;
-      return await response.json();
-    } catch {
-      clearTimeout(timer);
-      return null;
+const liveMarketOracleState: ServerLiveMarketOracleState = {
+  tonUsdPrice: 5.0,
+  tonChange24hPercent: 2.15,
+  starsUsdPrice: 0.016,
+  starsPerTon: 250,
+  btcUsdPrice: DEFAULT_FX_RATES.BTC,
+  btcChange24hPercent: 1.42,
+  trxUsdPrice: DEFAULT_FX_RATES.TRX,
+  bnbUsdPrice: DEFAULT_FX_RATES.BNB,
+  tomanPerUsdt: DEFAULT_FX_RATES.TOMAN,
+  cnyPerUsdt: DEFAULT_FX_RATES.CNY,
+  source: 'TonAPI + Binance Live Oracle',
+  sources: ['TonAPI', 'Binance'],
+  lastUpdatedIso: new Date().toISOString(),
+};
+
+const fetchJsonWithTimeout = async (url: string, timeoutMs = 3500) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LuckyDropTonOracle/5.0)' },
+    });
+    clearTimeout(timer);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+};
+
+async function refreshServerLiveMarketOracle(): Promise<ServerLiveMarketOracleState> {
+  try {
+    const activeSources: string[] = [];
+    let resolvedTonUsd = 0;
+    let resolvedTonDiff24h: number | null = null;
+
+    // 1. Primary: TonAPI v2 Rates (`https://tonapi.io/v2/rates?tokens=ton&currencies=usd`)
+    const tonApiData = await fetchJsonWithTimeout(
+      'https://tonapi.io/v2/rates?tokens=ton&currencies=usd',
+      3000
+    );
+    const tonApiUsd = Number(tonApiData?.rates?.TON?.prices?.USD);
+    const tonApiDiffRaw = String(tonApiData?.rates?.TON?.diff_24h?.USD || '')
+      .replace('%', '')
+      .replace('+', '')
+      .replace('−', '-')
+      .trim();
+    if (Number.isFinite(tonApiUsd) && tonApiUsd > 0.1) {
+      resolvedTonUsd = Number(tonApiUsd.toFixed(4));
+      const parsedDiff = parseFloat(tonApiDiffRaw);
+      if (Number.isFinite(parsedDiff)) {
+        resolvedTonDiff24h = Number(parsedDiff.toFixed(2));
+      }
+      activeSources.push('TonAPI');
     }
-  };
 
-  const [
-    tonApiData,
-    coingeckoTonData,
-    kucoinTonData,
-    tetherlandData,
-    wallexData,
-    nobitexData,
-    binanceData,
-    frankfurterData,
-    openErData,
-    kucoinData,
-  ] = await Promise.all([
-    fetchJsonWithTimeout('https://tonapi.io/v2/rates?tokens=ton&currencies=usd'),
-    fetchJsonWithTimeout(
-      'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network,bitcoin,tron,binancecoin&vs_currencies=usd&include_24hr_change=true'
-    ),
-    fetchJsonWithTimeout('https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=TON-USDT'),
-    fetchJsonWithTimeout('https://api.tetherland.com/currencies'),
-    fetchJsonWithTimeout('https://api.wallex.ir/v1/markets'),
-    fetchJsonWithTimeout('https://apiv2.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls'),
-    fetchJsonWithTimeout(
-      'https://api.binance.com/api/v3/ticker/24hr?symbols=%5B%22BTCUSDT%22,%22TONUSDT%22,%22TRXUSDT%22,%22BNBUSDT%22%5D'
-    ),
-    fetchJsonWithTimeout('https://api.frankfurter.app/latest?from=USD&to=CNY'),
-    fetchJsonWithTimeout('https://open.er-api.com/v6/latest/USD'),
-    fetchJsonWithTimeout('https://api.kucoin.com/api/v1/prices?base=CNY&currencies=USDT'),
-  ]);
-
-  const tonApiUsd = Number(tonApiData?.rates?.TON?.prices?.USD);
-  const tonApiDiff24h = String(tonApiData?.rates?.TON?.diff_24h?.USD || '')
-    .replace('%', '')
-    .replace('+', '');
-  if (Number.isFinite(tonApiUsd) && tonApiUsd > 0.1) {
-    ton = Number(tonApiUsd.toFixed(4));
-    if (Number.isFinite(parseFloat(tonApiDiff24h))) {
-      changes24h.TON = Number(parseFloat(tonApiDiff24h).toFixed(2));
+    // 2. Fallback #1: Binance (`https://api.binance.com/api/v3/ticker/price?symbol=TONUSDT` & 24hr)
+    if (!resolvedTonUsd || resolvedTonDiff24h === null) {
+      const [binancePriceData, binance24hData] = await Promise.all([
+        fetchJsonWithTimeout('https://api.binance.com/api/v3/ticker/price?symbol=TONUSDT', 3000),
+        fetchJsonWithTimeout('https://api.binance.com/api/v3/ticker/24hr?symbol=TONUSDT', 3000),
+      ]);
+      const binPrice = Number(binancePriceData?.price || binance24hData?.lastPrice);
+      const binPct = Number(binance24hData?.priceChangePercent);
+      if (!resolvedTonUsd && Number.isFinite(binPrice) && binPrice > 0.1) {
+        resolvedTonUsd = Number(binPrice.toFixed(4));
+        activeSources.push('Binance');
+      }
+      if (resolvedTonDiff24h === null && Number.isFinite(binPct)) {
+        resolvedTonDiff24h = Number(binPct.toFixed(2));
+        if (!activeSources.includes('Binance')) activeSources.push('Binance');
+      }
     }
-    activeSources.push('TonAPI');
-  } else if (Number.isFinite(Number(coingeckoTonData?.['the-open-network']?.usd))) {
-    ton = Number(Number(coingeckoTonData['the-open-network'].usd).toFixed(4));
-    if (Number.isFinite(Number(coingeckoTonData['the-open-network'].usd_24h_change))) {
-      changes24h.TON = Number(
-        Number(coingeckoTonData['the-open-network'].usd_24h_change).toFixed(2)
+
+    // 3. Fallback #2: CoinGecko (`https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true`)
+    if (!resolvedTonUsd || resolvedTonDiff24h === null) {
+      const cgData = await fetchJsonWithTimeout(
+        'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd&include_24hr_change=true',
+        3500
+      );
+      const cgTon = Number(cgData?.['the-open-network']?.usd);
+      const cgDiff = Number(cgData?.['the-open-network']?.usd_24h_change);
+      if (!resolvedTonUsd && Number.isFinite(cgTon) && cgTon > 0.1) {
+        resolvedTonUsd = Number(cgTon.toFixed(4));
+        activeSources.push('CoinGecko');
+      }
+      if (resolvedTonDiff24h === null && Number.isFinite(cgDiff)) {
+        resolvedTonDiff24h = Number(cgDiff.toFixed(2));
+        if (!activeSources.includes('CoinGecko')) activeSources.push('CoinGecko');
+      }
+    }
+
+    if (resolvedTonUsd > 0.1) {
+      liveMarketOracleState.tonUsdPrice = resolvedTonUsd;
+      liveMarketOracleState.starsPerTon = Math.max(
+        50,
+        Math.round(resolvedTonUsd / liveMarketOracleState.starsUsdPrice)
       );
     }
-    activeSources.push('CoinGecko');
-  } else if (Number.isFinite(Number(kucoinTonData?.data?.price))) {
-    ton = Number(Number(kucoinTonData.data.price).toFixed(4));
-    activeSources.push('KuCoin');
-  }
-
-  if (coingeckoTonData?.bitcoin?.usd) btc = Number(Number(coingeckoTonData.bitcoin.usd).toFixed(2));
-  if (coingeckoTonData?.tron?.usd) trx = Number(Number(coingeckoTonData.tron.usd).toFixed(4));
-  if (coingeckoTonData?.binancecoin?.usd)
-    bnb = Number(Number(coingeckoTonData.binancecoin.usd).toFixed(2));
-
-  const tlPrice = Number(tetherlandData?.data?.currencies?.USDT?.price);
-  if (Number.isFinite(tlPrice) && tlPrice > 50000) {
-    toman = Math.round(tlPrice);
-    activeSources.push('TetherLand');
-  } else {
-    const wxPrice = Number(wallexData?.result?.symbols?.USDTTMN?.stats?.lastPrice);
-    if (Number.isFinite(wxPrice) && wxPrice > 50000) {
-      toman = Math.round(wxPrice);
-      activeSources.push('Wallex');
-    } else {
-      const nbRlsPrice = Number(nobitexData?.stats?.['usdt-rls']?.latest);
-      if (Number.isFinite(nbRlsPrice) && nbRlsPrice > 500000) {
-        toman = Math.round(nbRlsPrice / 10);
-        activeSources.push('Nobitex');
-      }
+    if (resolvedTonDiff24h !== null && Number.isFinite(resolvedTonDiff24h)) {
+      liveMarketOracleState.tonChange24hPercent = resolvedTonDiff24h;
     }
-  }
-
-  const erCny = Number(openErData?.rates?.CNY);
-  const ffCny = Number(frankfurterData?.rates?.CNY);
-  const kcCny = Number(kucoinData?.data?.USDT);
-  if (Number.isFinite(erCny) && erCny > 3 && erCny < 15) {
-    cny = Number(erCny.toFixed(4));
-    activeSources.push('OpenER');
-  } else if (Number.isFinite(ffCny) && ffCny > 3 && ffCny < 15) {
-    cny = Number(ffCny.toFixed(4));
-    activeSources.push('Frankfurter');
-  } else if (Number.isFinite(kcCny) && kcCny > 3 && kcCny < 15) {
-    cny = Number(kcCny.toFixed(4));
-    activeSources.push('KuCoin');
-  }
-
-  if (Array.isArray(binanceData)) {
-    for (const item of binanceData) {
-      const price = parseFloat(item.lastPrice);
-      const pct = parseFloat(item.priceChangePercent);
-      if (!Number.isFinite(price) || price <= 0) continue;
-      if (item.symbol === 'BTCUSDT') {
-        btc = Number(price.toFixed(2));
-        if (Number.isFinite(pct)) changes24h.BTC = Number(pct.toFixed(2));
-      } else if (item.symbol === 'TONUSDT') {
-        ton = Number(price.toFixed(4));
-        if (Number.isFinite(pct)) changes24h.TON = Number(pct.toFixed(2));
-      } else if (item.symbol === 'TRXUSDT') {
-        trx = Number(price.toFixed(4));
-        if (Number.isFinite(pct)) changes24h.TRX = Number(pct.toFixed(2));
-      } else if (item.symbol === 'BNBUSDT') {
-        bnb = Number(price.toFixed(2));
-        if (Number.isFinite(pct)) changes24h.BNB = Number(pct.toFixed(2));
-      }
+    if (activeSources.length > 0) {
+      liveMarketOracleState.sources = activeSources;
+      liveMarketOracleState.source = activeSources.join(' + ');
     }
-    activeSources.push('Binance');
+    liveMarketOracleState.lastUpdatedIso = new Date().toISOString();
+  } catch {
+    // Keep last known valid liveMarketOracleState on transient network error
   }
+  return liveMarketOracleState;
+}
 
+// Start background 30-second Live Price Oracle poller + immediate warmup fetch
+void refreshServerLiveMarketOracle();
+const liveOracleInterval = setInterval(() => {
+  void refreshServerLiveMarketOracle();
+}, 30_000);
+if (typeof liveOracleInterval.unref === 'function') {
+  liveOracleInterval.unref();
+}
+
+app.get('/api/oracle/prices', async (_req, res) => {
+  // If cache is older than 28 seconds, refresh immediately
+  const ageMs = Date.now() - new Date(liveMarketOracleState.lastUpdatedIso).getTime();
+  if (!Number.isFinite(ageMs) || ageMs > 28_000) {
+    await refreshServerLiveMarketOracle();
+  }
+  res.json({
+    ok: true,
+    tonUsdPrice: liveMarketOracleState.tonUsdPrice,
+    tonChange24hPercent: liveMarketOracleState.tonChange24hPercent,
+    starsUsdPrice: liveMarketOracleState.starsUsdPrice,
+    starsPerTon: liveMarketOracleState.starsPerTon,
+    source: liveMarketOracleState.source,
+    sources: liveMarketOracleState.sources,
+    lastUpdatedIso: liveMarketOracleState.lastUpdatedIso,
+  });
+});
+
+app.get('/api/oracle/live', async (_req, res) => {
+  const ageMs = Date.now() - new Date(liveMarketOracleState.lastUpdatedIso).getTime();
+  if (!Number.isFinite(ageMs) || ageMs > 28_000) {
+    await refreshServerLiveMarketOracle();
+  }
+  const toman = liveMarketOracleState.tomanPerUsdt;
+  const cny = liveMarketOracleState.cnyPerUsdt;
   const cnyToToman = Math.round(toman / (cny || 6.68));
+
   res.json({
     ok: true,
     toman,
     cny,
     cnyToToman,
-    btc,
-    ton,
-    trx,
-    bnb,
-    changes24h,
-    sources: activeSources,
-    timestamp: new Date().toISOString(),
+    btc: liveMarketOracleState.btcUsdPrice,
+    ton: liveMarketOracleState.tonUsdPrice,
+    tonUsdPrice: liveMarketOracleState.tonUsdPrice,
+    tonChange24hPercent: liveMarketOracleState.tonChange24hPercent,
+    starsUsdPrice: liveMarketOracleState.starsUsdPrice,
+    starsPerTon: liveMarketOracleState.starsPerTon,
+    trx: liveMarketOracleState.trxUsdPrice,
+    bnb: liveMarketOracleState.bnbUsdPrice,
+    changes24h: {
+      BTC: liveMarketOracleState.btcChange24hPercent,
+      TON: liveMarketOracleState.tonChange24hPercent,
+      TRX: 1.18,
+      BNB: 0.94,
+    },
+    sources: liveMarketOracleState.sources,
+    source: liveMarketOracleState.source,
+    timestamp: liveMarketOracleState.lastUpdatedIso,
   });
 });
 
@@ -2573,6 +2876,15 @@ function buildSnapshotPayload(req: express.Request) {
     publicTonTreasuryWallet: liveSecurityCfg.publicTonTreasuryWallet,
     appDomain: liveSecurityCfg.appDomain,
     fxRates: DEFAULT_FX_RATES,
+    liveOracle: {
+      tonUsdPrice: liveMarketOracleState.tonUsdPrice,
+      tonChange24hPercent: liveMarketOracleState.tonChange24hPercent,
+      starsUsdPrice: liveMarketOracleState.starsUsdPrice,
+      starsPerTon: liveMarketOracleState.starsPerTon,
+      source: liveMarketOracleState.source,
+      sources: liveMarketOracleState.sources,
+      lastUpdatedIso: liveMarketOracleState.lastUpdatedIso,
+    },
   };
 }
 
@@ -2612,6 +2924,9 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         roundCode = '#LDR-8493',
         mainNumbers = [7, 14, 21, 33, 49],
         goldenBall = 9,
+        currency = 'TON',
+        amountTon,
+        amountStars,
         costUsdt,
         currencyNetwork = 'TON Network',
         clientSeed = '',
@@ -2649,43 +2964,49 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         }
       }
 
-      const roundUnitPriceUsdt = Math.max(0.1, parseFloat(roundObj?.ticketPriceUsdt || '5') || 5);
-      const expectedTotalCostUsdt = Number((slipArray.length * roundUnitPriceUsdt).toFixed(2));
-      const requestedCostUsdt =
-        costUsdt !== undefined ? Number(costUsdt) : expectedTotalCostUsdt;
+      const activeCurrency: 'TON' | 'STARS' =
+        currency === 'STARS' || String(currencyNetwork).toUpperCase().includes('STARS')
+          ? 'STARS'
+          : 'TON';
 
-      const userAvailableUsdt = Number(
-        (userPam.getState().tonBalance * DEFAULT_FX_RATES.TON).toFixed(4)
-      );
-      const amountCheck = validateStrictFinancialAmount({
-        rawAmount: requestedCostUsdt,
-        currency: 'USDT',
-        minAmount: 0.1,
-        maxAvailableBalance: userAvailableUsdt,
+      const ticketCostRes = resolveStrictNativeTicketCost({
+        currency: activeCurrency,
+        ticketCount: slipArray.length,
+        roundTicketPriceTon: (roundObj as any)?.ticketPriceTon,
+        roundTicketPriceUsdt: roundObj?.ticketPriceUsdt || '5',
+        requestedAmountTon: typeof amountTon === 'number' ? amountTon : undefined,
+        requestedAmountStars: typeof amountStars === 'number' ? amountStars : undefined,
+        availableTonBalance: userPam.getState().tonBalance,
+        availableStarsBalance: userPam.getState().starsBalance,
       });
 
-      if (!amountCheck.valid) {
+      if (!ticketCostRes.valid) {
         return res.status(400).json({
           ok: false,
-          error: amountCheck.error,
+          error: ticketCostRes.error,
           tonBalance: userPam.getState().tonBalance,
           starsBalance: userPam.getState().starsBalance,
         });
       }
 
-      const totalCostNum = Math.max(expectedTotalCostUsdt, amountCheck.cleanAmount);
-      const unitCostNum = Number((totalCostNum / slipArray.length).toFixed(2));
+      const totalCostNum = ticketCostRes.nominalTotalUsdt;
+      const unitCostNum = ticketCostRes.nominalUnitUsdt;
       const batchTxUuid = String(
         transaction_uuid || generateDeterministicUuid('tx_ticket_debit')
       ).trim();
 
-      // 1. Execute Per-User PAM Seamless Wallet DEBIT with strict Idempotency
+      // 1. Execute Per-User PAM Seamless Wallet DEBIT with strict 1:1 Native Currency & Idempotency
       const debitRes = userPam.debit({
         transactionUuid: batchTxUuid,
         roundId: roundCode,
         vertical: 'LUCKYDROP_LOTTERY',
+        currency: activeCurrency,
+        amountTon: activeCurrency === 'TON' ? ticketCostRes.totalTon : undefined,
+        amountStars: activeCurrency === 'STARS' ? ticketCostRes.totalStars : undefined,
         amountUsdt: totalCostNum,
-        note: `خرید ${slipArray.length} بلیت لاتاری در دور ${roundCode} (${currencyNetwork})`,
+        note: `خرید ${slipArray.length} بلیت لاتاری در دور ${roundCode} (${
+          activeCurrency === 'TON' ? `${ticketCostRes.totalTon} TON` : `${ticketCostRes.totalStars} ⭐`
+        })`,
         incrementNonce: true,
       });
 
@@ -3703,10 +4024,15 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
       notifyOnTicketPurchase = true,
     } = req.body || {};
     const incomingToken = String(botToken).trim();
+    // Never overwrite the real botToken if incomingToken is masked ("********", "••••") or empty
+    const nextBotToken = isMaskedOrPlaceholderBotToken(incomingToken)
+      ? isMaskedOrPlaceholderBotToken(dbState.telegramBotConfig.botToken)
+        ? ''
+        : dbState.telegramBotConfig.botToken
+      : incomingToken;
+
     dbState.telegramBotConfig = {
-      botToken: incomingToken.includes('••••')
-        ? dbState.telegramBotConfig.botToken
-        : incomingToken,
+      botToken: nextBotToken,
       adminChatId: normalizeTelegramChatId(String(adminChatId)),
       botUsername:
         typeof botUsername === 'string' && botUsername.trim()
@@ -3724,6 +4050,7 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
     persistAll();
     res.json({
       ok: true,
+      botTokenConfigured: Boolean(getEffectiveBotToken()),
       telegramBotConfig: {
         ...dbState.telegramBotConfig,
         botToken: getEffectiveBotToken() ? '•••••••••••• (CONFIGURED_IN_ENV)' : '',
@@ -3735,19 +4062,27 @@ app.post('/api/admin/telegram/config', optionalAuth, async (req: AuthRequest, re
   }
 });
 
-app.post('/api/admin/telegram/test', optionalAuth, async (_req: AuthRequest, res) => {
+app.post('/api/admin/telegram/test', optionalAuth, async (req: AuthRequest, res) => {
   try {
+    const session = resolveVerifiedTelegramSession(req);
+    const adminIds = getEffectiveAdminTelegramIds();
+    const fallbackAdminId = session.verifiedUserId || adminIds[0] || 6176189129;
+
     const dispatchRes = await dispatchAdminTelegramAlert({
       eventType: 'TEST_PING',
       userDisplayName: 'اپراتور ارشد کاکپیت (Stealth Admin)',
       amountUsdt: 0,
       network: 'Telegram Bot API v7.0',
       details: 'پیام تست اتصال ربات اطلاع‌رسان کاکپیت صادر شد.',
+      fallbackAdminUserId: fallbackAdminId,
     });
     res.json({
       ok: true,
       deliveredToTelegramApi: dispatchRes.delivered,
+      usedPersonalDmFallback: Boolean(dispatchRes.usedPersonalDmFallback),
       apiDescription: dispatchRes.apiDescription,
+      message: dispatchRes.apiDescription,
+      note: dispatchRes.apiDescription,
       logItem: dispatchRes.logItem,
       telegramAlertsLog: dbState.telegramAlertsLog,
     });
@@ -4942,23 +5277,22 @@ app.post('/api/admin/users/adjust-balance', optionalAuth, async (req: AuthReques
     const session = resolveVerifiedTelegramSession(req);
     const rawTargetId = String(
       req.body?.targetUserId ?? req.body?.telegramUserId ?? ''
-    ).trim();
+    )
+      .trim()
+      .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
+      .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632));
     const currencyRaw = String(req.body?.currency || 'TON')
       .trim()
       .toUpperCase() as 'TON' | 'STARS' | 'FREE_TICKETS';
-    const deltaAmount = Number(req.body?.deltaAmount);
-    const reason = String(req.body?.reason || '').trim();
+    const deltaAmount = normalizeNumericInputString(req.body?.deltaAmount);
+    const reason =
+      String(req.body?.reason ?? '').trim() ||
+      'اصلاح دستی توسط ادمین (Admin Adjustment)';
 
     if (!rawTargetId) {
       return res.status(400).json({
         ok: false,
         error: 'MISSING_TARGET_USER_ID — آیدی عددی کاربر هدف الزامی است.',
-      });
-    }
-    if (!reason) {
-      return res.status(400).json({
-        ok: false,
-        error: 'MISSING_REASON — ذکر دلیل برای تغییر دستی موجودی در لاگ حسابرسی الزامی است.',
       });
     }
 
@@ -5106,6 +5440,13 @@ app.post('/api/admin/telegram/broadcast-users', optionalAuth, async (req: AuthRe
 app.get('/api/admin/telegram/webhook-status', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const activeToken = getEffectiveBotToken();
+    const isTokenConfigured = Boolean(
+      activeToken.length > 10 ||
+        (!isMaskedOrPlaceholderBotToken(dbState.telegramBotConfig?.botToken) &&
+          dbState.telegramBotConfig?.botToken) ||
+        (!isMaskedOrPlaceholderBotToken(process.env.TELEGRAM_BOT_TOKEN) &&
+          process.env.TELEGRAM_BOT_TOKEN)
+    );
     const configuredDomain = (
       process.env.APP_DOMAIN ||
       serverSecurityConfig.appDomain ||
@@ -5115,9 +5456,10 @@ app.get('/api/admin/telegram/webhook-status', optionalAuth, async (req: AuthRequ
       .replace(/\/+$/, '');
     const expectedWebhookUrl = `${configuredDomain}/api/telegram/webhook`;
 
-    if (!activeToken || activeToken.length < 10) {
+    if (!isTokenConfigured || !activeToken) {
       return res.json({
         ok: true,
+        configured: false,
         botTokenConfigured: false,
         url: '',
         expectedWebhookUrl,
@@ -5129,25 +5471,28 @@ app.get('/api/admin/telegram/webhook-status', optionalAuth, async (req: AuthRequ
 
     const tgResp = await fetch(
       `https://api.telegram.org/bot${encodeURIComponent(activeToken)}/getWebhookInfo`
-    );
-    const tgData: any = await tgResp.json().catch(() => null);
+    ).catch(() => null);
+    const tgData: any = tgResp ? await tgResp.json().catch(() => null) : null;
 
-    if (!tgResp.ok || !tgData?.ok) {
-      return res.status(502).json({
-        ok: false,
+    if (!tgResp || !tgResp.ok || !tgData?.ok) {
+      return res.json({
+        ok: true,
+        configured: true,
         botTokenConfigured: true,
         url: '',
         expectedWebhookUrl,
         pendingUpdateCount: 0,
         lastErrorDate: null,
         lastErrorMessage:
-          tgData?.description || `خطای API تلگرام در getWebhookInfo (کد ${tgResp.status})`,
+          tgData?.description ||
+          (tgResp ? `خطای API تلگرام در getWebhookInfo (کد ${tgResp.status})` : ''),
       });
     }
 
     const info = tgData.result || {};
     return res.json({
       ok: true,
+      configured: true,
       botTokenConfigured: true,
       url: String(info.url || ''),
       expectedWebhookUrl,
@@ -5157,9 +5502,16 @@ app.get('/api/admin/telegram/webhook-status', optionalAuth, async (req: AuthRequ
       lastErrorMessage: String(info.last_error_message || ''),
     });
   } catch (error: any) {
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'خطا در استعلام وضعیت وبهوک تلگرام',
+    const hasToken = Boolean(getEffectiveBotToken());
+    return res.json({
+      ok: true,
+      configured: hasToken,
+      botTokenConfigured: hasToken,
+      url: '',
+      expectedWebhookUrl: '',
+      pendingUpdateCount: 0,
+      lastErrorDate: null,
+      lastErrorMessage: error.message || 'خطا در استعلام وضعیت وبهوک تلگرام',
     });
   }
 });
@@ -5234,19 +5586,124 @@ app.post('/api/admin/telegram/set-webhook', optionalAuth, async (req: AuthReques
   }
 });
 
-// 5A. GET /api/admin/db/backup
-app.get('/api/admin/db/backup', optionalAuth, (_req: AuthRequest, res) => {
+// Helper: Send JSON DB Backup directly to Admin's Telegram Chat via Bot API `sendDocument`
+async function sendDbBackupDocumentToTelegramAdmin(params: {
+  targetChatId: string | number;
+  filename: string;
+  jsonContent: string;
+}): Promise<{ sent: boolean; description: string }> {
+  const activeToken = getEffectiveBotToken();
+  if (!activeToken || activeToken.length < 10) {
+    return {
+      sent: false,
+      description: 'TELEGRAM_BOT_TOKEN تنظیم نشده است؛ لینک دانلود مستقیم صادر شد.',
+    };
+  }
+  try {
+    const form = new FormData();
+    form.append('chat_id', String(params.targetChatId));
+    form.append(
+      'caption',
+      `💾 <b>فایل پشتیبان کامل دیتابیس LuckyDrop VIP</b>\n📅 تاریخ: <code>${new Date().toISOString()}</code>\n👥 تعداد کاربران: <b>${Object.keys(dbState.users || {}).length}</b>\n🎟️ تعداد بلیت‌ها: <b>${(dbState.tickets || []).length}</b>`
+    );
+    form.append('parse_mode', 'HTML');
+    const blob = new Blob([params.jsonContent], { type: 'application/json' });
+    form.append('document', blob, params.filename);
+
+    const resp = await fetch(
+      `https://api.telegram.org/bot${encodeURIComponent(activeToken)}/sendDocument`,
+      {
+        method: 'POST',
+        body: form,
+      }
+    );
+    const data: any = await resp.json().catch(() => null);
+    if (resp.ok && data?.ok) {
+      return {
+        sent: true,
+        description: `فایل پشتیبان (${params.filename}) مستقیماً به پیوی تلگرام ادمین (#${params.targetChatId}) ارسال شد!`,
+      };
+    }
+    return {
+      sent: false,
+      description: data?.description || `خطای sendDocument تلگرام (کد ${resp.status})`,
+    };
+  } catch (err: any) {
+    return {
+      sent: false,
+      description: err?.message || 'خطای شبکه در ارسال فایل به تلگرام',
+    };
+  }
+}
+
+// 5A. GET /api/admin/db/backup (Supports ?sendToTelegram=true and ?downloadToken=...)
+app.get('/api/admin/db/backup', optionalAuth, async (req: AuthRequest, res) => {
   try {
     dbState.processedTxHashes = Array.from(processedDepositTxHashes);
     dbState.processedStarsChargeIds = Array.from(processedStarsChargeIds);
     const filename = `luckydrop_backup_${Date.now()}.json`;
+    const jsonContent = JSON.stringify(dbState, null, 2);
+
+    if (String(req.query.sendToTelegram || '').toLowerCase() === 'true') {
+      const session = resolveVerifiedTelegramSession(req);
+      const adminIds = getEffectiveAdminTelegramIds();
+      const targetChatId = session.verifiedUserId || adminIds[0] || 6176189129;
+      await sendDbBackupDocumentToTelegramAdmin({
+        targetChatId,
+        filename,
+        jsonContent,
+      });
+    }
+
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(JSON.stringify(dbState, null, 2));
+    return res.send(jsonContent);
   } catch (error: any) {
     return res.status(500).json({
       ok: false,
       error: error.message || 'خطا در تهیه فایل پشتیبان دیتابیس',
+    });
+  }
+});
+
+// 5A-2. POST /api/admin/db/backup-to-telegram (Simultaneous Telegram Bot `sendDocument` + Signed Download URL)
+app.post('/api/admin/db/backup-to-telegram', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const session = resolveVerifiedTelegramSession(req);
+    const adminIds = getEffectiveAdminTelegramIds();
+    const targetChatId =
+      req.body?.adminChatId || session.verifiedUserId || adminIds[0] || 6176189129;
+
+    dbState.processedTxHashes = Array.from(processedDepositTxHashes);
+    dbState.processedStarsChargeIds = Array.from(processedStarsChargeIds);
+    const filename = `luckydrop_backup_${Date.now()}.json`;
+    const jsonContent = JSON.stringify(dbState, null, 2);
+
+    const tgDelivery = await sendDbBackupDocumentToTelegramAdmin({
+      targetChatId,
+      filename,
+      jsonContent,
+    });
+
+    const signedToken = createSignedBackupDownloadToken(targetChatId);
+    const downloadUrl = `/api/admin/db/backup?downloadToken=${encodeURIComponent(signedToken)}`;
+
+    return res.json({
+      ok: true,
+      filename,
+      fileName: filename,
+      sentToTelegram: tgDelivery.sent,
+      telegramSent: tgDelivery.sent,
+      telegramDescription: tgDelivery.description,
+      targetChatId,
+      recipientChatId: targetChatId,
+      downloadUrl,
+      backup: dbState,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در ارسال فایل پشتیبان به تلگرام',
     });
   }
 });

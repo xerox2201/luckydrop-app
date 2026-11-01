@@ -29,6 +29,9 @@ export const LobbyView: React.FC = () => {
     setActiveRoundCode,
     activeLotterySpec,
     lotteryTimers,
+    activeTmaCurrency,
+    tonUsdRate,
+    starsUsdRate,
     formatActiveTmaAmount,
     mintBulkTickets,
     tickets,
@@ -61,11 +64,21 @@ export const LobbyView: React.FC = () => {
       `tma_qp_${Date.now()}`
     );
     const totalCostUsdt = Number((qty * unitPriceUsdt).toFixed(2));
+    const unitPriceTon = Number((unitPriceUsdt / (tonUsdRate || 5)).toFixed(2));
+    const unitPriceStars = Math.max(1, Math.round(unitPriceUsdt / (starsUsdRate || 0.02)));
+    const exactCostTon = Number((qty * unitPriceTon).toFixed(2));
+    const exactCostStars = Math.round(qty * unitPriceStars);
+
     const res = await mintBulkTickets(
       slips,
       activeLotterySpec.roundCode,
       totalCostUsdt,
-      'TON / Stars Seamless Wallet'
+      activeTmaCurrency === 'STARS' ? 'Telegram Stars' : 'TON Network',
+      {
+        currency: activeTmaCurrency,
+        amountTon: exactCostTon,
+        amountStars: exactCostStars,
+      }
     );
 
     setBuyingQty(null);
