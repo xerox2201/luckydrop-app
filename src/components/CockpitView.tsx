@@ -118,9 +118,22 @@ export const CockpitView: React.FC = () => {
     setAutoWithdrawLimitTon,
     refreshSnapshot,
     markSupportMessagesRead,
+    monthlySuperJackpot,
+    updateMonthlySuperJackpotConfig,
+    triggerMonthlySuperJackpotDraw,
+    sseConnected,
   } = useLottery();
 
   const [activeMobileTab, setActiveMobileTab] = useState<AdminMobileSectionTab>('ALL');
+  const [minTicketsDraft, setMinTicketsDraft] = useState<string>(
+    String(monthlySuperJackpot?.minTicketsRequired || 10)
+  );
+  const [minXpDraft, setMinXpDraft] = useState<string>(
+    String(monthlySuperJackpot?.minXpRequired || 500)
+  );
+  const [seedMonthlyTonDraft, setSeedMonthlyTonDraft] = useState<string>('25');
+  const [monthlyVaultBusy, setMonthlyVaultBusy] = useState<boolean>(false);
+  const [monthlyVaultBanner, setMonthlyVaultBanner] = useState<string | null>(null);
 
   const getAdminFetchHeaders = React.useCallback((): Record<string, string> => {
     const rawWebAppInitData =
@@ -1252,6 +1265,182 @@ export const CockpitView: React.FC = () => {
               {roundActionBanner}
             </div>
           )}
+
+          {/* MONTHLY VIP LOYALTY SUPER-JACKPOT ROLLOVER VAULT ADMIN CONTROLLER */}
+          <div
+            data-testid="cockpit-monthly-super-pot-card"
+            className="rounded-2xl bg-gradient-to-br from-[#1b1233] via-[#110b22] to-[#1e1508] border border-[#fbbf24]/45 p-3.5 space-y-3 shadow-[0_8px_28px_rgba(251,191,36,0.14)]"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-[#fbbf24]/25 pb-2">
+              <div>
+                <h3 className="text-xs font-extrabold text-[#fbbf24]">
+                  👑 مدیریت خزانه ابر جک‌پات ماهانه وفاداری (`#LD-MONTHLY-VIP`)
+                </h3>
+                <p className="text-[10px] text-purple-200/80 mt-0.5">
+                  سرریز خودکار جوایز برنده‌نشده دورهای عادی (`unclaimedRolloverTon`) + قانون انتقال بی‌نهایت به ماه بعد
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono font-bold">
+                {sseConnected ? '⚡ SSE LIVE' : 'SYNC READY'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="p-2.5 rounded-xl bg-[#090612] border border-[#fbbf24]/25">
+                <div className="text-[10px] text-purple-200/75">موجودی انباشته (TON)</div>
+                <div
+                  data-testid="cockpit-monthly-pot-ton"
+                  className="font-mono text-sm font-black text-[#fbbf24] mt-0.5"
+                  dir="ltr"
+                >
+                  {(monthlySuperJackpot?.accumulatedPoolTon || 0).toFixed(2)} TON
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-[#090612] border border-purple-500/25">
+                <div className="text-[10px] text-purple-200/75">معادل Stars</div>
+                <div className="font-mono text-sm font-black text-[#00f59b] mt-0.5" dir="ltr">
+                  {(monthlySuperJackpot?.accumulatedPoolStars || 0).toLocaleString('en-US')} ⭐
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-[#090612] border border-purple-500/25">
+                <div className="text-[10px] text-purple-200/75">شرط بلیت / XP</div>
+                <div className="font-mono text-xs font-black text-white mt-0.5" dir="ltr">
+                  {monthlySuperJackpot?.minTicketsRequired || 10}🎟️ / {monthlySuperJackpot?.minXpRequired || 500}XP
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                  حداقل بلیت (`minTickets`):
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  dir="ltr"
+                  data-testid="cockpit-monthly-min-tickets-input"
+                  value={minTicketsDraft}
+                  onChange={(e) => setMinTicketsDraft(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                  حداقل امتیاز (`minXP`):
+                </label>
+                <input
+                  type="number"
+                  min="50"
+                  step="50"
+                  dir="ltr"
+                  data-testid="cockpit-monthly-min-xp-input"
+                  value={minXpDraft}
+                  onChange={(e) => setMinXpDraft(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-[#fbbf24] block mb-1">
+                  افزودن TON به خزانه:
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  dir="ltr"
+                  data-testid="cockpit-monthly-seed-ton-input"
+                  value={seedMonthlyTonDraft}
+                  onChange={(e) => setSeedMonthlyTonDraft(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-[#fbbf24]/35 rounded-xl px-2.5 text-xs text-[#fbbf24] font-mono font-bold"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={monthlyVaultBusy}
+                data-testid="cockpit-monthly-save-seed-btn"
+                onClick={async () => {
+                  setMonthlyVaultBusy(true);
+                  setMonthlyVaultBanner(null);
+                  const addTon = Math.max(0, Number(normalizeDigits(seedMonthlyTonDraft)) || 0);
+                  const minT = Math.max(1, Number(normalizeDigits(minTicketsDraft)) || 10);
+                  const minX = Math.max(50, Number(normalizeDigits(minXpDraft)) || 500);
+                  const ok = await updateMonthlySuperJackpotConfig({
+                    minTicketsRequired: minT,
+                    minXpRequired: minX,
+                    addPoolTon: addTon > 0 ? addTon : undefined,
+                  });
+                  setMonthlyVaultBusy(false);
+                  if (ok) {
+                    setSeedMonthlyTonDraft('0');
+                    setMonthlyVaultBanner(
+                      `✅ تنظیمات خزانه ماهانه VIP ذخیره شد${
+                        addTon > 0 ? ` و +${addTon.toFixed(2)} TON به استخر افزوده گردید!` : '!'
+                      }`
+                    );
+                  }
+                }}
+                className="h-9 rounded-xl bg-[#fbbf24]/20 hover:bg-[#fbbf24]/30 border border-[#fbbf24]/50 text-[#fbbf24] text-[11px] font-black cursor-pointer"
+              >
+                💾 ذخیره شروط و شارژ خزانه ماهانه
+              </button>
+
+              <button
+                type="button"
+                disabled={monthlyVaultBusy}
+                data-testid="cockpit-monthly-trigger-draw-btn"
+                onClick={async () => {
+                  setMonthlyVaultBusy(true);
+                  setMonthlyVaultBanner(null);
+                  const res = await triggerMonthlySuperJackpotDraw();
+                  setMonthlyVaultBusy(false);
+                  if (res) {
+                    setMonthlyVaultBanner(
+                      `🎉 قرعه‌کشی ابر جک‌پات ماهانه VIP انجام شد! شماره‌ها: [${res.drawnMain.join(
+                        ', '
+                      )}] + ★${res.drawnGolden} (${res.winnersCount || 0} برنده)`
+                    );
+                  }
+                }}
+                className="h-9 rounded-xl stake-emerald-cta text-[#041f14] text-[11px] font-black cursor-pointer"
+              >
+                👑 اجرای دستی قرعه‌کشی ماهانه VIP
+              </button>
+            </div>
+
+            {monthlyVaultBanner && (
+              <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-[11px] font-bold">
+                {monthlyVaultBanner}
+              </div>
+            )}
+
+            {Array.isArray(monthlySuperJackpot?.rolloverHistory) &&
+              monthlySuperJackpot.rolloverHistory.length > 0 && (
+                <div className="space-y-1 pt-1.5 border-t border-purple-500/20">
+                  <div className="text-[10px] font-bold text-purple-200">
+                    📜 تاریخچه سرریزهای ورودی به ابر جک‌پات ماهانه (`rolloverHistory`):
+                  </div>
+                  <div className="max-h-28 overflow-y-auto space-y-1 no-scrollbar">
+                    {monthlySuperJackpot.rolloverHistory.slice(0, 6).map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#090612] border border-white/10 text-[10px]"
+                      >
+                        <span className="text-slate-300 truncate">
+                          از دور <strong className="text-white">{item.sourceRoundCode}</strong> ({item.timestamp})
+                        </span>
+                        <span className="font-mono font-bold text-[#fbbf24] shrink-0" dir="ltr">
+                          +{Number(item.rolloverTon || 0).toFixed(2)} TON
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+          </div>
 
           {/* Create New Lottery Round Form (Unlimited Creation + Dynamic 85%/15% Pool) */}
           <form

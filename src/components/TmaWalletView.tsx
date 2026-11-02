@@ -164,8 +164,8 @@ export const TmaWalletView: React.FC = () => {
             data-testid="wallet-ton-card"
             className={`p-3 rounded-2xl border cursor-pointer transition-all ${
               activeTmaCurrency === 'TON'
-                ? 'bg-[#0098EA]/20 border-[#0098EA] shadow-[0_0_20px_rgba(0,152,234,0.3)]'
-                : 'bg-black/40 border-white/10 opacity-75 hover:opacity-100'
+                ? 'bg-[#0098EA]/20 border-[#0098EA] shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_10px_20px_rgba(0,0,0,0.5)]'
+                : 'bg-black/40 border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.12),_0_6px_14px_rgba(0,0,0,0.45)] opacity-75 hover:opacity-100'
             }`}
           >
             <div className="flex items-center justify-between text-[10px] text-slate-300">
@@ -185,8 +185,8 @@ export const TmaWalletView: React.FC = () => {
             data-testid="wallet-stars-card"
             className={`p-3 rounded-2xl border cursor-pointer transition-all ${
               activeTmaCurrency === 'STARS'
-                ? 'bg-[#FFD700]/15 border-[#FFE066] shadow-[0_0_20px_rgba(255,215,0,0.25)]'
-                : 'bg-black/40 border-white/10 opacity-75 hover:opacity-100'
+                ? 'bg-[#FFD700]/15 border-[#FFE066] shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_10px_20px_rgba(0,0,0,0.5)]'
+                : 'bg-black/40 border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.12),_0_6px_14px_rgba(0,0,0,0.45)] opacity-75 hover:opacity-100'
             }`}
           >
             <div className="flex items-center justify-between text-[10px] text-slate-300">
@@ -205,7 +205,7 @@ export const TmaWalletView: React.FC = () => {
         {/* LIVE MARKET ORACLE TICKER CARD */}
         <div
           data-testid="wallet-live-oracle-ticker"
-          className="relative z-10 mt-2.5 p-2.5 rounded-2xl bg-[#070510]/85 border border-white/10 space-y-1.5"
+          className="relative z-10 mt-2.5 p-2.5 rounded-2xl bg-[#070510]/85 border border-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_8px_16px_rgba(0,0,0,0.45)] space-y-1.5"
           dir="ltr"
         >
           <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
@@ -295,7 +295,7 @@ export const TmaWalletView: React.FC = () => {
                     key={w.id}
                     disabled={busy}
                     onClick={() => handleConnectWallet(w.name)}
-                    className="flex items-center gap-2 p-2 rounded-xl bg-[#141A35]/90 hover:bg-[#1B2448] border border-[#0098EA]/40 hover:border-[#00F5D4] transition-all cursor-pointer active:scale-95 text-left"
+                    className="flex items-center gap-2 p-2 rounded-2xl bg-[#141A35]/90 hover:bg-[#1B2448] border border-[#0098EA]/40 hover:border-[#00F5D4] shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.45)] transition-all cursor-pointer active:scale-95 text-left"
                   >
                     <span className="text-base shrink-0">{w.icon}</span>
                     <div className="min-w-0">
@@ -315,21 +315,21 @@ export const TmaWalletView: React.FC = () => {
       </section>
 
       {feedbackToast && (
-        <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 text-xs font-bold text-center">
+        <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.45)] text-emerald-200 text-xs font-bold text-center">
           {feedbackToast}
         </div>
       )}
 
       {/* 2. SUB-NAVIGATION: DEPOSIT / WITHDRAW / LEDGER */}
-      <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-[#110C22] border border-white/10">
+      <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-[#110C22] border border-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_8px_16px_rgba(0,0,0,0.45)]">
         <button
           onClick={() => {
             HapticEngine.selectionChanged();
             setSubTab('DEPOSIT');
           }}
-          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          className={`flex items-center justify-center gap-1.5 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
             subTab === 'DEPOSIT'
-              ? 'bg-[#00F5D4] text-slate-950 shadow-md'
+              ? 'bg-[#00F5D4] text-slate-950 shadow-[inset_0_2px_4px_rgba(255,255,255,0.6),_0_6px_14px_rgba(0,0,0,0.45)]'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -342,9 +342,9 @@ export const TmaWalletView: React.FC = () => {
             HapticEngine.selectionChanged();
             setSubTab('WITHDRAW');
           }}
-          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          className={`flex items-center justify-center gap-1.5 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
             subTab === 'WITHDRAW'
-              ? 'bg-[#FFE066] text-slate-950 shadow-md'
+              ? 'bg-[#FFE066] text-slate-950 shadow-[inset_0_2px_4px_rgba(255,255,255,0.6),_0_6px_14px_rgba(0,0,0,0.45)]'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -357,9 +357,9 @@ export const TmaWalletView: React.FC = () => {
             HapticEngine.selectionChanged();
             setSubTab('HISTORY');
           }}
-          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+          className={`flex items-center justify-center gap-1.5 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
             subTab === 'HISTORY'
-              ? 'bg-white/15 text-white'
+              ? 'bg-white/15 text-white shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_6px_14px_rgba(0,0,0,0.45)]'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -372,7 +372,7 @@ export const TmaWalletView: React.FC = () => {
       {subTab === 'DEPOSIT' && (
         <div className="space-y-3.5">
           {/* TON Automated On-Chain Deposit Card */}
-          <section className="rounded-3xl p-4 bg-[#110C22]/90 border border-[#0098EA]/35 space-y-3">
+          <section className="rounded-3xl p-4 bg-[#110C22]/90 border border-[#0098EA]/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-lg">💎</span>
@@ -404,10 +404,10 @@ export const TmaWalletView: React.FC = () => {
                 <button
                   key={amt}
                   onClick={() => setTonDepositInput(String(amt))}
-                  className={`py-2 rounded-xl font-mono text-xs font-black border transition-all cursor-pointer ${
+                  className={`py-2 rounded-2xl font-mono text-xs font-black border transition-all cursor-pointer ${
                     Number(tonDepositInput) === amt
-                      ? 'bg-[#0098EA] text-white border-[#38BDF8]'
-                      : 'bg-white/5 text-slate-300 border-white/10 hover:text-white'
+                      ? 'bg-[#0098EA] text-white border-[#38BDF8] shadow-[inset_0_2px_4px_rgba(255,255,255,0.35),_0_8px_16px_rgba(0,0,0,0.45)]'
+                      : 'bg-white/5 text-slate-300 border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_6px_14px_rgba(0,0,0,0.4)] hover:text-white'
                   }`}
                 >
                   {amt} TON
@@ -422,14 +422,14 @@ export const TmaWalletView: React.FC = () => {
                 min="0.5"
                 value={tonDepositInput}
                 onChange={(e) => setTonDepositInput(e.target.value)}
-                className="flex-1 bg-black/50 border border-white/15 rounded-xl px-3 py-2.5 font-mono text-sm font-black text-white focus:outline-none focus:border-[#0098EA]"
+                className="flex-1 bg-black/50 border border-white/15 rounded-2xl px-3 py-2.5 font-mono text-sm font-black text-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus:outline-none focus:border-[#0098EA]"
                 dir="ltr"
                 placeholder="Amount in TON"
               />
               <button
                 disabled={busy}
                 onClick={handleTonDeposit}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#0098EA] to-[#00F5D4] text-slate-950 font-black text-xs cursor-pointer active:scale-95 flex items-center gap-1.5"
+                className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#0098EA] to-[#00F5D4] text-slate-950 font-black text-xs shadow-[inset_0_2px_4px_rgba(255,255,255,0.5),_0_10px_20px_rgba(0,0,0,0.5)] cursor-pointer active:scale-95 flex items-center gap-1.5"
               >
                 <Zap className="w-3.5 h-3.5" />
                 <span>
@@ -445,7 +445,7 @@ export const TmaWalletView: React.FC = () => {
             </div>
 
             {/* Direct Vault Address + Manual TXID Verification */}
-            <div className="p-2.5 rounded-2xl bg-black/40 border border-white/10 space-y-2">
+            <div className="p-2.5 rounded-2xl bg-black/40 border border-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] space-y-2">
               <div className="flex items-center justify-between text-[10px] text-slate-400">
                 <span>
                   {tr(
@@ -477,7 +477,7 @@ export const TmaWalletView: React.FC = () => {
                     'کد پیگیری / هش تراکنش (TXID یا BOC) جهت تایید مستقیم',
                     'Paste TXID or signed BOC for on-chain verification'
                   )}
-                  className="flex-1 bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 font-mono text-[10px] text-white focus:outline-none focus:border-[#00F5D4]"
+                  className="flex-1 bg-black/50 border border-white/10 rounded-xl px-2.5 py-1.5 font-mono text-[10px] text-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus:outline-none focus:border-[#00F5D4]"
                   dir="ltr"
                 />
               </div>
@@ -485,7 +485,7 @@ export const TmaWalletView: React.FC = () => {
           </section>
 
           {/* Telegram Stars Instant Invoice Card */}
-          <section className="rounded-3xl p-4 bg-[#110C22]/90 border border-[#FFD700]/35 space-y-3">
+          <section className="rounded-3xl p-4 bg-[#110C22]/90 border border-[#FFD700]/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-lg">⭐</span>
@@ -522,8 +522,8 @@ export const TmaWalletView: React.FC = () => {
                   onClick={() => handleStarsDeposit(pkg.stars)}
                   className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer active:scale-95 ${
                     starsDepositInput === pkg.stars
-                      ? 'bg-gradient-to-br from-[#FFE066]/25 to-[#B8860B]/20 border-[#FFE066]'
-                      : 'bg-white/[0.03] border-white/10 hover:border-white/25'
+                      ? 'bg-gradient-to-br from-[#FFE066]/25 to-[#B8860B]/20 border-[#FFE066] shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_10px_20px_rgba(0,0,0,0.5)]'
+                      : 'bg-white/[0.03] border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.14),_0_8px_16px_rgba(0,0,0,0.45)] hover:border-white/25'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -546,7 +546,7 @@ export const TmaWalletView: React.FC = () => {
 
       {/* 3B. WITHDRAW VIEW */}
       {subTab === 'WITHDRAW' && (
-        <section className="rounded-3xl p-4 bg-[#110C22]/90 border border-white/15 space-y-3.5">
+        <section className="rounded-3xl p-4 bg-[#110C22]/90 border border-white/15 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] space-y-3.5">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-black text-white">
               {tr(
@@ -575,7 +575,7 @@ export const TmaWalletView: React.FC = () => {
               type="number"
               value={withdrawAmountInput}
               onChange={(e) => setWithdrawAmountInput(e.target.value)}
-              className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2.5 font-mono text-sm font-black text-white focus:outline-none focus:border-[#FFE066]"
+              className="w-full bg-black/50 border border-white/15 rounded-2xl px-3 py-2.5 font-mono text-sm font-black text-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus:outline-none focus:border-[#FFE066]"
               dir="ltr"
             />
           </div>
@@ -602,7 +602,7 @@ export const TmaWalletView: React.FC = () => {
               placeholder={
                 activeTmaCurrency === 'TON' ? 'UQ...' : '@telegram_username'
               }
-              className="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2.5 font-mono text-xs text-white focus:outline-none focus:border-[#00F5D4]"
+              className="w-full bg-black/50 border border-white/15 rounded-2xl px-3 py-2.5 font-mono text-xs text-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus:outline-none focus:border-[#00F5D4]"
               dir="ltr"
             />
           </div>
@@ -610,7 +610,7 @@ export const TmaWalletView: React.FC = () => {
           <button
             disabled={busy}
             onClick={handleWithdraw}
-            className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 font-black text-xs shadow-lg cursor-pointer active:scale-98"
+            className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 font-black text-xs shadow-[inset_0_2px_4px_rgba(255,255,255,0.6),_0_10px_20px_rgba(0,0,0,0.5)] cursor-pointer active:scale-98"
           >
             {tr(
               lang,
@@ -634,7 +634,7 @@ export const TmaWalletView: React.FC = () => {
 
       {/* 3C. PAM LEDGER HISTORY */}
       {subTab === 'HISTORY' && (
-        <section className="rounded-3xl p-3.5 bg-[#110C22]/90 border border-white/10 space-y-2.5">
+        <section className="rounded-3xl p-3.5 bg-[#110C22]/90 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] space-y-2.5">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-xs font-black text-white">
               {tr(
@@ -659,7 +659,7 @@ export const TmaWalletView: React.FC = () => {
               return (
                 <div
                   key={entry.transactionUuid}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/10"
+                  className="flex items-center justify-between p-2.5 rounded-2xl bg-white/[0.03] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_8px_16px_rgba(0,0,0,0.45)]"
                 >
                   <div className="min-w-0 pr-1">
                     <div className="text-xs font-bold text-white truncate">

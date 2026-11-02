@@ -63,7 +63,7 @@ export const Navbar: React.FC = () => {
   return (
     <>
       {/* TOP TELEGRAM MINI APP COMPACT HEADER */}
-      <header className="sticky top-0 z-50 w-full backdrop-blur-2xl bg-[#070510]/90 border-b border-white/10 select-none">
+      <header className="sticky top-0 z-50 w-full backdrop-blur-2xl bg-[#070510]/90 border-b border-white/10 shadow-[inset_0_1px_2px_rgba(255,255,255,0.12),_0_8px_20px_rgba(0,0,0,0.5)] select-none">
         <div className="max-w-[440px] mx-auto px-2.5 h-14 flex items-center justify-between gap-1">
           {/* Brand + Language Switcher + Admin Trigger */}
           <div className="flex items-center gap-1 min-w-0 shrink-0">
@@ -90,7 +90,7 @@ export const Navbar: React.FC = () => {
               onClick={toggleLanguage}
               title={tr(lang, 'تغییر زبان (FA / EN)', 'Switch Language (FA / EN)')}
               data-testid="lang-toggle-btn"
-              className="relative z-20 flex items-center gap-0.5 px-1.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-[10px] font-mono font-black text-white transition-all cursor-pointer shrink-0"
+              className="relative z-20 flex items-center gap-0.5 px-1.5 py-1 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/15 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_6px_14px_rgba(0,0,0,0.45)] text-[10px] font-mono font-black text-white transition-all cursor-pointer shrink-0"
             >
               <Globe className="w-2.5 h-2.5 text-[#00F5D4]" />
               <span className={lang !== 'EN' ? 'text-[#FFE066]' : 'text-slate-400'}>FA</span>
@@ -104,10 +104,10 @@ export const Navbar: React.FC = () => {
                 data-testid="navbar-admin-cockpit-btn"
                 onClick={() => handleTabNav('cockpit')}
                 title={tr(lang, 'پنل مدیریت ادمین', 'Admin Cockpit')}
-                className={`flex items-center gap-0.5 px-1.5 py-1 rounded-lg text-[9px] font-black transition-all cursor-pointer shrink-0 ${
+                className={`flex items-center gap-0.5 px-1.5 py-1 rounded-2xl text-[9px] font-black transition-all cursor-pointer shrink-0 ${
                   activeRoute === 'cockpit'
-                    ? 'bg-[#FFD700] text-slate-950 shadow-[0_0_12px_rgba(255,215,0,0.5)]'
-                    : 'bg-[#FFD700]/15 text-[#FFE066] border border-[#FFD700]/40 hover:bg-[#FFD700]/25'
+                    ? 'bg-[#FFD700] text-slate-950 shadow-[inset_0_2px_4px_rgba(255,255,255,0.6),_0_6px_14px_rgba(255,215,0,0.5)]'
+                    : 'bg-[#FFD700]/15 text-[#FFE066] border border-[#FFD700]/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_6px_14px_rgba(0,0,0,0.45)] hover:bg-[#FFD700]/25'
                 }`}
               >
                 <ShieldCheck className="w-3 h-3" />
@@ -120,15 +120,15 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center gap-1 shrink-0">
             {/* Dual-Currency Toggle: TON vs STARS */}
             <div
-              className="flex items-center p-0.5 rounded-xl bg-[#120D24] border border-white/10"
+              className="flex items-center p-0.5 rounded-2xl bg-[#120D24] border border-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_6px_14px_rgba(0,0,0,0.45)]"
               dir="ltr"
             >
               <button
                 type="button"
                 onClick={() => setActiveTmaCurrency('TON')}
-                className={`px-1.5 py-1 rounded-lg text-[10px] font-mono font-black transition-all cursor-pointer ${
+                className={`px-1.5 py-1 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer ${
                   activeTmaCurrency === 'TON'
-                    ? 'bg-[#0098EA] text-white shadow-[0_0_10px_rgba(0,152,234,0.45)]'
+                    ? 'bg-[#0098EA] text-white shadow-[inset_0_2px_3px_rgba(255,255,255,0.4),_0_4px_10px_rgba(0,152,234,0.45)]'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -137,9 +137,9 @@ export const Navbar: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTmaCurrency('STARS')}
-                className={`px-1.5 py-1 rounded-lg text-[10px] font-mono font-black transition-all cursor-pointer ${
+                className={`px-1.5 py-1 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer ${
                   activeTmaCurrency === 'STARS'
-                    ? 'bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 shadow-[0_0_10px_rgba(255,215,0,0.45)]'
+                    ? 'bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 shadow-[inset_0_2px_3px_rgba(255,255,255,0.55),_0_4px_10px_rgba(255,215,0,0.45)]'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -152,7 +152,7 @@ export const Navbar: React.FC = () => {
               type="button"
               onClick={() => handleTabNav('wallet')}
               data-testid="navbar-balance-pill"
-              className="flex items-center gap-1 px-1.5 py-1 rounded-xl bg-gradient-to-r from-[#140F28] to-[#1C1436] border border-white/15 hover:border-[#00F5D4]/50 transition-all cursor-pointer"
+              className="flex items-center gap-1 px-1.5 py-1 rounded-2xl bg-gradient-to-r from-[#140F28] to-[#1C1436] border border-white/15 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] hover:border-[#00F5D4]/50 transition-all cursor-pointer"
             >
               <div className="text-right leading-none" dir="ltr">
                 <div className="text-[10px] font-mono font-black text-white">
@@ -164,7 +164,7 @@ export const Navbar: React.FC = () => {
                   ≈ ${portfolioUsdValue.toFixed(2)}
                 </div>
               </div>
-              <div className="w-4 h-4 rounded-md bg-[#00F5D4]/20 border border-[#00F5D4]/40 flex items-center justify-center text-[#00F5D4]">
+              <div className="w-4 h-4 rounded-lg bg-[#00F5D4]/20 border border-[#00F5D4]/40 shadow-[inset_0_1px_2px_rgba(255,255,255,0.3)] flex items-center justify-center text-[#00F5D4]">
                 <Plus className="w-2.5 h-2.5" />
               </div>
             </button>
@@ -175,7 +175,7 @@ export const Navbar: React.FC = () => {
               onClick={() => handleTabNav('my-tickets')}
               title={tr(lang, 'بلیت‌های من', 'My Tickets')}
               data-testid="header-my-tickets-btn"
-              className={`relative p-1.5 rounded-xl border transition-all cursor-pointer ${
+              className={`relative p-1.5 rounded-2xl border shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] transition-all cursor-pointer ${
                 activeRoute === 'my-tickets'
                   ? 'bg-[#FFE066]/20 border-[#FFE066]/50 text-[#FFE066]'
                   : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
@@ -199,7 +199,7 @@ export const Navbar: React.FC = () => {
               }}
               title={tr(lang, 'پشتیبانی زنده VIP', 'VIP Live Support')}
               data-testid="header-support-btn"
-              className={`relative p-1.5 rounded-xl border transition-all cursor-pointer ${
+              className={`relative p-1.5 rounded-2xl border shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] transition-all cursor-pointer ${
                 aiChatOpen
                   ? 'bg-[#FFE066]/20 border-[#FFE066]/60 text-[#FFE066]'
                   : 'bg-white/5 border-white/10 text-slate-300 hover:text-[#FFE066]'
@@ -225,7 +225,7 @@ export const Navbar: React.FC = () => {
               }}
               title={tr(lang, 'منوی امکانات و پروفایل', 'More Views & Profile')}
               data-testid="more-menu-btn"
-              className={`p-1.5 rounded-xl border transition-all cursor-pointer ${
+              className={`p-1.5 rounded-2xl border shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] transition-all cursor-pointer ${
                 moreMenuOpen
                   ? 'bg-[#00F5D4]/20 border-[#00F5D4]/50 text-[#00F5D4]'
                   : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
@@ -272,14 +272,14 @@ export const Navbar: React.FC = () => {
         {moreMenuOpen && (
           <div
             data-testid="more-menu-dropdown"
-            className="max-w-[440px] mx-auto px-3 pb-3 pt-1.5 bg-[#0B0818]/98 border-t border-white/10 animate-in fade-in duration-150"
+            className="max-w-[440px] mx-auto px-3 pb-3 pt-1.5 bg-[#0B0818]/98 border-t border-white/10 rounded-b-3xl shadow-[inset_0_2px_4px_rgba(255,255,255,0.12),_0_16px_30px_rgba(0,0,0,0.65)] animate-in fade-in duration-150"
           >
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 data-testid="more-nav-play"
                 onClick={() => handleTabNav('play')}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
               >
                 <Target className="w-4 h-4 text-[#FFE066] shrink-0" />
                 <span className="truncate">
@@ -290,7 +290,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-my-tickets"
                 onClick={() => handleTabNav('my-tickets')}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
               >
                 <Ticket className="w-4 h-4 text-[#00F5D4] shrink-0" />
                 <span className="truncate">
@@ -301,7 +301,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-user-panel"
                 onClick={() => handleTabNav('user-panel')}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
               >
                 <UserCheck className="w-4 h-4 text-purple-400 shrink-0" />
                 <span className="truncate">
@@ -312,7 +312,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-winners"
                 onClick={() => handleTabNav('winners')}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
               >
                 <Trophy className="w-4 h-4 text-[#FFE066] shrink-0" />
                 <span className="truncate">
@@ -323,7 +323,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-transparency"
                 onClick={() => handleTabNav('transparency')}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
               >
                 <ShieldCheck className="w-4 h-4 text-[#00F5D4] shrink-0" />
                 <span className="truncate">
@@ -334,7 +334,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-how-it-works"
                 onClick={() => handleTabNav('how-it-works')}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
               >
                 <HelpCircle className="w-4 h-4 text-[#38BDF8] shrink-0" />
                 <span className="truncate">
@@ -349,7 +349,7 @@ export const Navbar: React.FC = () => {
                   setMoreMenuOpen(false);
                   setAiChatOpen(true);
                 }}
-                className="col-span-2 flex items-center justify-between gap-2 p-2.5 rounded-xl bg-gradient-to-r from-[#1A1230] to-[#120D24] hover:brightness-110 border border-[#FFE066]/35 text-xs font-black text-[#FFE066] cursor-pointer"
+                className="col-span-2 flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#1A1230] to-[#120D24] hover:brightness-110 border border-[#FFE066]/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-black text-[#FFE066] cursor-pointer"
               >
                 <div className="flex items-center gap-2">
                   <Headset className="w-4 h-4 text-[#00F5D4] shrink-0" />
@@ -371,7 +371,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-terms"
                 onClick={() => handleTabNav('terms')}
-                className="col-span-2 flex items-center justify-center gap-2 p-2 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/10 text-[11px] font-bold text-slate-300 cursor-pointer"
+                className="col-span-2 flex items-center justify-center gap-2 p-2 rounded-2xl bg-white/[0.03] hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_8px_16px_rgba(0,0,0,0.45)] text-[11px] font-bold text-slate-300 cursor-pointer"
               >
                 <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>
@@ -396,7 +396,7 @@ export const Navbar: React.FC = () => {
       </header>
 
       {/* BOTTOM 4-TAB MOBILE NAVIGATION BAR (TMA STANDARD) */}
-      <nav className="fixed bottom-0 inset-x-0 z-50 bg-[#070510]/95 backdrop-blur-2xl border-t border-white/10 select-none pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed bottom-0 inset-x-0 z-50 bg-[#070510]/95 backdrop-blur-2xl border-t border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.14),_0_-10px_24px_rgba(0,0,0,0.65)] select-none pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-[440px] mx-auto px-2 h-16 grid grid-cols-4 gap-1 items-center">
           <BottomTabButton
             active={activeRoute === 'lobby' || activeRoute === 'play'}
@@ -458,10 +458,10 @@ const BottomTabButton: React.FC<BottomTabButtonProps> = ({
   accent,
 }) => {
   const activeColorMap = {
-    gold: 'text-[#FFE066] bg-[#FFD700]/12 border-[#FFD700]/35',
-    cyan: 'text-[#00F5D4] bg-[#00F5D4]/12 border-[#00F5D4]/35',
-    emerald: 'text-emerald-300 bg-emerald-500/12 border-emerald-400/35',
-    blue: 'text-[#38BDF8] bg-[#0098EA]/15 border-[#0098EA]/40',
+    gold: 'text-[#FFE066] bg-[#FFD700]/15 border-[#FFD700]/40',
+    cyan: 'text-[#00F5D4] bg-[#00F5D4]/15 border-[#00F5D4]/40',
+    emerald: 'text-emerald-300 bg-emerald-500/15 border-emerald-400/40',
+    blue: 'text-[#38BDF8] bg-[#0098EA]/20 border-[#0098EA]/45',
   };
 
   return (
@@ -469,7 +469,7 @@ const BottomTabButton: React.FC<BottomTabButtonProps> = ({
       onClick={onClick}
       className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl border transition-all cursor-pointer ${
         active
-          ? `${activeColorMap[accent]} shadow-sm scale-[1.02]`
+          ? `${activeColorMap[accent]} shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_8px_16px_rgba(0,0,0,0.5)] scale-[1.02]`
           : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
       }`}
     >

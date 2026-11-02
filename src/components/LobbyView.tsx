@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Zap,
@@ -15,6 +15,9 @@ import {
   HelpCircle,
   FileText,
   Headset,
+  Crown,
+  Flame,
+  Radio,
 } from 'lucide-react';
 import { useLottery } from '../context/LotteryContext';
 import { generateBulkQuickPickSlips, formatCountdownHMS } from '../utils/lotteryEngine';
@@ -43,10 +46,30 @@ export const LobbyView: React.FC = () => {
     officialBrandTitle,
     setAiChatOpen,
     unreadSupportCount,
+    monthlySuperJackpot,
+    monthlyVipQualification,
+    liveTickerEvent,
+    poolPulseKey,
+    sseConnected,
   } = useLottery();
 
   const [buyingQty, setBuyingQty] = useState<number | null>(null);
   const [purchaseToast, setPurchaseToast] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [pulseHighlight, setPulseHighlight] = useState<boolean>(false);
+
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (poolPulseKey > 0) {
+      setPulseHighlight(true);
+      const timer = setTimeout(() => setPulseHighlight(false), 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [poolPulseKey]);
 
   const activeRoundObj =
     rounds.find((r) => r.roundCode === activeRoundCode) || rounds[0] || null;
@@ -78,11 +101,22 @@ export const LobbyView: React.FC = () => {
       .trim();
 
   const remainingSec = activeRoundObj?.drawTargetTimestampMs
-    ? Math.max(0, Math.floor((activeRoundObj.drawTargetTimestampMs - Date.now()) / 1000))
+    ? Math.max(0, Math.floor((activeRoundObj.drawTargetTimestampMs - nowMs) / 1000))
     : lotteryTimers[activeLotterySpec.id] || 3600;
 
   const countdown = formatCountdownHMS(remainingSec);
   const unitPriceUsdt = activeLotterySpec.ticketPriceUsdt;
+
+  // 30-Day Monthly VIP Super-Jackpot Countdown calculation
+  const monthlyRemainingSec = Math.max(
+    0,
+    Math.floor(((monthlySuperJackpot?.nextMonthlyDrawTimestampMs || nowMs) - nowMs) / 1000)
+  );
+  const monthlyDays = String(Math.floor(monthlyRemainingSec / 86400)).padStart(2, '0');
+  const monthlyHours = String(Math.floor((monthlyRemainingSec % 86400) / 3600)).padStart(2, '0');
+  const monthlyMinutes = String(Math.floor((monthlyRemainingSec % 3600) / 60)).padStart(2, '0');
+  const monthlySeconds = String(monthlyRemainingSec % 60).padStart(2, '0');
+  const lastRolloverItem = monthlySuperJackpot?.rolloverHistory?.[0] || null;
 
   const handleQuickBuy = async (qty: number) => {
     HapticEngine.impactOccurred('medium');
@@ -135,9 +169,32 @@ export const LobbyView: React.FC = () => {
   const myActiveTicketsInRound = tickets.filter(
     (t) => t.roundCode === activeLotterySpec.roundCode
   );
+  const myVipSuperTickets = tickets.filter((t) => t.roundCode === '#LD-MONTHLY-VIP');
 
   return (
     <main className="w-full px-3 pt-3 pb-6 space-y-3.5 select-none">
+      {/* LIVE REAL-TIME SSE TICKER FEED (When any player mints a ticket) */}
+      {liveTickerEvent && (
+        <div
+          data-testid="live-sse-ticker-banner"
+          className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-[#00F5D4]/15 via-[#171130] to-[#FFE066]/15 border border-[#00F5D4]/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-[11px] transition-all"
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Radio className="w-3.5 h-3.5 text-[#00F5D4] animate-pulse shrink-0" />
+            <span className="text-slate-200 font-bold truncate">
+              {tr(
+                lang,
+                `⚡ ${liveTickerEvent.buyerDisplayName} همین الان ${liveTickerEvent.ticketCount} بلیت در ${liveTickerEvent.roundCode} خرید!`,
+                `⚡ ${liveTickerEvent.buyerDisplayName} just bought ${liveTickerEvent.ticketCount} slip(s) in ${liveTickerEvent.roundCode}!`
+              )}
+            </span>
+          </div>
+          <span className="shrink-0 font-mono text-[10px] font-black text-[#FFE066]" dir="ltr">
+            {liveTickerEvent.newJackpotTon.toFixed(2)} TON
+          </span>
+        </div>
+      )}
+
       {/* 1. COMPACT ROUND SELECTOR PILLS */}
       {rounds.length > 0 && (
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
@@ -150,10 +207,10 @@ export const LobbyView: React.FC = () => {
                   HapticEngine.selectionChanged();
                   setActiveRoundCode(r.roundCode);
                 }}
-                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-bold transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-gradient-to-r from-[#0098EA]/25 to-[#FFD700]/20 border-[#FFD700]/60 text-white shadow-[0_0_15px_rgba(255,215,0,0.2)]'
-                    : 'bg-[#110C22]/80 border-white/10 text-slate-400 hover:text-white'
+                    ? 'bg-gradient-to-r from-[#0098EA]/25 to-[#FFD700]/20 border-[#FFD700]/60 text-white shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_10px_20px_rgba(0,0,0,0.5)]'
+                    : 'bg-[#110C22]/85 border-white/10 text-slate-400 shadow-[inset_0_2px_4px_rgba(255,255,255,0.12),_0_6px_14px_rgba(0,0,0,0.45)] hover:text-white'
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-[#00F5D4] animate-pulse" />
@@ -170,7 +227,7 @@ export const LobbyView: React.FC = () => {
       )}
 
       {/* 2. HERO GRAND JACKPOT CARD WITH 3D VISUALS & BESPOKE OBSIDIAN GLASS */}
-      <section className="relative overflow-hidden rounded-3xl p-4 luckydrop-obsidian-glass luckydrop-specular-gold luckydrop-microgrid-watermark">
+      <section className="relative overflow-hidden rounded-3xl p-4 luckydrop-obsidian-glass luckydrop-specular-gold luckydrop-microgrid-watermark shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_14px_28px_rgba(0,0,0,0.6)]">
         <img
           src="/assets/3d/hero-jackpot-3d.png"
           alt="3D TON Jackpot"
@@ -194,9 +251,18 @@ export const LobbyView: React.FC = () => {
               )}
             </span>
           </div>
-          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-slate-300">
-            {activeLotterySpec.roundCode}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span
+              title={sseConnected ? 'Real-Time SSE Stream Active' : 'Auto-Sync Active'}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-400/30 text-[9px] font-mono font-bold text-emerald-300"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              LIVE
+            </span>
+            <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-slate-300">
+              {activeLotterySpec.roundCode}
+            </span>
+          </div>
         </div>
 
         {/* Round Title & Live Pool Amount */}
@@ -209,7 +275,10 @@ export const LobbyView: React.FC = () => {
               : cleanTitleFa(activeLotterySpec.titleFa)}
           </div>
           <div
-            className="text-3xl font-black font-mono tracking-tight bg-gradient-to-r from-[#FFF6D6] via-[#FFE066] to-[#00F5D4] bg-clip-text text-transparent drop-shadow-[0_2px_15px_rgba(255,215,0,0.3)]"
+            data-testid="hero-live-jackpot-amount"
+            className={`text-3xl font-black font-mono tracking-tight bg-gradient-to-r from-[#FFF6D6] via-[#FFE066] to-[#00F5D4] bg-clip-text text-transparent drop-shadow-[0_2px_15px_rgba(255,215,0,0.3)] transition-transform duration-300 ${
+              pulseHighlight ? 'scale-105 brightness-125' : 'scale-100'
+            }`}
             dir="ltr"
           >
             {formatActiveTmaAmount(activeLotterySpec.jackpotUsdt)}
@@ -225,25 +294,31 @@ export const LobbyView: React.FC = () => {
               `${activeLotterySpec.mainCount} گوی از ${activeLotterySpec.mainMax}`,
               `${activeLotterySpec.mainCount}/${activeLotterySpec.mainMax} Balls`
             )}
+            {typeof activeRoundObj?.ticketsSoldCount === 'number' &&
+              activeRoundObj.ticketsSoldCount > 0 && (
+                <span className="ml-1.5 text-[#FFE066] font-mono font-bold">
+                  • 🎟️ {activeRoundObj.ticketsSoldCount}
+                </span>
+              )}
           </div>
         </div>
 
         {/* Live Countdown Boxes */}
-        <div className="relative z-10 flex items-center justify-between bg-[#090614]/85 border border-white/10 rounded-2xl p-2.5 mb-3.5">
+        <div className="relative z-10 flex items-center justify-between bg-[#090614]/90 border border-white/10 rounded-2xl p-2.5 mb-3.5 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_8px_16px_rgba(0,0,0,0.45)]">
           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-300">
             <Clock className="w-4 h-4 text-[#FFE066]" />
             <span>{tr(lang, 'قرعه‌کشی خودکار راس تایم:', 'Auto Draw In:')}</span>
           </div>
           <div className="flex items-center gap-1 font-mono text-xs font-black" dir="ltr">
-            <span className="px-2 py-1 rounded-lg bg-white/10 text-white">
+            <span className="px-2 py-1 rounded-xl bg-white/10 text-white shadow-[inset_0_1px_2px_rgba(255,255,255,0.2)]">
               {countdown.hours}h
             </span>
             <span className="text-[#FFE066]">:</span>
-            <span className="px-2 py-1 rounded-lg bg-white/10 text-white">
+            <span className="px-2 py-1 rounded-xl bg-white/10 text-white shadow-[inset_0_1px_2px_rgba(255,255,255,0.2)]">
               {countdown.minutes}m
             </span>
             <span className="text-[#FFE066]">:</span>
-            <span className="px-2 py-1 rounded-lg bg-[#00F5D4]/20 text-[#00F5D4] border border-[#00F5D4]/30">
+            <span className="px-2 py-1 rounded-xl bg-[#00F5D4]/20 text-[#00F5D4] border border-[#00F5D4]/30 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25)]">
               {countdown.seconds}s
             </span>
           </div>
@@ -270,8 +345,8 @@ export const LobbyView: React.FC = () => {
                   onClick={() => handleQuickBuy(qty)}
                   className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-2xl border font-bold transition-all cursor-pointer active:scale-95 ${
                     qty === 5
-                      ? 'bg-gradient-to-b from-[#FFE066] to-[#B8860B] text-slate-950 border-[#FFE066] shadow-[0_6px_20px_rgba(255,215,0,0.3)]'
-                      : 'bg-[#171130] hover:bg-[#1E163D] text-white border-white/15'
+                      ? 'bg-gradient-to-b from-[#FFE066] to-[#B8860B] text-slate-950 border-[#FFE066] shadow-[inset_0_2px_4px_rgba(255,255,255,0.6),_0_10px_20px_rgba(0,0,0,0.5)]'
+                      : 'bg-[#171130] hover:bg-[#1E163D] text-white border-white/15 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)]'
                   }`}
                 >
                   <span className="text-xs font-black">
@@ -300,7 +375,7 @@ export const LobbyView: React.FC = () => {
                 navigateTo('play');
               }}
               data-testid="custom-pick-btn"
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-[#00F5D4]/15 hover:bg-[#00F5D4]/25 border border-[#00F5D4]/40 text-[#00F5D4] text-xs font-black transition-all cursor-pointer active:scale-95"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-[#00F5D4]/15 hover:bg-[#00F5D4]/25 border border-[#00F5D4]/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-[#00F5D4] text-xs font-black transition-all cursor-pointer active:scale-95"
             >
               <Target className="w-4 h-4 shrink-0" />
               <span>{tr(lang, '🎯 انتخاب دستی شماره‌ها', '🎯 Custom Pick')}</span>
@@ -312,7 +387,7 @@ export const LobbyView: React.FC = () => {
                 navigateTo('my-tickets');
               }}
               data-testid="lobby-my-tickets-btn"
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/15 text-slate-100 text-xs font-black transition-all cursor-pointer active:scale-95"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/15 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-slate-100 text-xs font-black transition-all cursor-pointer active:scale-95"
             >
               <Ticket className="w-4 h-4 text-[#FFE066] shrink-0" />
               <span>
@@ -328,16 +403,187 @@ export const LobbyView: React.FC = () => {
 
         {/* Purchase Feedback Toast */}
         {purchaseToast && (
-          <div className="relative z-10 mt-3 p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 text-xs font-bold text-center">
+          <div className="relative z-10 mt-3 p-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.45)] text-emerald-200 text-xs font-bold text-center">
             {purchaseToast}
           </div>
         )}
       </section>
 
+      {/* 2.25 MONTHLY VIP LOYALTY SUPER-JACKPOT ROLLOVER VAULT CARD */}
+      <section
+        data-testid="monthly-super-jackpot-vault-card"
+        className="relative overflow-hidden rounded-3xl p-4 bg-gradient-to-br from-[#19112E] via-[#0E091C] to-[#1E1409] border border-[#FFE066]/45 shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_12px_28px_rgba(0,0,0,0.55)] space-y-3"
+      >
+        <div className="absolute -top-12 -right-12 w-32 h-32 bg-[#FFE066]/15 rounded-full blur-2xl pointer-events-none" />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-2xl bg-gradient-to-br from-[#FFE066] to-[#B8860B] text-slate-950 flex items-center justify-center shadow-[inset_0_2px_3px_rgba(255,255,255,0.6),_0_6px_14px_rgba(255,215,0,0.4)] shrink-0">
+              <Crown className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-xs font-black text-[#FFE066] truncate">
+                {tr(
+                  lang,
+                  '👑 ابر جک‌پات ماهانه وفاداری (Monthly VIP Super-Jackpot Vault)',
+                  '👑 Monthly VIP Super-Jackpot Rollover Vault'
+                )}
+              </h2>
+              <p className="text-[10px] text-slate-300 truncate">
+                {tr(
+                  lang,
+                  'سرریز خودکار جوایز برنده‌نشده تمام دورها • ویژه کاربران وفادار VIP',
+                  '100% Unclaimed Prize Rollover Vault • Exclusive to Loyal VIP Players'
+                )}
+              </p>
+            </div>
+          </div>
+          <span className="shrink-0 font-mono text-[10px] font-black px-2 py-0.5 rounded-lg bg-[#FFE066]/15 border border-[#FFE066]/40 text-[#FFE066]">
+            {monthlySuperJackpot.roundId || '#LD-MONTHLY-VIP'}
+          </span>
+        </div>
+
+        {/* Live Accumulated Rollover Pool & 30-Day Timer */}
+        <div className="grid grid-cols-2 gap-2.5 bg-[#080511]/90 border border-[#FFE066]/25 rounded-2xl p-3 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_8px_16px_rgba(0,0,0,0.45)]">
+          <div>
+            <div className="text-[10px] text-slate-400 font-bold">
+              {tr(lang, 'موجودی انباشته خزانه سرریز:', 'Accumulated Rollover Pool:')}
+            </div>
+            <div
+              data-testid="monthly-super-pot-ton"
+              className={`font-mono text-xl font-black text-[#FFE066] mt-0.5 transition-transform duration-300 ${
+                pulseHighlight ? 'scale-105 text-white' : ''
+              }`}
+              dir="ltr"
+            >
+              💎 {(monthlySuperJackpot.accumulatedPoolTon || 0).toFixed(2)} TON
+            </div>
+            <div className="font-mono text-[10px] text-[#00F5D4]" dir="ltr">
+              ≈ {(monthlySuperJackpot.accumulatedPoolStars || 0).toLocaleString('en-US')} ⭐ Stars
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-between items-end">
+            <div className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
+              <Clock className="w-3 h-3 text-[#FFE066]" />
+              <span>{tr(lang, 'شمارش معکوس ۳۰ روزه:', '30-Day Vault Draw:')}</span>
+            </div>
+            <div
+              data-testid="monthly-super-pot-countdown"
+              className="flex items-center gap-1 font-mono text-[11px] font-black mt-1"
+              dir="ltr"
+            >
+              <span className="px-1.5 py-0.5 rounded-lg bg-white/10 text-[#FFE066] shadow-[inset_0_1px_2px_rgba(255,255,255,0.2)]">
+                {monthlyDays}d
+              </span>
+              <span>:</span>
+              <span className="px-1.5 py-0.5 rounded-lg bg-white/10 text-white shadow-[inset_0_1px_2px_rgba(255,255,255,0.2)]">{monthlyHours}h</span>
+              <span>:</span>
+              <span className="px-1.5 py-0.5 rounded-lg bg-white/10 text-white shadow-[inset_0_1px_2px_rgba(255,255,255,0.2)]">
+                {monthlyMinutes}m
+              </span>
+              <span>:</span>
+              <span className="px-1.5 py-0.5 rounded-lg bg-[#00F5D4]/20 text-[#00F5D4] shadow-[inset_0_1px_2px_rgba(255,255,255,0.25)]">
+                {monthlySeconds}s
+              </span>
+            </div>
+            <div className="text-[9px] text-amber-300/90 mt-1">
+              {tr(
+                lang,
+                '♾️ قانون انتقال بی‌نهایت به ماه بعد در صورت عدم برنده',
+                '♾️ Infinite Rollover if unclaimed'
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Last Rollover Contribution Banner */}
+        {lastRolloverItem && (
+          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-2xl bg-amber-500/10 border border-amber-400/25 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_6px_14px_rgba(0,0,0,0.4)] text-[10px]">
+            <span className="text-amber-200 font-bold truncate">
+              {tr(
+                lang,
+                `🔥 آخرین سرریز انتقالی از دور ${lastRolloverItem.sourceRoundCode}:`,
+                `🔥 Last Rollover from ${lastRolloverItem.sourceRoundCode}:`
+              )}
+            </span>
+            <span className="font-mono font-black text-[#FFE066] shrink-0" dir="ltr">
+              +{Number(lastRolloverItem.rolloverTon || 0).toFixed(2)} TON ({lastRolloverItem.timestamp})
+            </span>
+          </div>
+        )}
+
+        {/* User VIP Qualification Progress Bar & Earned VIP Super-Tickets */}
+        <div className="space-y-1.5 pt-1">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="font-bold text-slate-200 flex items-center gap-1">
+              <Flame className="w-3.5 h-3.5 text-[#FFE066]" />
+              {tr(lang, 'وضعیت صلاحیت VIP شما:', 'Your VIP Qualification:')}
+            </span>
+            <span
+              data-testid="monthly-vip-qualification-badge"
+              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                monthlyVipQualification.isQualified
+                  ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-300'
+                  : 'bg-amber-500/15 border border-amber-400/35 text-amber-300'
+              }`}
+            >
+              {monthlyVipQualification.isQualified
+                ? tr(lang, '✅ واجد شرایط قرعه‌کشی ماهانه VIP', '✅ Qualified for Monthly VIP Pot')
+                : tr(
+                    lang,
+                    `در حال تکمیل (${monthlyVipQualification.overallProgressPercent}%)`,
+                    `In Progress (${monthlyVipQualification.overallProgressPercent}%)`
+                  )}
+            </span>
+          </div>
+
+          <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#FFE066] via-[#00F5D4] to-emerald-400 transition-all duration-500"
+              style={{ width: `${Math.max(6, monthlyVipQualification.overallProgressPercent)}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-1.5 pt-1 text-[10px]">
+            <div className="p-2 rounded-2xl bg-white/[0.04] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_6px_14px_rgba(0,0,0,0.4)] text-center">
+              <div className="text-slate-400">{tr(lang, 'بلیت‌های خریداری‌شده', 'Tickets Bought')}</div>
+              <div className="font-mono font-black text-white mt-0.5" dir="ltr">
+                {monthlyVipQualification.regularTicketsBoughtCount} /{' '}
+                {monthlyVipQualification.minTicketsRequired}
+              </div>
+            </div>
+            <div className="p-2 rounded-2xl bg-white/[0.04] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_6px_14px_rgba(0,0,0,0.4)] text-center">
+              <div className="text-slate-400">{tr(lang, 'امتیاز وفاداری XP', 'Loyalty XP')}</div>
+              <div className="font-mono font-black text-[#00F5D4] mt-0.5" dir="ltr">
+                {monthlyVipQualification.userXp} / {monthlyVipQualification.minXpRequired} XP
+              </div>
+            </div>
+            <div className="p-2 rounded-2xl bg-[#FFE066]/10 border border-[#FFE066]/30 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_6px_14px_rgba(0,0,0,0.4)] text-center">
+              <div className="text-amber-200">{tr(lang, 'بلیت سوپر VIP شما', 'VIP Super-Slips')}</div>
+              <div
+                data-testid="monthly-vip-super-tickets-count"
+                className="font-mono font-black text-[#FFE066] mt-0.5"
+                dir="ltr"
+              >
+                👑 {Math.max(myVipSuperTickets.length, monthlyVipQualification.vipSuperTicketsEarnedTotal)}
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[10px] text-slate-400 text-center pt-0.5">
+            {tr(
+              lang,
+              `🎁 به ازای هر ۵ بلیت عادی، ۱ بلیت رایگان ابر جک‌پات ماهانه VIP صادر می‌شود (${monthlyVipQualification.ticketsUntilNextVipTicket} بلیت تا کوپن VIP بعدی)`,
+              `🎁 Earn 1 Free Monthly VIP Super-Ticket for every 5 regular slips (${monthlyVipQualification.ticketsUntilNextVipTicket} more until next VIP slip)`
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* 2.5 LATEST COMPLETED DRAW & CINEMATIC CEREMONY REPLAY CARD */}
       <section
         data-testid="latest-completed-draw-card"
-        className="rounded-2xl p-3.5 luckydrop-obsidian-glass luckydrop-specular-gold flex flex-col gap-2.5"
+        className="rounded-3xl p-3.5 luckydrop-obsidian-glass luckydrop-specular-gold flex flex-col gap-2.5"
       >
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
@@ -368,7 +614,7 @@ export const LobbyView: React.FC = () => {
             type="button"
             data-testid="lobby-watch-draw-btn"
             onClick={() => openLatestDrawCeremony(latestCompletedDraw)}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 font-black text-[11px] shadow-[0_4px_15px_rgba(255,215,0,0.3)] hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 font-black text-[11px] shadow-[inset_0_2px_4px_rgba(255,255,255,0.6),_0_8px_16px_rgba(0,0,0,0.5)] hover:brightness-110 active:scale-95 transition-all cursor-pointer"
           >
             <span>
               {tr(
@@ -385,13 +631,13 @@ export const LobbyView: React.FC = () => {
             {latestWinningMain.map((num, idx) => (
               <span
                 key={idx}
-                className="w-7 h-7 rounded-full bg-gradient-to-br from-[#FFF9DB] via-[#FFE066] to-[#B8860B] text-slate-950 font-mono text-[11px] font-black flex items-center justify-center shadow-[0_0_10px_rgba(255,215,0,0.35)]"
+                className="w-7 h-7 rounded-full bg-gradient-to-br from-[#FFF9DB] via-[#FFE066] to-[#B8860B] text-slate-950 font-mono text-[11px] font-black flex items-center justify-center shadow-[inset_0_2px_3px_rgba(255,255,255,0.7),_0_6px_12px_rgba(0,0,0,0.45)]"
               >
                 {String(num).padStart(2, '0')}
               </span>
             ))}
             {latestWinningGolden > 0 && (
-              <span className="w-7 h-7 rounded-full bg-gradient-to-br from-[#00f59b] to-[#00A86B] text-slate-950 font-mono text-[11px] font-black flex items-center justify-center ring-1 ring-[#FFE066] shadow-[0_0_12px_rgba(0,245,155,0.45)]">
+              <span className="w-7 h-7 rounded-full bg-gradient-to-br from-[#00f59b] to-[#00A86B] text-slate-950 font-mono text-[11px] font-black flex items-center justify-center ring-1 ring-[#FFE066] shadow-[inset_0_2px_3px_rgba(255,255,255,0.6),_0_6px_12px_rgba(0,0,0,0.45)]">
                 ★{latestWinningGolden}
               </span>
             )}
@@ -409,12 +655,12 @@ export const LobbyView: React.FC = () => {
             HapticEngine.selectionChanged();
             navigateTo('mini-games');
           }}
-          className="relative overflow-hidden flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-[#121D38] to-[#0B1022] border border-[#00F5D4]/30 hover:border-[#00F5D4]/60 text-right transition-all cursor-pointer"
+          className="relative overflow-hidden flex items-center gap-2.5 p-3 rounded-3xl bg-gradient-to-br from-[#121D38] to-[#0B1022] border border-[#00F5D4]/30 hover:border-[#00F5D4]/60 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-right transition-all cursor-pointer"
         >
           <img
             src="/assets/3d/plinko-3d.png"
             alt="Plinko & Crash 3D"
-            className="w-11 h-11 rounded-xl object-cover border border-[#00F5D4]/40 shrink-0"
+            className="w-11 h-11 rounded-2xl object-cover border border-[#00F5D4]/40 shrink-0"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = 'none';
             }}
@@ -434,12 +680,12 @@ export const LobbyView: React.FC = () => {
             HapticEngine.selectionChanged();
             navigateTo('earn');
           }}
-          className="relative overflow-hidden flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-br from-[#1A1530] to-[#0E0A1C] border border-[#FFD700]/30 hover:border-[#FFD700]/60 text-right transition-all cursor-pointer"
+          className="relative overflow-hidden flex items-center gap-2.5 p-3 rounded-3xl bg-gradient-to-br from-[#1A1530] to-[#0E0A1C] border border-[#FFD700]/30 hover:border-[#FFD700]/60 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-right transition-all cursor-pointer"
         >
           <img
             src="/assets/3d/ton-chest-3d.png"
             alt="TON Chest 3D"
-            className="w-11 h-11 rounded-xl object-cover border border-[#FFD700]/40 shrink-0"
+            className="w-11 h-11 rounded-2xl object-cover border border-[#FFD700]/40 shrink-0"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = 'none';
             }}
@@ -456,7 +702,7 @@ export const LobbyView: React.FC = () => {
       </div>
 
       {/* 4. USER'S ACTIVE TICKETS IN THIS ROUND */}
-      <section className="rounded-2xl p-3.5 bg-[#110C22]/90 border border-white/10 space-y-2.5">
+      <section className="rounded-3xl p-3.5 bg-[#110C22]/90 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.18),_0_10px_20px_rgba(0,0,0,0.5)] space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-[#00F5D4]" />
@@ -497,7 +743,7 @@ export const LobbyView: React.FC = () => {
                 <div
                   key={t.ticketCode}
                   onClick={() => setViralCardTicket(t)}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-[#FFE066]/25 luckydrop-holographic-shimmer cursor-pointer transition-all"
+                  className="flex items-center justify-between p-2.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-[#FFE066]/25 shadow-[inset_0_2px_4px_rgba(255,255,255,0.18),_0_8px_16px_rgba(0,0,0,0.45)] luckydrop-holographic-shimmer cursor-pointer transition-all"
                 >
                   <div>
                     <div className="flex items-center gap-1.5">
@@ -524,12 +770,12 @@ export const LobbyView: React.FC = () => {
                     {mainNums.map((num, idx) => (
                       <span
                         key={idx}
-                        className="w-6 h-6 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center font-mono text-[10px] font-bold text-white"
+                        className="w-6 h-6 rounded-xl bg-white/10 border border-white/15 shadow-[inset_0_1px_2px_rgba(255,255,255,0.2)] flex items-center justify-center font-mono text-[10px] font-bold text-white"
                       >
                         {num}
                       </span>
                     ))}
-                    <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#FFE066] to-[#B8860B] text-slate-950 flex items-center justify-center font-mono text-[10px] font-black">
+                    <span className="w-6 h-6 rounded-xl bg-gradient-to-br from-[#FFE066] to-[#B8860B] text-slate-950 shadow-[inset_0_1px_2px_rgba(255,255,255,0.5)] flex items-center justify-center font-mono text-[10px] font-black">
                       {t.goldenBall}
                     </span>
                   </div>
@@ -544,7 +790,7 @@ export const LobbyView: React.FC = () => {
       <section className="grid grid-cols-2 gap-2">
         <button
           onClick={() => navigateTo('user-panel')}
-          className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#110C22]/85 hover:bg-[#171130] border border-white/10 text-xs font-bold text-slate-200 cursor-pointer"
+          className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#110C22]/85 hover:bg-[#171130] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-slate-200 cursor-pointer"
         >
           <UserCheck className="w-4 h-4 text-purple-400 shrink-0" />
           <span className="truncate">
@@ -553,7 +799,7 @@ export const LobbyView: React.FC = () => {
         </button>
         <button
           onClick={() => navigateTo('winners')}
-          className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#110C22]/85 hover:bg-[#171130] border border-white/10 text-xs font-bold text-slate-200 cursor-pointer"
+          className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#110C22]/85 hover:bg-[#171130] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-slate-200 cursor-pointer"
         >
           <Trophy className="w-4 h-4 text-[#FFE066] shrink-0" />
           <span className="truncate">
@@ -562,7 +808,7 @@ export const LobbyView: React.FC = () => {
         </button>
         <button
           onClick={() => navigateTo('how-it-works')}
-          className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#110C22]/85 hover:bg-[#171130] border border-white/10 text-xs font-bold text-slate-200 cursor-pointer"
+          className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#110C22]/85 hover:bg-[#171130] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-slate-200 cursor-pointer"
         >
           <HelpCircle className="w-4 h-4 text-[#38BDF8] shrink-0" />
           <span className="truncate">
@@ -571,7 +817,7 @@ export const LobbyView: React.FC = () => {
         </button>
         <button
           onClick={() => navigateTo('terms')}
-          className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#110C22]/85 hover:bg-[#171130] border border-white/10 text-xs font-bold text-slate-200 cursor-pointer"
+          className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#110C22]/85 hover:bg-[#171130] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-slate-200 cursor-pointer"
         >
           <FileText className="w-4 h-4 text-slate-400 shrink-0" />
           <span className="truncate">
@@ -582,7 +828,7 @@ export const LobbyView: React.FC = () => {
 
       {/* 6. PROVABLY FAIR SEED BADGE & PROPRIETARY BRAND SIGNATURE FOOTER */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between p-3 rounded-2xl luckydrop-obsidian-glass luckydrop-specular-purple text-[11px] text-slate-400">
+        <div className="flex items-center justify-between p-3 rounded-3xl luckydrop-obsidian-glass luckydrop-specular-purple text-[11px] text-slate-400">
           <div className="flex items-center gap-1.5 min-w-0">
             <Lock className="w-3.5 h-3.5 text-[#00F5D4] shrink-0" />
             <span className="truncate font-mono" dir="ltr">
@@ -600,7 +846,7 @@ export const LobbyView: React.FC = () => {
 
         <div
           data-testid="lobby-official-brand-signature"
-          className="p-3 rounded-2xl luckydrop-obsidian-glass luckydrop-specular-gold flex items-center justify-between gap-2"
+          className="p-3 rounded-3xl luckydrop-obsidian-glass luckydrop-specular-gold flex items-center justify-between gap-2"
         >
           <div className="flex items-center gap-2 min-w-0">
             <LuckyDropLogo size={24} />
@@ -623,7 +869,7 @@ export const LobbyView: React.FC = () => {
               HapticEngine.selectionChanged();
               setAiChatOpen(true);
             }}
-            className="shrink-0 relative flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#FFE066]/15 hover:bg-[#FFE066]/25 border border-[#FFE066]/40 text-[#FFE066] text-[10px] font-black cursor-pointer"
+            className="shrink-0 relative flex items-center gap-1 px-2.5 py-1.5 rounded-2xl bg-[#FFE066]/15 hover:bg-[#FFE066]/25 border border-[#FFE066]/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_8px_16px_rgba(0,0,0,0.45)] text-[#FFE066] text-[10px] font-black cursor-pointer"
           >
             <Headset className="w-3.5 h-3.5" />
             <span>{tr(lang, 'پشتیبانی VIP', 'VIP Support')}</span>

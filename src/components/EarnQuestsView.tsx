@@ -155,7 +155,7 @@ export const EarnQuestsView: React.FC = () => {
   return (
     <main className="w-full px-3 pt-3 pb-8 space-y-4 select-none">
       {/* 1. HERO BONUS & TURNOVER-LOCKED REWARDS SUMMARY */}
-      <section className="relative overflow-hidden rounded-3xl p-4 bg-gradient-to-br from-[#16102C] via-[#0F0A20] to-[#080512] border border-[#FFD700]/30 shadow-xl">
+      <section className="relative overflow-hidden rounded-3xl p-4 bg-gradient-to-br from-[#16102C] via-[#0F0A20] to-[#080512] border border-[#FFD700]/30 shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_12px_26px_rgba(0,0,0,0.55)]">
         <img
           src="/assets/3d/ton-chest-3d.png"
           alt="TON Bonus Chest 3D"
@@ -180,7 +180,7 @@ export const EarnQuestsView: React.FC = () => {
               {tr(lang, 'کسب جوایز رایگان و دعوت دوستان', 'Earn Free Drops & Invite Friends')}
             </h1>
           </div>
-          <div className="px-3 py-1.5 rounded-2xl bg-[#FFD700]/15 border border-[#FFD700]/35 text-center">
+          <div className="px-3 py-1.5 rounded-2xl bg-[#FFD700]/15 border border-[#FFD700]/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_8px_16px_rgba(0,0,0,0.45)] text-center">
             <div className="text-[9px] text-slate-300">{tr(lang, 'امتیاز XP', 'XP Score')}</div>
             <div className="font-mono text-sm font-black text-[#FFE066]" dir="ltr">
               {tmaXpPoints.toLocaleString('en-US')} XP
@@ -192,7 +192,7 @@ export const EarnQuestsView: React.FC = () => {
         <div className="grid grid-cols-3 gap-2">
           <div
             onClick={() => navigateTo('mini-games')}
-            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 text-center cursor-pointer hover:border-[#00F5D4]/40 transition-all"
+            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_8px_16px_rgba(0,0,0,0.45)] text-center cursor-pointer hover:border-[#00F5D4]/40 transition-all"
           >
             <div className="text-base">🟣</div>
             <div className="font-mono text-sm font-black text-[#00F5D4] mt-0.5">
@@ -205,7 +205,7 @@ export const EarnQuestsView: React.FC = () => {
 
           <div
             onClick={() => navigateTo('mini-games')}
-            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 text-center cursor-pointer hover:border-[#FFE066]/40 transition-all"
+            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_8px_16px_rgba(0,0,0,0.45)] text-center cursor-pointer hover:border-[#FFE066]/40 transition-all"
           >
             <div className="text-base">🎫</div>
             <div className="font-mono text-sm font-black text-[#FFE066] mt-0.5">
@@ -218,7 +218,7 @@ export const EarnQuestsView: React.FC = () => {
 
           <div
             onClick={() => navigateTo('lobby')}
-            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 text-center cursor-pointer hover:border-emerald-400/40 transition-all"
+            className="p-2.5 rounded-2xl bg-black/40 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_8px_16px_rgba(0,0,0,0.45)] text-center cursor-pointer hover:border-emerald-400/40 transition-all"
           >
             <div className="text-base">🎟️</div>
             <div className="font-mono text-sm font-black text-emerald-300 mt-0.5">
@@ -232,13 +232,13 @@ export const EarnQuestsView: React.FC = () => {
       </section>
 
       {toastMessage && (
-        <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 text-xs font-bold text-center">
+        <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.45)] text-emerald-200 text-xs font-bold text-center">
           {toastMessage}
         </div>
       )}
 
       {/* 2. DYNAMIC 7-DAY STREAK BAR (DRIVEN BY REAL USER QUEST/ACTIVITY STATE) */}
-      <section className="rounded-2xl p-3.5 bg-[#110C22]/90 border border-white/10 space-y-2.5">
+      <section className="rounded-3xl p-3.5 bg-[#110C22]/90 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <Calendar className="w-4 h-4 text-[#FFE066]" />
@@ -260,10 +260,10 @@ export const EarnQuestsView: React.FC = () => {
             return (
               <div
                 key={day}
-                className={`p-1.5 rounded-xl border text-center ${
+                className={`p-1.5 rounded-2xl border text-center ${
                   done
-                    ? 'bg-[#FFD700]/20 border-[#FFD700]/50 text-[#FFE066]'
-                    : 'bg-white/[0.03] border-white/10 text-slate-500'
+                    ? 'bg-[#FFD700]/20 border-[#FFD700]/50 text-[#FFE066] shadow-[inset_0_2px_3px_rgba(255,255,255,0.25),_0_6px_12px_rgba(0,0,0,0.4)]'
+                    : 'bg-white/[0.03] border-white/10 text-slate-500 shadow-[inset_0_1px_2px_rgba(255,255,255,0.1)]'
                 }`}
               >
                 <div className="text-[9px] font-mono font-bold">D{day}</div>
@@ -296,7 +296,7 @@ export const EarnQuestsView: React.FC = () => {
         {tmaQuests.map((quest) => (
           <div
             key={quest.id}
-            className={`p-3.5 rounded-2xl border transition-all ${
+            className={`p-3.5 rounded-3xl border shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] transition-all ${
               quest.claimed
                 ? 'bg-emerald-950/20 border-emerald-500/30'
                 : 'bg-[#110C22]/90 border-white/10 hover:border-white/20'
@@ -304,7 +304,7 @@ export const EarnQuestsView: React.FC = () => {
           >
             <div className="flex items-start justify-between gap-2.5">
               <div className="flex items-start gap-2.5 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.18),_0_6px_12px_rgba(0,0,0,0.4)] flex items-center justify-center shrink-0">
                   {getQuestIcon(quest.id)}
                 </div>
                 <div className="min-w-0">
@@ -322,7 +322,7 @@ export const EarnQuestsView: React.FC = () => {
                         : 'Play 10 rounds across any Instant Mini-Game'
                       : quest.subtitleFa}
                   </div>
-                  <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-lg bg-[#FFD700]/12 border border-[#FFD700]/30 text-[10px] font-black text-[#FFE066]">
+                  <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-xl bg-[#FFD700]/12 border border-[#FFD700]/30 text-[10px] font-black text-[#FFE066]">
                     <span>
                       🎁{' '}
                       {lang === 'EN'
@@ -343,10 +343,10 @@ export const EarnQuestsView: React.FC = () => {
                 onClick={() => handleQuestAction(quest)}
                 disabled={quest.claimed}
                 data-testid={`quest-claim-btn-${quest.id}`}
-                className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                className={`shrink-0 px-3 py-2 rounded-2xl text-[11px] font-black transition-all cursor-pointer ${
                   quest.claimed
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 cursor-default'
-                    : 'bg-gradient-to-r from-[#0098EA] to-[#00F5D4] text-slate-950 shadow-md active:scale-95'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2)] cursor-default'
+                    : 'bg-gradient-to-r from-[#0098EA] to-[#00F5D4] text-slate-950 shadow-[inset_0_2px_4px_rgba(255,255,255,0.5),_0_8px_16px_rgba(0,0,0,0.45)] active:scale-95'
                 }`}
               >
                 {quest.claimed ? (
@@ -369,10 +369,10 @@ export const EarnQuestsView: React.FC = () => {
       </section>
 
       {/* 4. ZERO-DEFICIT AFFILIATE REFERRAL ENGINE (10% OF HOUSE EDGE) */}
-      <section className="rounded-3xl p-4 bg-gradient-to-br from-[#10192E] via-[#0B1120] to-[#070510] border border-[#0098EA]/35 space-y-3">
+      <section className="rounded-3xl p-4 bg-gradient-to-br from-[#10192E] via-[#0B1120] to-[#070510] border border-[#0098EA]/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_12px_26px_rgba(0,0,0,0.55)] space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-[#0098EA]/20 border border-[#0098EA]/40 flex items-center justify-center text-[#38BDF8]">
+            <div className="w-9 h-9 rounded-2xl bg-[#0098EA]/20 border border-[#0098EA]/40 shadow-[inset_0_2px_3px_rgba(255,255,255,0.25),_0_6px_12px_rgba(0,0,0,0.45)] flex items-center justify-center text-[#38BDF8]">
               <Users className="w-5 h-5" />
             </div>
             <div>
@@ -388,19 +388,19 @@ export const EarnQuestsView: React.FC = () => {
               </p>
             </div>
           </div>
-          <span className="px-2 py-1 rounded-lg bg-[#00F5D4]/15 border border-[#00F5D4]/30 text-[#00F5D4] font-mono text-[10px] font-black">
+          <span className="px-2 py-1 rounded-xl bg-[#00F5D4]/15 border border-[#00F5D4]/30 text-[#00F5D4] font-mono text-[10px] font-black">
             10% RevShare
           </span>
         </div>
 
         {/* Shareable Telegram Mini App Deep Link */}
-        <div className="p-2.5 rounded-2xl bg-black/50 border border-white/10 flex items-center justify-between gap-2">
+        <div className="p-2.5 rounded-2xl bg-black/50 border border-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1 text-left font-mono text-[11px] text-[#38BDF8] truncate" dir="ltr">
             {tmaReferralUrl}
           </div>
           <button
             onClick={handleCopyInviteLink}
-            className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-[11px] font-bold cursor-pointer"
+            className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-2xl bg-white/10 hover:bg-white/15 shadow-[inset_0_2px_3px_rgba(255,255,255,0.25),_0_6px_12px_rgba(0,0,0,0.45)] text-white text-[11px] font-bold cursor-pointer"
           >
             <Copy className="w-3.5 h-3.5" />
             <span>
@@ -414,7 +414,7 @@ export const EarnQuestsView: React.FC = () => {
         {/* Native Telegram Share Button */}
         <button
           onClick={handleTelegramNativeShare}
-          className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#0098EA] via-[#00B4D8] to-[#00F5D4] text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-[0_8px_20px_rgba(0,152,234,0.35)] cursor-pointer active:scale-98"
+          className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#0098EA] via-[#00B4D8] to-[#00F5D4] text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-[inset_0_2px_4px_rgba(255,255,255,0.55),_0_10px_20px_rgba(0,0,0,0.5)] cursor-pointer active:scale-98"
         >
           <Share2 className="w-4 h-4" />
           <span>
@@ -428,7 +428,7 @@ export const EarnQuestsView: React.FC = () => {
 
         {/* Referral Stats & Claim Commission */}
         <div className="grid grid-cols-2 gap-2 pt-1">
-          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
+          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_6px_14px_rgba(0,0,0,0.4)]">
             <div className="text-[10px] text-slate-400">
               {tr(lang, 'دوستان دعوت‌شده فعال', 'Active Referrals')}
             </div>
@@ -437,7 +437,7 @@ export const EarnQuestsView: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10">
+          <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_6px_14px_rgba(0,0,0,0.4)]">
             <div className="text-[10px] text-slate-400">
               {tr(lang, 'کمیسیون قابل برداشت', 'Claimable Commission')}
             </div>
@@ -453,7 +453,7 @@ export const EarnQuestsView: React.FC = () => {
             const res = await claimReferralEarningsToWallet();
             showToast(res.message);
           }}
-          className="w-full py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 font-black text-xs transition-all cursor-pointer"
+          className="w-full py-2.5 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_10px_20px_rgba(0,0,0,0.5)] text-emerald-300 font-black text-xs transition-all cursor-pointer"
         >
           {tr(lang, '💸 انتقال کمیسیون به کیف پول اصلی', '💸 Transfer Commission to Main Wallet')}
         </button>

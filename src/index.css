@@ -221,8 +221,8 @@
   animation: cardEnterFade 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Strict Unified Card & Container Geometry:
-   rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md */
+/* Claymorphic Unified Card & Container Geometry:
+   Soft multi-layered inner highlights + inner bottom contour + deep outer shadow */
 .tma-card,
 .tma-cyber-card,
 .luxury-marble-card,
@@ -231,18 +231,25 @@
 .nimbus-ticket-card,
 .nimbus-wallet-header,
 .studio-sidebar-panel {
-  border-radius: 1rem;
-  background-color: rgba(19, 13, 36, 0.9);
-  border: 1px solid rgba(168, 85, 247, 0.2);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  border-radius: 1.5rem;
+  background: linear-gradient(145deg, rgba(26, 18, 48, 0.94) 0%, rgba(15, 10, 29, 0.96) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.2),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.55),
+    0 12px 24px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .studio-input-well {
-  background: #0d091a;
+  border-radius: 1rem;
+  background: #0b0716;
   border: 1px solid rgba(168, 85, 247, 0.32);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.65),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.12),
+    0 4px 10px rgba(0, 0, 0, 0.35);
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
@@ -250,7 +257,10 @@
 .studio-input-well:focus-within {
   outline: none;
   border-color: #00f59b;
-  box-shadow: 0 0 0 2px rgba(0, 245, 155, 0.22), inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 0 0 2px rgba(0, 245, 155, 0.22),
+    inset 0 3px 6px rgba(0, 0, 0, 0.65),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.16);
 }
 
 .luxury-marble-card-hover {
@@ -260,28 +270,45 @@
 .luxury-marble-card-hover:hover {
   transform: translateY(-2px);
   border-color: rgba(192, 132, 252, 0.6);
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.75), 0 0 24px rgba(147, 51, 234, 0.25);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.25),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.55),
+    0 18px 36px rgba(0, 0, 0, 0.65),
+    0 0 24px rgba(147, 51, 234, 0.25);
 }
 
-/* Electric Purple Brand Accent (#9333ea -> #c084fc gradient with neon glow) */
+/* Electric Purple Claymorphic CTA (#9333ea -> #c084fc gradient) */
 .tma-purple-cta {
-  background: linear-gradient(135deg, #9333ea 0%, #a855f7 55%, #c084fc 100%);
+  border-radius: 1rem;
+  background: linear-gradient(145deg, #a855f7 0%, #9333ea 55%, #7e22ce 100%);
   color: #ffffff;
-  box-shadow: 0 4px 0 #581c87, 0 8px 22px rgba(147, 51, 234, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.35),
+    inset 0 -3px 6px rgba(59, 7, 100, 0.65),
+    0 10px 20px rgba(0, 0, 0, 0.5),
+    0 6px 18px rgba(147, 51, 234, 0.4);
   transition: transform 110ms ease, filter 110ms ease, box-shadow 110ms ease;
 }
 
 .tma-purple-cta:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 #581c87, 0 4px 12px rgba(147, 51, 234, 0.35);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.25),
+    inset 0 -2px 4px rgba(59, 7, 100, 0.65),
+    0 4px 10px rgba(0, 0, 0, 0.45);
 }
 
-/* Primary Win / Cashout Accent (Electric Neon Green #00f59b) */
+/* Primary Win / Cashout Claymorphic Accent (Electric Neon Green #00f59b) */
 .stake-emerald-cta,
 .emerald-gradient-cta {
-  background: linear-gradient(135deg, #00f59b 0%, #10b981 100%);
+  border-radius: 1rem;
+  background: linear-gradient(145deg, #34d399 0%, #00f59b 45%, #059669 100%);
   color: #031c11;
-  box-shadow: 0 4px 0 #047857, 0 8px 20px rgba(0, 245, 155, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.55),
+    inset 0 -3px 6px rgba(4, 120, 87, 0.65),
+    0 10px 20px rgba(0, 0, 0, 0.5),
+    0 6px 18px rgba(0, 245, 155, 0.3);
   transition: transform 110ms ease, filter 110ms ease, box-shadow 110ms ease;
 }
 
@@ -293,27 +320,42 @@
 .stake-emerald-cta:active,
 .emerald-gradient-cta:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 #047857, 0 4px 12px rgba(0, 245, 155, 0.25);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.4),
+    inset 0 -2px 4px rgba(4, 120, 87, 0.65),
+    0 4px 10px rgba(0, 0, 0, 0.45);
 }
 
-/* Jackpot / Telegram Stars / Gold Ball Accent (Liquid Gold #fbbf24 -> #f59e0b) */
+/* Jackpot / Telegram Stars / Gold Ball Claymorphic Accent (Liquid Gold #fbbf24 -> #f59e0b) */
 .gold-gradient-cta {
-  background: linear-gradient(135deg, #fde68a 0%, #fbbf24 45%, #f59e0b 100%);
+  border-radius: 1rem;
+  background: linear-gradient(145deg, #fde68a 0%, #fbbf24 48%, #d97706 100%);
   color: #1c1002;
-  box-shadow: 0 4px 0 #b45309, 0 8px 22px -4px rgba(245, 158, 11, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.65);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.65),
+    inset 0 -3px 6px rgba(146, 64, 14, 0.6),
+    0 10px 20px rgba(0, 0, 0, 0.5),
+    0 6px 18px rgba(245, 158, 11, 0.38);
   transition: transform 110ms ease, filter 110ms ease, box-shadow 110ms ease;
 }
 
 .gold-gradient-cta:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 #b45309, 0 4px 12px rgba(245, 158, 11, 0.35);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.45),
+    inset 0 -2px 4px rgba(146, 64, 14, 0.6),
+    0 4px 10px rgba(0, 0, 0, 0.45);
 }
 
-/* Crash / Danger / Bomb Accent (Hot Magenta-Red #f43f5e) */
+/* Crash / Danger / Bomb Claymorphic Accent (Hot Magenta-Red #f43f5e) */
 .crimson-danger-cta {
-  background: #f43f5e;
+  border-radius: 1rem;
+  background: linear-gradient(145deg, #fb7185 0%, #f43f5e 55%, #be123c 100%);
   color: #ffffff;
-  box-shadow: 0 4px 0 #9f1239, 0 8px 20px rgba(244, 63, 94, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.35),
+    inset 0 -3px 6px rgba(136, 19, 55, 0.65),
+    0 10px 20px rgba(0, 0, 0, 0.5);
 }
 
 .gold-shimmer-text {
@@ -325,13 +367,21 @@
 .lottery-ball-gold {
   background: radial-gradient(circle at 32% 28%, #fef9c3 0%, #fde047 22%, #fbbf24 55%, #b45309 88%, #451a03 100%);
   color: #1c1002;
-  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.42), inset 0 2px 4px rgba(255, 255, 255, 0.8);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.8),
+    inset 0 -3px 5px rgba(69, 26, 3, 0.65),
+    0 8px 16px rgba(0, 0, 0, 0.5),
+    0 4px 12px rgba(245, 158, 11, 0.42);
 }
 
 .lottery-ball-purple {
   background: radial-gradient(circle at 32% 28%, #f3e8ff 0%, #c084fc 35%, #9333ea 75%, #4c1d95 100%);
   color: #ffffff;
-  box-shadow: 0 6px 16px rgba(168, 85, 247, 0.55), inset 0 2px 4px rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.65),
+    inset 0 -3px 5px rgba(46, 16, 101, 0.7),
+    0 8px 16px rgba(0, 0, 0, 0.5),
+    0 4px 12px rgba(168, 85, 247, 0.55);
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -358,24 +408,33 @@ button[data-tc-wallet-item="telegram-wallet"] {
 }
 
 /* ============================================================================
-   BESPOKE LUXURY SIGNATURE BRAND AESTHETICS (OBSIDIAN GLASS & HOLOGRAPHIC SHIMMER)
+   BESPOKE LUXURY SIGNATURE BRAND AESTHETICS (CLAYMORPHIC OBSIDIAN & GOLD/EMERALD)
    ============================================================================ */
 
 .luckydrop-obsidian-glass {
-  background-color: rgba(11, 7, 22, 0.9);
+  background: linear-gradient(145deg, rgba(22, 15, 42, 0.94) 0%, rgba(11, 7, 22, 0.96) 100%);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.18),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.6),
+    0 14px 28px rgba(0, 0, 0, 0.65);
 }
 
 .luckydrop-specular-gold {
   border: 1px solid rgba(255, 215, 0, 0.36);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 240, 150, 0.22);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 240, 150, 0.25),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.6),
+    0 12px 26px rgba(0, 0, 0, 0.6);
 }
 
 .luckydrop-specular-purple {
   border: 1px solid rgba(168, 85, 247, 0.35);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(216, 180, 254, 0.16);
+  box-shadow:
+    inset 0 2px 4px rgba(216, 180, 254, 0.22),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.58),
+    0 12px 24px rgba(0, 0, 0, 0.58);
 }
 
 .luckydrop-microgrid-watermark {

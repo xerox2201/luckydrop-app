@@ -2257,4 +2257,169 @@ export function buildDrawCeremonyPayload(params: {
   };
 }
 
+// ============================================================================
+// 13. MONTHLY VIP LOYALTY SUPER-JACKPOT ROLLOVER VAULT & QUALIFICATION ENGINE
+// ============================================================================
+
+export interface MonthlySuperJackpotRolloverItem {
+  id: string;
+  sourceRoundCode: string;
+  sourceRoundTitleFa: string;
+  distributablePoolTon: number;
+  paidOutTon: number;
+  rolloverTon: number;
+  rolloverUsdt: number;
+  rolloverStars: number;
+  timestamp: string;
+}
+
+export interface MonthlySuperJackpotState {
+  roundId: string;
+  titleFa: string;
+  accumulatedPoolTon: number;
+  accumulatedPoolStars: number;
+  accumulatedPoolUsdt: number;
+  nextMonthlyDrawTimestampMs: number;
+  minTicketsRequired: number;
+  minXpRequired: number;
+  serverSeed?: string;
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: number;
+  lastWinnerSummary?: string;
+  lastWinningMain?: number[];
+  lastWinningGolden?: number;
+  rolloverHistory: MonthlySuperJackpotRolloverItem[];
+}
+
+export interface UnclaimedRolloverTransferResult {
+  distributablePoolTon: number;
+  actualTotalPaidOutTon: number;
+  unclaimedRolloverTon: number;
+  unclaimedRolloverUsdt: number;
+  unclaimedRolloverStars: number;
+  nextAccumulatedPoolTon: number;
+  nextAccumulatedPoolStars: number;
+  nextAccumulatedPoolUsdt: number;
+}
+
+/**
+ * Calculates the exact unclaimed prize pool (`distributablePoolTon - actualTotalPaidOutTon`)
+ * after a lottery round finishes and compounds it into the Monthly VIP Super-Jackpot Vault.
+ */
+export function calculateUnclaimedRolloverTransfer(params: {
+  distributablePoolUsdt: number;
+  actualTotalPaidOutUsdt: number;
+  currentAccumulatedPoolTon: number;
+  tonUsdRate?: number;
+}): UnclaimedRolloverTransferResult {
+  const rate =
+    typeof params.tonUsdRate === 'number' && params.tonUsdRate > 0 ? params.tonUsdRate : 5.0;
+  const safeDistributableUsdt = Math.max(0, Number(params.distributablePoolUsdt) || 0);
+  const safePaidOutUsdt = Math.max(0, Number(params.actualTotalPaidOutUsdt) || 0);
+  const currentTon = Math.max(0, Number(params.currentAccumulatedPoolTon) || 0);
+
+  const distributablePoolTon = roundTonClean(safeDistributableUsdt / rate);
+  const actualTotalPaidOutTon = roundTonClean(safePaidOutUsdt / rate);
+  const unclaimedRolloverTon = roundTonClean(
+    Math.max(0, distributablePoolTon - actualTotalPaidOutTon)
+  );
+  const unclaimedRolloverUsdt = Number((unclaimedRolloverTon * rate).toFixed(2));
+  const unclaimedRolloverStars = roundStarsClean(unclaimedRolloverTon * 250);
+
+  const nextAccumulatedPoolTon = roundTonClean(currentTon + unclaimedRolloverTon);
+  const nextAccumulatedPoolStars = roundStarsClean(nextAccumulatedPoolTon * 250);
+  const nextAccumulatedPoolUsdt = Number((nextAccumulatedPoolTon * rate).toFixed(2));
+
+  return {
+    distributablePoolTon,
+    actualTotalPaidOutTon,
+    unclaimedRolloverTon,
+    unclaimedRolloverUsdt,
+    unclaimedRolloverStars,
+    nextAccumulatedPoolTon,
+    nextAccumulatedPoolStars,
+    nextAccumulatedPoolUsdt,
+  };
+}
+
+export interface MonthlyVipQualificationResult {
+  regularTicketsBoughtCount: number;
+  vipSuperTicketsEarnedTotal: number;
+  newlyEarnedVipSuperTicketsCount: number;
+  ticketsUntilNextVipTicket: number;
+  userXp: number;
+  minTicketsRequired: number;
+  minXpRequired: number;
+  qualifiedByTickets: boolean;
+  qualifiedByXp: boolean;
+  isQualified: boolean;
+  ticketsProgressPercent: number;
+  xpProgressPercent: number;
+  overallProgressPercent: number;
+}
+
+/**
+ * Evaluates a player's qualification for the Monthly VIP Super-Jackpot draw
+ * (`regularTicketsBought >= minTicketsRequired` OR `userXp >= minXpRequired`)
+ * and computes how many VIP Super-Tickets (1 per 5 regular tickets) are earned.
+ */
+export function evaluateMonthlyVipQualification(params: {
+  regularTicketsBoughtCount: number;
+  userXp: number;
+  minTicketsRequired?: number;
+  minXpRequired?: number;
+  existingVipSuperTicketsCount?: number;
+}): MonthlyVipQualificationResult {
+  const regularTicketsBoughtCount = Math.max(
+    0,
+    Math.floor(Number(params.regularTicketsBoughtCount) || 0)
+  );
+  const userXp = Math.max(0, Math.floor(Number(params.userXp) || 0));
+  const minTicketsRequired = Math.max(1, Math.floor(Number(params.minTicketsRequired) || 10));
+  const minXpRequired = Math.max(50, Math.floor(Number(params.minXpRequired) || 500));
+  const existingVipCount = Math.max(
+    0,
+    Math.floor(Number(params.existingVipSuperTicketsCount) || 0)
+  );
+
+  const vipSuperTicketsEarnedTotal = Math.floor(regularTicketsBoughtCount / 5);
+  const newlyEarnedVipSuperTicketsCount = Math.max(
+    0,
+    vipSuperTicketsEarnedTotal - existingVipCount
+  );
+  const remainder = regularTicketsBoughtCount % 5;
+  const ticketsUntilNextVipTicket = remainder === 0 ? 5 : 5 - remainder;
+
+  const qualifiedByTickets = regularTicketsBoughtCount >= minTicketsRequired;
+  const qualifiedByXp = userXp >= minXpRequired;
+  const isQualified = qualifiedByTickets || qualifiedByXp;
+
+  const ticketsProgressPercent = Math.min(
+    100,
+    Math.round((regularTicketsBoughtCount / minTicketsRequired) * 100)
+  );
+  const xpProgressPercent = Math.min(100, Math.round((userXp / minXpRequired) * 100));
+  const overallProgressPercent = isQualified
+    ? 100
+    : Math.max(ticketsProgressPercent, xpProgressPercent);
+
+  return {
+    regularTicketsBoughtCount,
+    vipSuperTicketsEarnedTotal,
+    newlyEarnedVipSuperTicketsCount,
+    ticketsUntilNextVipTicket,
+    userXp,
+    minTicketsRequired,
+    minXpRequired,
+    qualifiedByTickets,
+    qualifiedByXp,
+    isQualified,
+    ticketsProgressPercent,
+    xpProgressPercent,
+    overallProgressPercent,
+  };
+}
+
+
 

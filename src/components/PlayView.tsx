@@ -173,7 +173,7 @@ export const PlayView: React.FC = () => {
       className="w-full max-w-[440px] mx-auto space-y-3 px-3 pt-2 pb-24"
     >
       {/* Top Bar */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md flex items-center justify-between gap-2">
+      <div className="rounded-3xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] backdrop-blur-md flex items-center justify-between gap-2">
         <div className="min-w-0">
           <span className="text-[10px] font-mono font-bold text-[#a855f7] tracking-wider block truncate">
             {tr(lang, 'LUCKYDROP • انتخاب دستی شماره‌ها', 'LUCKYDROP • CUSTOM BALL PICKER')}
@@ -189,7 +189,7 @@ export const PlayView: React.FC = () => {
         <button
           type="button"
           onClick={() => navigateTo('lobby')}
-          className="px-2.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-purple-500/25 text-[11px] font-bold text-purple-200 cursor-pointer shrink-0"
+          className="px-2.5 py-1.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-purple-500/25 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.45)] text-[11px] font-bold text-purple-200 cursor-pointer shrink-0"
         >
           {tr(lang, '← بازگشت به لابی', '← Back to Lobby')}
         </button>
@@ -205,9 +205,9 @@ export const PlayView: React.FC = () => {
               type="button"
               data-testid={`lottery-tab-${spec.id}`}
               onClick={() => setActiveLotteryId(spec.id as LotteryTypeId)}
-              className={`nimbus-ticket-card p-3 rounded-2xl text-right transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+              className={`nimbus-ticket-card p-3 rounded-3xl text-right transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
                 isSelected
-                  ? 'ring-2 ring-[#a855f7] shadow-[0_0_20px_rgba(168,85,247,0.35)] text-white'
+                  ? 'ring-2 ring-[#a855f7] shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_10px_20px_rgba(0,0,0,0.5)] text-white'
                   : 'text-slate-300 hover:text-white opacity-85'
               }`}
             >
@@ -243,7 +243,7 @@ export const PlayView: React.FC = () => {
       </div>
 
       {/* 2. ACTIVE ROUND BANNER & QUICK PICK */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[0_8px_30px_rgb(0,0,0,0.4)] space-y-2.5">
+      <div className="rounded-3xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-[10px] font-bold text-purple-200">
             {lang === 'EN' ? activeLotterySpec.titleEn : activeLotterySpec.titleFa.split('(')[0].trim()} • {activeLotterySpec.roundCode}
@@ -258,7 +258,7 @@ export const PlayView: React.FC = () => {
             type="button"
             data-testid="bulk-ai-quick-pick-btn"
             onClick={handleBulkQuickPick5}
-            className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-600/40 to-amber-500/30 hover:brightness-110 border border-amber-400/50 text-amber-200 font-black text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            className="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-purple-600/40 to-amber-500/30 hover:brightness-110 border border-amber-400/50 shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_10px_20px_rgba(0,0,0,0.5)] text-amber-200 font-black text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <span>{tr(lang, '⚡ تولید هوشمند ۵ کوپن (×5)', '⚡ Auto-Fill 5 Slips (×5)')}</span>
           </button>
@@ -267,7 +267,7 @@ export const PlayView: React.FC = () => {
             type="button"
             data-testid="ai-quick-pick-btn"
             onClick={handleSingleSlipQuickPick}
-            className="py-2.5 px-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-400/35 text-purple-200 font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            className="py-2.5 px-3 rounded-2xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-400/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-purple-200 font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <span>{tr(lang, '🎲 تصادفی کوپن فعلی', '🎲 Randomize Current Slip')}</span>
           </button>
@@ -275,7 +275,7 @@ export const PlayView: React.FC = () => {
       </div>
 
       {/* 3. MULTI-TICKET BATCH SELECTOR & TABBED SLIP EDITOR */}
-      <div className="rounded-2xl nimbus-ticket-card p-3.5 space-y-3">
+      <div className="rounded-3xl nimbus-ticket-card p-3.5 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             {[1, 3, 5, 10].map((cnt) => (
@@ -284,10 +284,10 @@ export const PlayView: React.FC = () => {
                 type="button"
                 data-testid={`batch-count-btn-${cnt}`}
                 onClick={() => handleSelectBatchCount(cnt)}
-                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black transition-all cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-2xl text-[11px] font-black transition-all cursor-pointer ${
                   bulkSlips.length === cnt
-                    ? 'bg-[#fbbf24] text-slate-950 shadow'
-                    : 'bg-[#070510] border border-purple-500/20 text-purple-200 hover:text-white'
+                    ? 'bg-[#fbbf24] text-slate-950 shadow-[inset_0_2px_3px_rgba(255,255,255,0.6),_0_6px_14px_rgba(0,0,0,0.45)]'
+                    : 'bg-[#070510] border border-purple-500/20 shadow-[inset_0_2px_4px_rgba(255,255,255,0.12),_0_6px_14px_rgba(0,0,0,0.45)] text-purple-200 hover:text-white'
                 }`}
               >
                 {lang === 'EN' ? cnt : toPersianDigits(cnt)}x
@@ -311,7 +311,7 @@ export const PlayView: React.FC = () => {
                 setCustomCountInput(v);
                 setBulkTicketCount(v);
               }}
-              className="w-12 bg-[#070510] border border-purple-500/30 rounded-lg px-2 py-1 text-center text-xs font-mono font-bold text-[#fbbf24]"
+              className="w-12 bg-[#070510] border border-purple-500/30 rounded-xl px-2 py-1 text-center text-xs font-mono font-bold text-[#fbbf24] shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]"
               dir="ltr"
             />
           </div>
@@ -327,10 +327,10 @@ export const PlayView: React.FC = () => {
                 type="button"
                 data-testid={`slip-tab-${idx + 1}`}
                 onClick={() => selectSlipTab(idx)}
-                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-bold border transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                className={`px-2.5 py-1.5 rounded-2xl text-[11px] font-mono font-bold border transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
                   isTabActive
-                    ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow'
-                    : 'bg-[#070510] border-purple-500/20 text-purple-300/70 hover:text-white'
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_6px_14px_rgba(0,0,0,0.45)]'
+                    : 'bg-[#070510] border-purple-500/20 text-purple-300/70 shadow-[inset_0_2px_4px_rgba(255,255,255,0.12),_0_6px_14px_rgba(0,0,0,0.4)] hover:text-white'
                 }`}
               >
                 <span>#{idx + 1}</span>
@@ -345,7 +345,7 @@ export const PlayView: React.FC = () => {
       </div>
 
       {/* 4. STAGE 1: PERFECT CIRCULAR MAIN BALLS GRID (1 to mainMax: 50 / 35 / 25 / 40) */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 space-y-3 shadow-[0_8px_30px_rgb(0,0,0,0.4)]">
+      <div className="rounded-3xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 space-y-3 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)]">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-xs font-black text-white">
@@ -368,7 +368,7 @@ export const PlayView: React.FC = () => {
               </strong>
             </p>
           </div>
-          <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-bold shrink-0" dir="ltr">
+          <span className="px-2 py-0.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-bold shrink-0" dir="ltr">
             PICK {mainCount} / {mainMax}
           </span>
         </div>
@@ -385,7 +385,7 @@ export const PlayView: React.FC = () => {
                 className={`aspect-square rounded-full font-mono font-bold text-[11px] transition-all flex items-center justify-center cursor-pointer tabular-nums ${
                   isSelected
                     ? 'lottery-ball-gold text-slate-950 scale-105 ring-2 ring-amber-200 shadow-[0_0_10px_rgba(251,191,36,0.5)]'
-                    : 'bg-[#070510] hover:bg-purple-950/60 text-purple-200/80 border border-purple-500/20'
+                    : 'bg-[#070510] hover:bg-purple-950/60 text-purple-200/80 border border-purple-500/20 shadow-[inset_0_2px_3px_rgba(255,255,255,0.16),_0_4px_10px_rgba(0,0,0,0.45)]'
                 }`}
               >
                 {String(num).padStart(2, '0')}
@@ -397,7 +397,7 @@ export const PlayView: React.FC = () => {
 
       {/* 5. STAGE 2: PERFECT CIRCULAR GOLDEN BALLS GRID (1 to goldenMax: 15 / 10 / 12) */}
       {goldenMax > 0 && (
-        <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/30 p-3.5 space-y-3 shadow-[0_8px_30px_rgb(0,0,0,0.4)]">
+        <div className="rounded-3xl bg-[#130d24]/90 border border-purple-500/30 p-3.5 space-y-3 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)]">
           <div className="flex items-center justify-between gap-2">
             <div>
               <h2 className="text-xs font-black text-white">
@@ -417,7 +417,7 @@ export const PlayView: React.FC = () => {
                 )}
               </p>
             </div>
-            <span className="px-2 py-0.5 rounded-lg bg-purple-500/20 text-purple-200 border border-purple-400/30 text-[10px] font-mono font-bold shrink-0" dir="ltr">
+            <span className="px-2 py-0.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-400/30 text-[10px] font-mono font-bold shrink-0" dir="ltr">
               PICK 1 / {goldenMax} ★
             </span>
           </div>
@@ -434,7 +434,7 @@ export const PlayView: React.FC = () => {
                   className={`aspect-square rounded-full font-mono font-bold text-[10px] transition-all flex items-center justify-center cursor-pointer tabular-nums ${
                     isSelected
                       ? 'lottery-ball-purple text-white scale-105 ring-2 ring-[#fbbf24] shadow-[0_0_12px_rgba(168,85,247,0.65)]'
-                      : 'bg-[#070510] hover:bg-purple-950/60 text-purple-300/80 border border-purple-500/25'
+                      : 'bg-[#070510] hover:bg-purple-950/60 text-purple-300/80 border border-purple-500/25 shadow-[inset_0_2px_3px_rgba(255,255,255,0.16),_0_4px_10px_rgba(0,0,0,0.45)]'
                   }`}
                 >
                   ★{gNum}
@@ -446,7 +446,7 @@ export const PlayView: React.FC = () => {
       )}
 
       {/* 6. CLIENT SEED (Pre-draw hash is hidden and revealed strictly AFTER the lottery draw completes) */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 space-y-2.5">
+      <div className="rounded-3xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 space-y-2.5 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)]">
         <div className="flex items-center justify-between text-[11px]">
           <span className="font-bold text-[#00f59b]">
             🔒 بذر اختصاصی کوپن #{toPersianDigits(activeSlipIndex + 1)} (Client Seed)
@@ -457,7 +457,7 @@ export const PlayView: React.FC = () => {
           type="text"
           value={currentSlipSeed}
           onChange={(e) => handleUpdateCurrentSlipSeed(e.target.value)}
-          className="w-full bg-[#070510] border border-purple-500/25 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono"
+          className="w-full bg-[#070510] border border-purple-500/25 rounded-2xl px-3 py-2 text-xs text-amber-300 font-mono shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]"
           dir="ltr"
         />
         <p className="text-[10px] text-purple-200/75 leading-relaxed">
@@ -466,7 +466,7 @@ export const PlayView: React.FC = () => {
       </div>
 
       {/* 7. MULTI-CHANCE CART SUMMARY & CHECKOUT */}
-      <div className="rounded-2xl nimbus-ticket-card p-4 space-y-3.5">
+      <div className="rounded-3xl nimbus-ticket-card p-4 space-y-3.5">
         <div className="flex items-center justify-between border-b border-purple-500/20 pb-2.5">
           <div>
             <span className="text-[10px] text-amber-400 font-mono font-bold block">
@@ -476,24 +476,24 @@ export const PlayView: React.FC = () => {
               خلاصه سبد خرید ({toPersianDigits(bulkSlips.length)} کوپن)
             </h3>
           </div>
-          <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-300 text-[10px] font-mono font-bold">
+          <span className="px-2 py-0.5 rounded-xl bg-emerald-500/15 text-emerald-300 text-[10px] font-mono font-bold">
             {activeLotterySpec.roundCode}
           </span>
         </div>
 
         {/* All Slips in Cart Preview */}
         <div
-          className="bg-[#070510] border border-purple-500/20 rounded-xl p-2.5 space-y-1.5 max-h-44 overflow-y-auto"
+          className="bg-[#070510] border border-purple-500/20 rounded-2xl p-2.5 space-y-1.5 max-h-44 overflow-y-auto shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]"
           data-testid="cart-slips-list"
         >
           {bulkSlips.map((slip, idx) => (
             <div
               key={idx}
               onClick={() => selectSlipTab(idx)}
-              className={`p-2 rounded-lg border flex items-center justify-between text-[11px] cursor-pointer transition-all ${
+              className={`p-2 rounded-2xl border flex items-center justify-between text-[11px] cursor-pointer transition-all ${
                 activeSlipIndex === idx
-                  ? 'bg-amber-500/15 border-amber-400/50 text-white'
-                  : 'bg-[#130d24] border-white/5 text-slate-300'
+                  ? 'bg-amber-500/15 border-amber-400/50 text-white shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_6px_14px_rgba(0,0,0,0.45)]'
+                  : 'bg-[#130d24] border-white/5 text-slate-300 shadow-[inset_0_1px_2px_rgba(255,255,255,0.12)]'
               }`}
             >
               <span className="font-mono font-bold text-amber-300">Ticket #{idx + 1}</span>
@@ -569,7 +569,7 @@ export const PlayView: React.FC = () => {
           <select
             value={selectedNetwork}
             onChange={(e) => setSelectedNetwork(e.target.value)}
-            className="w-full bg-[#070510] border border-purple-500/25 rounded-xl px-3 py-2 text-xs text-white font-semibold"
+            className="w-full bg-[#070510] border border-purple-500/25 rounded-2xl px-3 py-2 text-xs text-white font-semibold shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]"
           >
             <option value="TON Network">💎 TON (The Open Network)</option>
             <option value="Telegram Stars">⭐ Stars (Telegram Stars)</option>
@@ -577,7 +577,7 @@ export const PlayView: React.FC = () => {
         </div>
 
         {feedbackError && (
-          <div className="p-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-200 text-xs font-semibold">
+          <div className="p-2.5 rounded-2xl bg-red-500/20 border border-red-500/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.45)] text-red-200 text-xs font-semibold">
             ⚠️ {feedbackError}
           </div>
         )}
@@ -589,7 +589,7 @@ export const PlayView: React.FC = () => {
             disabled={minting || killSwitchActive}
             data-testid="mint-ticket-submit"
             onClick={handlePurchaseBatch}
-            className="w-full h-12 rounded-xl gold-gradient-cta text-[#2a1700] font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full h-12 rounded-2xl gold-gradient-cta text-[#2a1700] font-black text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>
               {killSwitchActive

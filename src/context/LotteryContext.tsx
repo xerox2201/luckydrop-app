@@ -6,7 +6,6 @@ import {
   testFirestoreConnection,
   syncOfficialWalletsToFirestore,
   fetchOfficialWalletsFromFirestore,
-  syncUserProfileToFirestore,
   syncReferralLinkToFirestore,
   recordReferralCommissionInFirestore,
 } from '../lib/firebase.ts';
@@ -14,7 +13,6 @@ import {
   CurrencyLang,
   ExchangeRates,
   DEFAULT_FX_RATES,
-  formatMultiCurrency,
   LotteryTypeId,
   MultiLotterySpec,
   MULTI_LOTTERY_SPECS,
@@ -25,7 +23,6 @@ import {
   SolvencyProtectionMode,
   calculateZeroLossTicketSplit,
   calculateDynamicPariMutuelPool,
-  evaluateHighValueWithdrawalGate,
   getBlockchainExplorerTxUrl,
   generateUniqueUserReferralLink,
   calculateReferralDeductionFromNetProfit,
@@ -41,7 +38,6 @@ import {
   calculateZeroLossTurnoverXp,
   deriveProvablyFairLotteryDraw,
   evaluateTicketPrizeTier,
-  evaluateProvablyFairMiniGame,
   sha256Hex,
   generateCryptographicServerSeed,
 } from '../utils/provablyFair.ts';
@@ -67,7 +63,7 @@ import {
 } from '../services/supabase.ts';
 
 import {
-   useTonConnectUI,
+  useTonConnectUI,
   useTonAddress,
   useTonWallet,
 } from '@tonconnect/ui-react';
@@ -78,7 +74,6 @@ import {
   TmaQuestItem,
   INITIAL_TMA_QUESTS,
   TON_CONNECT_STANDARD_WALLETS,
-  buildTonConnectAutoTransferPayload,
   DEFAULT_ADMIN_TELEGRAM_USER_IDS,
   DEFAULT_ADMIN_TON_WALLET_ADDRESS,
   DEFAULT_TON_USD_RATE,
@@ -87,7 +82,6 @@ import {
   getScopedStorageKey,
   tmaCurrencyToUsdt,
   usdtToTmaCurrency,
-  formatTmaCurrency,
   formatCurrency as rawFormatCurrency,
   truncateTonAddress,
   HapticEngine,
@@ -98,6 +92,28 @@ import {
   persistLanguageSelection,
   tr,
 } from '../utils/i18n.ts';
+import type {
+  MonthlySuperJackpotState,
+  MonthlySuperJackpotRolloverItem,
+  MonthlyVipQualificationResult,
+} from '../services/securityGuard.ts';
+
+export type {
+  MonthlySuperJackpotState,
+  MonthlySuperJackpotRolloverItem,
+  MonthlyVipQualificationResult,
+};
+
+export interface RealtimeLiveTickerEvent {
+  id: string;
+  buyerDisplayName: string;
+  roundCode: string;
+  roundTitleFa: string;
+  ticketCount: number;
+  vipTicketsEarned: number;
+  newJackpotTon: number;
+  createdAt: string;
+}
 
 export type AppRoute =
   | 'lobby'
@@ -707,6 +723,20 @@ interface LotteryContextType {
   activeCeremonyDraw: VerifiableDrawHistoryRecord | null;
   setActiveCeremonyDraw: (draw: VerifiableDrawHistoryRecord | null) => void;
   openLatestDrawCeremony: (customDraw?: VerifiableDrawHistoryRecord | null) => void;
+  // Monthly VIP Loyalty Super-Jackpot Vault & Real-Time SSE Synchronization
+  monthlySuperJackpot: MonthlySuperJackpotState;
+  monthlyVipQualification: MonthlyVipQualificationResult;
+  liveTickerEvent: RealtimeLiveTickerEvent | null;
+  poolPulseKey: number;
+  sseConnected: boolean;
+  updateMonthlySuperJackpotConfig: (params: {
+    minTicketsRequired?: number;
+    minXpRequired?: number;
+    addPoolTon?: number;
+    setPoolTon?: number;
+    resetCycleDays?: number;
+  }) => Promise<boolean>;
+  triggerMonthlySuperJackpotDraw: () => Promise<DrawExecutionResult | null>;
   firestoreConnected: boolean;
   supabaseConnected: boolean;
 }
@@ -1215,6 +1245,41 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     telegramBotConfig.officialBrandTitle?.trim() ||
     '🛡️ LuckyDrop Official • Verified Provably Fair Web3 Protocol';
 
+  // Monthly VIP Loyalty Super-Jackpot Rollover Vault & Real-Time SSE State
+  const [monthlySuperJackpot, setMonthlySuperJackpot] = useState<MonthlySuperJackpotState>(() => ({
+    roundId: '#LD-MONTHLY-VIP',
+    titleFa: '👑 ابر جک‌پات ماهانه وفاداری (Monthly VIP Super-Jackpot Vault)',
+    accumulatedPoolTon: 0,
+    accumulatedPoolStars: 0,
+    accumulatedPoolUsdt: 0,
+    nextMonthlyDrawTimestampMs: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    minTicketsRequired: 10,
+    minXpRequired: 500,
+    serverSeedHash: sha256Hex('luckydrop_monthly_vip_super_jackpot_seed_v1'),
+    clientSeed: 'luckydrop_monthly_vip_vault_seed',
+    nonce: 1,
+    rolloverHistory: [],
+  }));
+  const [monthlyVipQualification, setMonthlyVipQualification] =
+    useState<MonthlyVipQualificationResult>(() => ({
+      regularTicketsBoughtCount: 0,
+      vipSuperTicketsEarnedTotal: 0,
+      newlyEarnedVipSuperTicketsCount: 0,
+      ticketsUntilNextVipTicket: 5,
+      userXp: 0,
+      minTicketsRequired: 10,
+      minXpRequired: 500,
+      qualifiedByTickets: false,
+      qualifiedByXp: false,
+      isQualified: false,
+      ticketsProgressPercent: 0,
+      xpProgressPercent: 0,
+      overallProgressPercent: 0,
+    }));
+  const [liveTickerEvent, setLiveTickerEvent] = useState<RealtimeLiveTickerEvent | null>(null);
+  const [poolPulseKey, setPoolPulseKey] = useState<number>(0);
+  const [sseConnected, setSseConnected] = useState<boolean>(false);
+
   const [depositModalOpen, setDepositModalOpen] = useState<boolean>(false);
   const [withdrawModalOpen, setWithdrawModalOpen] = useState<boolean>(false);
   const [tonConnectModalOpen, setTonConnectModalOpen] = useState<boolean>(false);
@@ -1551,11 +1616,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (Array.isArray(data.rounds)) {
         setRounds(data.rounds);
-        if (
-          data.rounds.length > 0 &&
-          !data.rounds.some((r: LotteryRoundItem) => r.roundCode === activeRoundCode)
-        ) {
-          setActiveRoundCodeState(data.rounds[0].roundCode);
+        if (data.rounds.length > 0) {
+          setActiveRoundCodeState((prevCode) =>
+            data.rounds.some((r: LotteryRoundItem) => r.roundCode === prevCode)
+              ? prevCode
+              : data.rounds[0].roundCode
+          );
         }
       }
       if (typeof data.autoWithdrawLimitTon === 'number' && data.autoWithdrawLimitTon > 0) {
@@ -1630,6 +1696,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (typeof data.rolloverReservePoolUsdt === 'number') {
         setRolloverReservePoolUsdt(data.rolloverReservePoolUsdt);
       }
+      if (data.monthlySuperJackpot && typeof data.monthlySuperJackpot === 'object') {
+        setMonthlySuperJackpot(data.monthlySuperJackpot);
+      }
+      if (data.monthlyVipQualification && typeof data.monthlyVipQualification === 'object') {
+        setMonthlyVipQualification(data.monthlyVipQualification);
+      }
       if (typeof data.chestsClaimedCount === 'number') {
         setChestsClaimedCount(data.chestsClaimedCount);
       }
@@ -1665,7 +1737,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (error) {
       console.error('Snapshot fetch error:', error);
     }
-  }, [getHeaders, syncPamStateEverywhere, activeRoundCode]);
+  }, [getHeaders, syncPamStateEverywhere]);
 
   const executeRealHandshake = useCallback(async () => {
     try {
@@ -1832,6 +1904,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (Array.isArray(data.deposits)) setDeposits(data.deposits);
       if (Array.isArray(data.withdrawals)) setWithdrawals(data.withdrawals);
+      if (data.monthlySuperJackpot && typeof data.monthlySuperJackpot === 'object') {
+        setMonthlySuperJackpot(data.monthlySuperJackpot);
+      }
+      if (data.monthlyVipQualification && typeof data.monthlyVipQualification === 'object') {
+        setMonthlyVipQualification(data.monthlyVipQualification);
+      }
       if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
 
       // If URL contains a referral parameter (?ref= or start_param), bind it once on the backend
@@ -3267,6 +3345,153 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     refreshSnapshot();
   }, [refreshSnapshot]);
 
+  // ============================================================================
+  // UPGRADE 2: SUB-SECOND REAL-TIME SYNCHRONIZATION (EventSource SSE + 4s Fallback)
+  // ============================================================================
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') return;
+
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let isDisposed = false;
+
+    const handleRealtimePayload = (rawPayload: any) => {
+      if (!rawPayload || typeof rawPayload !== 'object') return;
+      const evtType = String(rawPayload.type || '');
+
+      if (Array.isArray(rawPayload.rounds)) {
+        setRounds(rawPayload.rounds);
+      }
+      if (rawPayload.monthlySuperJackpot && typeof rawPayload.monthlySuperJackpot === 'object') {
+        setMonthlySuperJackpot(rawPayload.monthlySuperJackpot);
+      }
+      if (
+        rawPayload.monthlyVipQualification &&
+        typeof rawPayload.monthlyVipQualification === 'object'
+      ) {
+        setMonthlyVipQualification(rawPayload.monthlyVipQualification);
+      }
+      if (typeof rawPayload.rolloverReservePoolUsdt === 'number') {
+        setRolloverReservePoolUsdt(rawPayload.rolloverReservePoolUsdt);
+      }
+      if (typeof rawPayload.killSwitchActive === 'boolean') {
+        setKillSwitchActive(rawPayload.killSwitchActive);
+      }
+
+      if (rawPayload.liveOracle && typeof rawPayload.liveOracle === 'object') {
+        const lo = rawPayload.liveOracle;
+        if (Number.isFinite(Number(lo.tonUsdPrice)) && Number(lo.tonUsdPrice) > 0.1) {
+          setLiveTonUsdPrice(Number(Number(lo.tonUsdPrice).toFixed(4)));
+        }
+        if (Number.isFinite(Number(lo.tonChange24hPercent))) {
+          setTonChange24hPercent(Number(Number(lo.tonChange24hPercent).toFixed(2)));
+        }
+        if (Number.isFinite(Number(lo.starsUsdPrice)) && Number(lo.starsUsdPrice) > 0.001) {
+          setLiveStarsUsdPrice(Number(Number(lo.starsUsdPrice).toFixed(4)));
+        }
+        if (Number.isFinite(Number(lo.starsPerTon)) && Number(lo.starsPerTon) > 10) {
+          setLiveStarsPerTon(Math.round(Number(lo.starsPerTon)));
+        }
+      }
+
+      if (evtType === 'ROUND_POOL_UPDATED') {
+        setPoolPulseKey((prev) => prev + 1);
+        if (rawPayload.tickerEvent && typeof rawPayload.tickerEvent === 'object') {
+          setLiveTickerEvent(rawPayload.tickerEvent);
+        }
+      } else if (evtType === 'DRAW_EXECUTED') {
+        setPoolPulseKey((prev) => prev + 1);
+        if (Array.isArray(rawPayload.drawHistory)) {
+          setDrawHistory(rawPayload.drawHistory);
+        }
+        if (rawPayload.drawRecord?.drawId) {
+          if (lastSeenDrawIdRef.current !== rawPayload.drawRecord.drawId) {
+            lastSeenDrawIdRef.current = rawPayload.drawRecord.drawId;
+            setActiveCeremonyDraw(rawPayload.drawRecord);
+          }
+        }
+        void refreshSnapshot();
+      } else if (evtType === 'ROUNDS_CHANGED') {
+        setPoolPulseKey((prev) => prev + 1);
+      } else if (evtType === 'USER_BALANCE_UPDATED') {
+        if (typeof rawPayload.tonBalance === 'number') {
+          setTonBalance(rawPayload.tonBalance);
+        }
+        if (typeof rawPayload.starsBalance === 'number') {
+          setStarsBalance(rawPayload.starsBalance);
+        }
+        if (typeof rawPayload.freeLotteryTickets === 'number') {
+          setFreeLotteryTickets(rawPayload.freeLotteryTickets);
+        }
+        void refreshSnapshot();
+      } else if (evtType === 'SUPPORT_REPLY') {
+        if (Array.isArray(rawPayload.messages)) {
+          setMySupportMessages(rawPayload.messages);
+        }
+        if (typeof rawPayload.unreadOperatorCount === 'number') {
+          setUnreadSupportCount(rawPayload.unreadOperatorCount);
+        }
+        void refreshSnapshot();
+      }
+    };
+
+    const connectEventSource = () => {
+      if (isDisposed) return;
+      try {
+        const uid = encodeURIComponent(String(telegramUser.id || ''));
+        es = new EventSource(`/api/realtime/stream?tg_uid=${uid}`);
+
+        es.onopen = () => {
+          if (!isDisposed) setSseConnected(true);
+        };
+
+        es.onmessage = (event) => {
+          if (isDisposed || !event.data) return;
+          try {
+            const parsed = JSON.parse(event.data);
+            handleRealtimePayload(parsed);
+          } catch {
+            // ignore non-json comments
+          }
+        };
+
+        es.onerror = () => {
+          if (isDisposed) return;
+          setSseConnected(false);
+          try {
+            es?.close();
+          } catch {}
+          es = null;
+          if (!reconnectTimer) {
+            reconnectTimer = setTimeout(() => {
+              reconnectTimer = null;
+              connectEventSource();
+            }, 3000);
+          }
+        };
+      } catch {
+        setSseConnected(false);
+      }
+    };
+
+    connectEventSource();
+
+    // Fast 4-second lightweight delta heartbeat fallback for strict mobile proxies
+    const deltaInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void refreshSnapshot();
+    }, 4000);
+
+    return () => {
+      isDisposed = true;
+      clearInterval(deltaInterval);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try {
+        es?.close();
+      } catch {}
+    };
+  }, [telegramUser.id, refreshSnapshot]);
+
   const signInWithGoogle = async () => {
     try {
       const cred = await signInWithPopup(auth, googleAuthProvider);
@@ -3343,14 +3568,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       0.1,
       parseFloat(String(roundObj?.ticketPriceUsdt || totalCostUsdt / Math.max(1, slips.length))) || 5
     );
-    const unitPriceTon = Number((roundUnitPriceUsdt / 5.0).toFixed(4));
+    const unitPriceTon = Number((roundUnitPriceUsdt / 5.0).toFixed(6));
     const unitPriceStars = Math.max(1, Math.round(unitPriceTon * 250));
 
     const exactTotalTon =
       effectiveCurrency === 'TON'
         ? typeof nativeOptions?.amountTon === 'number' && nativeOptions.amountTon > 0
-          ? Number(nativeOptions.amountTon.toFixed(4))
-          : Number((slips.length * unitPriceTon).toFixed(4))
+          ? Number(nativeOptions.amountTon.toFixed(6))
+          : Number((slips.length * unitPriceTon).toFixed(6))
         : 0;
     const exactTotalStars =
       effectiveCurrency === 'STARS'
@@ -3410,6 +3635,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setReferralEarningsTon((prev) => Number((prev + commTon).toFixed(4)));
         setReferredTicketsCount((prev) => prev + slips.length);
       }
+      if (data.monthlySuperJackpot && typeof data.monthlySuperJackpot === 'object') {
+        setMonthlySuperJackpot(data.monthlySuperJackpot);
+      }
+      if (data.monthlyVipQualification && typeof data.monthlyVipQualification === 'object') {
+        setMonthlyVipQualification(data.monthlyVipQualification);
+      }
+      if (typeof data.xp === 'number') {
+        setTmaXpPoints(data.xp);
+      }
       const mintedList: TicketItem[] = Array.isArray(data.tickets)
         ? data.tickets
         : data.ticket
@@ -3418,6 +3652,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (mintedList.length > 0) {
         setActiveTrackingTicket(mintedList[0]);
       }
+      setPoolPulseKey((prev) => prev + 1);
       await refreshSnapshot();
       return { ok: true, tickets: mintedList };
     } catch {
@@ -4505,6 +4740,67 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  const updateMonthlySuperJackpotConfig = async (params: {
+    minTicketsRequired?: number;
+    minXpRequired?: number;
+    addPoolTon?: number;
+    setPoolTon?: number;
+    resetCycleDays?: number;
+  }): Promise<boolean> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/monthly-super-pot/config', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.monthlySuperJackpot) {
+          setMonthlySuperJackpot(data.monthlySuperJackpot);
+        }
+        await refreshSnapshot();
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  };
+
+  const triggerMonthlySuperJackpotDraw = async (): Promise<DrawExecutionResult | null> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/monthly-super-pot/draw', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.monthlySuperJackpot) {
+          setMonthlySuperJackpot(data.monthlySuperJackpot);
+        }
+        if (data.drawRecord) {
+          setActiveCeremonyDraw(data.drawRecord);
+        }
+        await refreshSnapshot();
+        return {
+          drawnMain: data.drawnMain || [7, 14, 23, 38, 49],
+          drawnGolden: data.drawnGolden ?? 8,
+          hash: data.drawRecord?.primaryHmacHex || '',
+          ticketsEvaluatedCount: data.ticketsEvaluatedCount,
+          winnersCount: data.winnersCount,
+          totalPayoutUsdt: data.totalPayoutUsdt,
+          drawRecord: data.drawRecord,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
   return (
     <LotteryContext.Provider
       value={{
@@ -4679,6 +4975,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         activeCeremonyDraw,
         setActiveCeremonyDraw,
         openLatestDrawCeremony,
+        monthlySuperJackpot,
+        monthlyVipQualification,
+        liveTickerEvent,
+        poolPulseKey,
+        sseConnected,
+        updateMonthlySuperJackpotConfig,
+        triggerMonthlySuperJackpotDraw,
         firestoreConnected,
         supabaseConnected: isSupabaseConfigured,
       }}
