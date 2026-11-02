@@ -71,7 +71,7 @@ export const Navbar: React.FC = () => {
               onClick={() => handleTabNav('lobby')}
               className="flex items-center gap-1 cursor-pointer group shrink-0"
             >
-              <LuckyDropLogo size={28} />
+              <LuckyDropLogo size={34} />
               <div className="leading-tight hidden min-[410px]:block">
                 <div className="flex items-center gap-0.5">
                   <span className="font-black text-[11px] tracking-tight text-white">

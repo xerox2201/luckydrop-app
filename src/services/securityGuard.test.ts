@@ -775,3 +775,79 @@ test('15. Two-Way Live VIP Support scoping, unread badges, Telegram push formatt
   assert.ok(depDiag.diagnosticMetadata.includes('DEP-778899'));
   assert.ok(depDiag.prefilledMessageFa.includes('UQD932049203940239402934'));
 });
+
+test('16. Commercial Support Guide (zero house-cut disclosure) & Live Draw Ceremony sequential ticket matching', async () => {
+  const {
+    buildQuickDiagnosticSupportAttachment,
+    evaluateSequentialTicketMatches,
+    buildDrawCeremonyPayload,
+  } = await import('./securityGuard.ts');
+
+  const guideChip = buildQuickDiagnosticSupportAttachment({
+    chipType: 'FAIRNESS_RTP',
+    serverSeedHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+  });
+  assert.equal(guideChip.subjectFa, '🎁 راهنمای جوایز و بلیت‌ها');
+  assert.equal(
+    guideChip.instantGuideFa,
+    '🛡️ تمامی قرعه‌کشی‌ها و بازی‌های LuckyDrop بر بستر الگوریتم رمزنگاری‌شده Provably Fair (SHA-256) اجرا شده و جوایز برندگان به صورت ۱۰۰٪ خودکار و آنی به کیف پول شما واریز می‌گردد.'
+  );
+  assert.equal(guideChip.instantGuideFa?.includes('۸۵٪'), false);
+  assert.equal(guideChip.instantGuideFa?.includes('RTP'), false);
+  assert.equal(guideChip.diagnosticMetadata.includes('85%'), false);
+
+  // Step-by-step Stage 2 ball drop matching
+  const step2Match = evaluateSequentialTicketMatches({
+    ticketMain: [7, 14, 23, 38, 49],
+    ticketGolden: 8,
+    revealedMain: [7, 14, 30],
+    revealedGolden: null,
+  });
+  assert.deepEqual(step2Match.matchedMainNumbers, [7, 14]);
+  assert.equal(step2Match.matchedGoldenBall, false);
+  assert.equal(step2Match.totalMatchedCount, 2);
+
+  const finaleMatch = evaluateSequentialTicketMatches({
+    ticketMain: [7, 14, 23, 38, 49],
+    ticketGolden: 8,
+    revealedMain: [7, 14, 23, 38, 49],
+    revealedGolden: 8,
+  });
+  assert.deepEqual(finaleMatch.matchedMainNumbers, [7, 14, 23, 38, 49]);
+  assert.equal(finaleMatch.matchedGoldenBall, true);
+  assert.equal(finaleMatch.totalMatchedCount, 6);
+
+  const ceremonyPayload = buildDrawCeremonyPayload({
+    drawRecord: {
+      drawId: 'DRAW-LDR-8493-1',
+      roundCode: '#LDR-8493',
+      roundTitleFa: 'مگا جک‌پات هفتگی LuckyDrop (۸۵٪ استخر کل)',
+      drawnMain: [7, 14, 23, 38, 49],
+      drawnGolden: 8,
+      winnersCount: 4,
+      ticketsEvaluatedCount: 40,
+      totalPayoutUsdt: 500,
+      primaryHmacHex: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+    },
+    userTickets: [
+      {
+        ticketCode: 'LDR-990011',
+        roundCode: '#LDR-8493',
+        mainNumbers: '[7, 14, 23, 31, 45]',
+        goldenBall: 8,
+        costUsdt: '5.00',
+        status: 'WON',
+        prizeWonUsdt: '125.00',
+      },
+    ],
+    tonUsdRate: 5.0,
+  });
+
+  assert.equal(ceremonyPayload.roundTitleFa, 'مگا جک‌پات هفتگی LuckyDrop');
+  assert.equal(ceremonyPayload.userHasWinningTicket, true);
+  assert.equal(ceremonyPayload.userWonTotalTon, 25.0);
+  assert.equal(ceremonyPayload.userRoundTickets.length, 1);
+  assert.deepEqual(ceremonyPayload.userRoundTickets[0].matchedMainNumbers, [7, 14, 23]);
+  assert.equal(ceremonyPayload.userRoundTickets[0].matchedGoldenBall, true);
+});
+

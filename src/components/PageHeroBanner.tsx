@@ -2,7 +2,7 @@ import React from 'react';
 
 export const LUXURY_IMAGES = {
   // Custom Rendered 3D LuckyDrop Brand & Background Suite
-  logo3d: '/assets/3d/luckydrop-3d-logo.png',
+  logo3d: '/luckydrop-logo.png',
   splashBg3d: '/assets/3d/luckydrop-3d-splash-bg.png',
   jackpotHero3d: '/assets/3d/luckydrop-3d-jackpot-hero.png',
   gamesBanner3d: '/assets/3d/luckydrop-3d-games-banner.png',
@@ -27,7 +27,7 @@ export const LUXURY_IMAGES = {
   cockpitCommandVault: '/assets/aistudio/Gemini_Generated_Image___12__7f974f44.jpg',
   telegramBot: '/assets/aistudio/Gemini_Generated_Image___13__cf879f0e.jpg',
   // 15-20. 3D Square Icons & Emblems
-  brandCrownLogo: '/assets/3d/luckydrop-3d-logo.png',
+  brandCrownLogo: '/luckydrop-logo.png',
   vipAvatar: '/assets/aistudio/Gemini_Generated_Image___15__f5bd1004.jpg',
   trophyIcon3d: '/assets/aistudio/Gemini_Generated_Image___16__d7467a9f.jpg',
   ticketIcon3d: '/assets/aistudio/Gemini_Generated_Image___17__711d1459.jpg',
@@ -75,7 +75,7 @@ export const PageHeroBanner: React.FC<PageHeroBannerProps> = ({
             src={iconUrl}
             alt="LuckyDrop 3D Emblem"
             referrerPolicy="no-referrer"
-            className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-amber-400/70 shadow-[0_0_28px_rgba(245,158,11,0.45)] shrink-0"
+            className="w-16 h-16 sm:w-20 sm:h-20 object-contain drop-shadow-[0_0_24px_rgba(245,158,11,0.55)] shrink-0"
           />
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-black tracking-wide">

@@ -184,8 +184,8 @@ export const FooterAndChat: React.FC = () => {
         type: 'ok',
         text: tr(
           lang,
-          '✅ پیام شما ثبت و هم‌زمان به تلگرام ادمین ارسال شد. پاسخ اپراتور در همینجا و در ربات تلگرام برای شما ارسال می‌شود.',
-          '✅ Message logged & pushed to Admin Telegram! Operator reply will appear here & in your Telegram bot.'
+          '✅ پیام شما ثبت شد. پاسخ کارشناسان پشتیبانی VIP به صورت زنده در همین گفتگو و از طریق تلگرام برای شما ارسال خواهد شد.',
+          '✅ Your message has been logged. Our VIP Concierge team will reply live here and via Telegram.'
         ),
       });
       setTimeout(() => {
@@ -334,7 +334,7 @@ export const FooterAndChat: React.FC = () => {
             {/* Mode A: Persistent Two-Way Operator Chat Thread */}
             <div
               data-testid="support-messages-list"
-              className="flex-1 overflow-y-auto p-3.5 space-y-2.5 min-h-[220px] max-h-[340px] luckydrop-microgrid-watermark"
+              className="flex-1 overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden p-3.5 space-y-2.5 min-h-[220px] max-h-[340px] luckydrop-microgrid-watermark"
             >
               {/* Welcome System Card */}
               <div className="p-3 rounded-2xl bg-[#130D26]/95 border border-[#FFE066]/25 text-[11px] text-slate-200 leading-relaxed">
@@ -343,13 +343,13 @@ export const FooterAndChat: React.FC = () => {
                     <ShieldCheck className="w-3.5 h-3.5 text-[#00F5D4]" />
                     {tr(lang, 'اپراتور ارشد LuckyDrop VIP', 'LuckyDrop VIP Concierge')}
                   </span>
-                  <span className="text-[9px] font-mono text-emerald-400">24/7 Live Bridge</span>
+                  <span className="text-[9px] font-mono text-emerald-400">24/7 VIP Concierge</span>
                 </div>
-                <p className="text-slate-300 text-[11px]">
+                <p className="text-slate-300 text-[11px]" data-testid="vip-welcome-greeting">
                   {tr(
                     lang,
-                    'خوش آمدید! هر پیام شما مستقیماً به پنل مدیریت و تلگرام ادمین ارسال می‌شود. به محض پاسخگویی اپراتور، هم در این گفتگو و هم از طریق ربات تلگرام نوتیفیکیشن دریافت خواهید کرد.',
-                    'Welcome! Every message is bridged live to the Admin Cockpit and Admin Telegram. Operator replies appear here and push directly to your Telegram account.'
+                    'به کنسیرج اختصاصی LuckyDrop خوش آمدید ✨ کارشناسان پشتیبانی ما به صورت ۲۴ ساعته آماده پاسخگویی و راهنمایی شما هستند.',
+                    'Welcome to the exclusive LuckyDrop VIP Concierge ✨ Our support specialists are available 24/7 to assist and guide you.'
                   )}
                 </p>
               </div>
@@ -357,20 +357,20 @@ export const FooterAndChat: React.FC = () => {
               {instantGuideBanner && (
                 <div
                   data-testid="support-instant-rtp-guide"
-                  className="p-3 rounded-2xl bg-emerald-950/50 border border-emerald-400/40 text-[11px] text-emerald-100 leading-relaxed"
+                  className="p-3 rounded-2xl bg-[#16102C]/95 border border-[#FFE066]/40 text-[11px] text-amber-50 leading-relaxed shadow-[0_0_20px_rgba(255,215,0,0.1)]"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-black text-emerald-300">
+                    <span className="font-black text-[#FFE066]">
                       {tr(
                         lang,
-                        '🎰 خلاصه آنی ضرایب و عدالت بازی (RTP)',
-                        '🎰 Instant Provably Fair & RTP Guide'
+                        '🎁 راهنمای جوایز و بلیت‌ها',
+                        '🎁 Prizes & Tickets Guide'
                       )}
                     </span>
                     <button
                       type="button"
                       onClick={() => setInstantGuideBanner(null)}
-                      className="text-[10px] text-emerald-300/70 hover:text-white cursor-pointer"
+                      className="text-[10px] text-amber-200/70 hover:text-white cursor-pointer"
                     >
                       ✕
                     </button>
@@ -487,13 +487,13 @@ export const FooterAndChat: React.FC = () => {
                   onClick={() => handleQuickDiagnosticTap('FAIRNESS_RTP')}
                   className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-xl border text-[10px] font-black transition-all cursor-pointer ${
                     selectedDiagnosticChip === 'FAIRNESS_RTP'
-                      ? 'bg-purple-500/25 border-purple-400 text-purple-200'
+                      ? 'bg-[#FFE066]/20 border-[#FFE066] text-[#FFE066]'
                       : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
                   }`}
                 >
-                  <Sparkles className="w-3 h-3 shrink-0 text-purple-300" />
+                  <Sparkles className="w-3 h-3 shrink-0 text-[#FFE066]" />
                   <span className="truncate">
-                    {tr(lang, '🎰 راهنمای بازی و ضرایب', '🎰 Game & RTP Guide')}
+                    {tr(lang, '🎁 راهنمای جوایز و بلیت‌ها', '🎁 Prizes & Tickets')}
                   </span>
                 </button>
               </div>

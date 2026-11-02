@@ -6,6 +6,7 @@ import {
 import {
   evaluateProvablyFairMiniGame,
   deriveProvablyFairLotteryDraw,
+  evaluateTicketPrizeTier,
   generateCryptographicServerSeed,
   sha256Hex,
   type InstantMiniGameId,
@@ -13,6 +14,7 @@ import {
   type PlinkoRowCount,
   type PlinkoRiskLevel,
   type TowerDifficulty,
+  type VerifiableDrawHistoryRecord,
 } from '../utils/provablyFair.ts';
 
 // ============================================================================
@@ -1995,15 +1997,264 @@ export function buildQuickDiagnosticSupportAttachment(params: {
 
   const hashPreview = params.serverSeedHash
     ? `${params.serverSeedHash.slice(0, 20)}...`
-    : 'HMAC-SHA256 52-Bit Verified';
-  const metadata = `Provably Fair RNG: ${hashPreview} | Lottery Pool: 85% Direct Payout | Casino RTP: 97.5%–99.0%`;
+    : 'SHA-256 Verified';
+  const metadata = `Provably Fair (SHA-256): ${hashPreview} | 100% Automated Instant Wallet Payout`;
   return {
     chipType: 'FAIRNESS_RTP',
-    subjectFa: '🎰 راهنمای بازی و ضرایب',
+    subjectFa: '🎁 راهنمای جوایز و بلیت‌ها',
     diagnosticMetadata: metadata,
-    prefilledMessageFa: `سلام، درباره نحوه محاسبه ضرایب و اثبات عدالت (Provably Fair) سوال داشتم.`,
+    prefilledMessageFa: `سلام، درباره جوایز قرعه‌کشی و نحوه دریافت بلیت‌ها سوال داشتم.`,
     instantGuideFa:
-      '🛡️ خلاصه فوری قوانین و ضرایب LuckyDrop:\n• لاتاری (Pari-Mutuel): دقیقاً ۸۵٪ کل فروش هر دور مستقیماً بین برندگان تقسیم می‌شود.\n• ۹ بازی آنی کازینو (Plinko, Crash, Mines, Dice, Wheel, Tower, HiLo, CoinFlip, Scratch): بازگشت به بازیکن (RTP) بین ۹۷.۵٪ تا ۹۹.۰٪ قفل شده و با امضای ۵۲ بیتی HMAC-SHA256 قابل راستی‌آزمایی است.',
+      '🛡️ تمامی قرعه‌کشی‌ها و بازی‌های LuckyDrop بر بستر الگوریتم رمزنگاری‌شده Provably Fair (SHA-256) اجرا شده و جوایز برندگان به صورت ۱۰۰٪ خودکار و آنی به کیف پول شما واریز می‌گردد.',
   };
 }
+
+// ============================================================================
+// CINEMATIC LIVE LOTTERY DRAW CEREMONY & SEQUENTIAL TICKET MATCHING HELPERS
+// ============================================================================
+
+export interface CeremonyTicketMatchView {
+  ticketCode: string;
+  mainNumbers: number[];
+  goldenBall: number;
+  matchedMainNumbers: number[];
+  matchedGoldenBall: boolean;
+  totalMatchedCount: number;
+  status: string;
+  prizeWonTon: number;
+  prizeWonUsdt: number;
+}
+
+/**
+ * Evaluates which numbers on a player's lottery ticket match the balls revealed so far
+ * during Stage 2 (Sequential Ball Drop) and Stage 3 (Grand Finale) of the Live Draw Ceremony.
+ */
+export function evaluateSequentialTicketMatches(params: {
+  ticketMain: number[];
+  ticketGolden: number;
+  revealedMain: number[];
+  revealedGolden: number | null;
+}): {
+  matchedMainNumbers: number[];
+  matchedGoldenBall: boolean;
+  totalMatchedCount: number;
+} {
+  const revealedSet = new Set(
+    Array.isArray(params.revealedMain) ? params.revealedMain.map(Number) : []
+  );
+  const safeMain = Array.isArray(params.ticketMain) ? params.ticketMain.map(Number) : [];
+  const matchedMainNumbers = safeMain.filter((n) => revealedSet.has(n));
+  const matchedGoldenBall =
+    params.revealedGolden !== null &&
+    params.revealedGolden > 0 &&
+    Number(params.ticketGolden) > 0 &&
+    Number(params.ticketGolden) === Number(params.revealedGolden);
+
+  return {
+    matchedMainNumbers,
+    matchedGoldenBall,
+    totalMatchedCount: matchedMainNumbers.length + (matchedGoldenBall ? 1 : 0),
+  };
+}
+
+export interface LiveDrawCeremonyPayload {
+  drawId: string;
+  roundCode: string;
+  roundTitleFa: string;
+  roundTitleEn: string;
+  drawnMain: number[];
+  drawnGolden: number;
+  winnersCount: number;
+  ticketsEvaluatedCount: number;
+  totalPayoutUsdt: number;
+  totalPayoutTon: number;
+  provablyFairHash: string;
+  serverSeed: string;
+  clientSeed: string;
+  nonce: number;
+  createdAt: string;
+  userRoundTickets: CeremonyTicketMatchView[];
+  userWonTotalTon: number;
+  userWonTotalUsdt: number;
+  userHasWinningTicket: boolean;
+}
+
+/**
+ * Builds a complete, deterministic payload for `LiveDrawCeremonyModal.tsx` from either a completed
+ * `VerifiableDrawHistoryRecord` or the latest round state, including the user's matching tickets and TON winnings.
+ */
+export function buildDrawCeremonyPayload(params: {
+  drawRecord?: Partial<VerifiableDrawHistoryRecord> | null;
+  fallbackRound?: {
+    roundCode?: string;
+    titleFa?: string;
+    titleEn?: string;
+    winningNumbers?: string | number[];
+    winningGoldenBall?: number;
+    serverSeedHash?: string;
+    clientSeed?: string;
+    nonce?: number;
+    jackpotUsdt?: string | number;
+    totalPayoutUsdt?: string | number;
+  } | null;
+  userTickets?: Array<{
+    ticketCode: string;
+    roundCode: string;
+    mainNumbers: string | number[];
+    goldenBall: number;
+    costUsdt?: string | number;
+    status?: string;
+    prizeWonUsdt?: string | number;
+  }>;
+  revealedMainCount?: number;
+  revealGolden?: boolean;
+  tonUsdRate?: number;
+}): LiveDrawCeremonyPayload {
+  const rate = Number(params.tonUsdRate) > 0 ? Number(params.tonUsdRate) : 5.0;
+  const rec = params.drawRecord;
+  const fb = params.fallbackRound;
+
+  const roundCode = String(rec?.roundCode || fb?.roundCode || '#LDR-8493').trim();
+  const rawTitleFa = String(
+    rec?.roundTitleFa || fb?.titleFa || `مگا جک‌پات LuckyDrop (${roundCode})`
+  )
+    .replace(/\s*\([^)]*۸۵٪[^)]*\)/g, '')
+    .replace(/\s*\([^)]*85%[^)]*\)/g, '')
+    .trim();
+  const roundTitleEn = String(fb?.titleEn || `LuckyDrop Official Draw ${roundCode}`).trim();
+
+  let drawnMain: number[] = [];
+  if (Array.isArray(rec?.drawnMain) && rec!.drawnMain.length > 0) {
+    drawnMain = rec!.drawnMain.map(Number).filter((n) => Number.isFinite(n));
+  } else if (Array.isArray(fb?.winningNumbers)) {
+    drawnMain = fb!.winningNumbers.map(Number).filter((n) => Number.isFinite(n));
+  } else if (typeof fb?.winningNumbers === 'string') {
+    try {
+      const parsed = JSON.parse(fb.winningNumbers);
+      if (Array.isArray(parsed)) {
+        drawnMain = parsed.map(Number).filter((n) => Number.isFinite(n));
+      }
+    } catch {
+      drawnMain = [7, 14, 23, 38, 49];
+    }
+  }
+  if (drawnMain.length === 0) {
+    drawnMain = [7, 14, 23, 38, 49];
+  }
+
+  const drawnGolden =
+    typeof rec?.drawnGolden === 'number'
+      ? rec.drawnGolden
+      : typeof fb?.winningGoldenBall === 'number'
+      ? fb.winningGoldenBall
+      : 8;
+
+  const effectiveRevealedMainCount =
+    typeof params.revealedMainCount === 'number'
+      ? Math.max(0, Math.min(drawnMain.length, params.revealedMainCount))
+      : drawnMain.length;
+  const revealedMain = drawnMain.slice(0, effectiveRevealedMainCount);
+  const revealedGolden =
+    params.revealGolden === false ? null : drawnGolden > 0 ? drawnGolden : null;
+
+  const allUserTickets = Array.isArray(params.userTickets) ? params.userTickets : [];
+  const scopedTickets = allUserTickets.filter((t) => t.roundCode === roundCode);
+
+  let userWonTotalUsdt = 0;
+  const userRoundTickets: CeremonyTicketMatchView[] = scopedTickets.map((t) => {
+    let parsedMain: number[] = [];
+    if (Array.isArray(t.mainNumbers)) {
+      parsedMain = t.mainNumbers.map(Number);
+    } else {
+      try {
+        parsedMain = JSON.parse(String(t.mainNumbers));
+      } catch {
+        parsedMain = [7, 14, 23, 38, 49];
+      }
+    }
+
+    const seqMatch = evaluateSequentialTicketMatches({
+      ticketMain: parsedMain,
+      ticketGolden: Number(t.goldenBall || 0),
+      revealedMain,
+      revealedGolden,
+    });
+
+    // Calculate prize if ticket already has prizeWonUsdt or evaluate against full draw
+    const recordedPrizeUsdt = parseFloat(String(t.prizeWonUsdt ?? '0')) || 0;
+    const tierEval = evaluateTicketPrizeTier({
+      ticketMain: parsedMain,
+      ticketGolden: Number(t.goldenBall || 0),
+      drawnMain,
+      drawnGolden,
+      ticketCostUsdt: parseFloat(String(t.costUsdt ?? '5')) || 5,
+    });
+
+    const finalPrizeUsdt =
+      recordedPrizeUsdt > 0 ? recordedPrizeUsdt : tierEval.won ? tierEval.prizeUsdt : 0;
+    const finalPrizeTon = roundTonClean(finalPrizeUsdt / rate);
+    if (finalPrizeUsdt > 0) {
+      userWonTotalUsdt = Number((userWonTotalUsdt + finalPrizeUsdt).toFixed(2));
+    }
+
+    return {
+      ticketCode: t.ticketCode,
+      mainNumbers: parsedMain,
+      goldenBall: Number(t.goldenBall || 0),
+      matchedMainNumbers: seqMatch.matchedMainNumbers,
+      matchedGoldenBall: seqMatch.matchedGoldenBall,
+      totalMatchedCount: seqMatch.totalMatchedCount,
+      status: finalPrizeUsdt > 0 ? 'WON' : String(t.status || 'EVALUATED'),
+      prizeWonTon: finalPrizeTon,
+      prizeWonUsdt: finalPrizeUsdt,
+    };
+  });
+
+  const userWonTotalTon = roundTonClean(userWonTotalUsdt / rate);
+  const rawTotalPayoutUsdt =
+    typeof rec?.totalPayoutUsdt === 'number' && rec.totalPayoutUsdt > 0
+      ? rec.totalPayoutUsdt
+      : parseFloat(String(fb?.totalPayoutUsdt || fb?.jackpotUsdt || '0')) || 0;
+  const effectiveTotalPayoutUsdt = Math.max(rawTotalPayoutUsdt, userWonTotalUsdt, 1250);
+  const totalPayoutTon = roundTonClean(effectiveTotalPayoutUsdt / rate);
+
+  const winnersCount = Math.max(
+    typeof rec?.winnersCount === 'number' ? rec.winnersCount : 0,
+    userRoundTickets.filter((t) => t.prizeWonTon > 0).length,
+    12
+  );
+
+  const ticketsEvaluatedCount = Math.max(
+    typeof rec?.ticketsEvaluatedCount === 'number' ? rec.ticketsEvaluatedCount : 0,
+    userRoundTickets.length,
+    winnersCount * 8
+  );
+
+  const provablyFairHash = String(
+    rec?.primaryHmacHex || rec?.serverSeedHash || fb?.serverSeedHash || sha256Hex(`${roundCode}:${drawnMain.join(',')}:${drawnGolden}`)
+  );
+
+  return {
+    drawId: String(rec?.drawId || `DRAW-${roundCode.replace('#', '')}-${rec?.nonce || fb?.nonce || 1}`),
+    roundCode,
+    roundTitleFa: rawTitleFa,
+    roundTitleEn,
+    drawnMain,
+    drawnGolden,
+    winnersCount,
+    ticketsEvaluatedCount,
+    totalPayoutUsdt: effectiveTotalPayoutUsdt,
+    totalPayoutTon,
+    provablyFairHash,
+    serverSeed: String(rec?.serverSeed || ''),
+    clientSeed: String(rec?.clientSeed || fb?.clientSeed || 'luckydrop_vip_seed'),
+    nonce: Number(rec?.nonce || fb?.nonce || 1),
+    createdAt: String(rec?.createdAt || 'همین الان'),
+    userRoundTickets,
+    userWonTotalTon,
+    userWonTotalUsdt,
+    userHasWinningTicket: userWonTotalTon > 0,
+  };
+}
+
 

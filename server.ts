@@ -109,10 +109,14 @@ app.get('/tonconnect-manifest.json', (req, res) => {
 });
 
 app.get('/favicon.ico', (_req, res) => {
-  const logoPath = path.resolve(process.cwd(), 'public', 'luckydrop-logo.svg');
-  if (fs.existsSync(logoPath)) {
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.sendFile(logoPath);
+  const icoPath = path.resolve(process.cwd(), 'public', 'favicon.ico');
+  const pngPath = path.resolve(process.cwd(), 'public', 'favicon.png');
+  if (fs.existsSync(icoPath)) {
+    res.setHeader('Content-Type', 'image/x-icon');
+    res.sendFile(icoPath);
+  } else if (fs.existsSync(pngPath)) {
+    res.setHeader('Content-Type', 'image/png');
+    res.sendFile(pngPath);
   } else {
     res.status(204).end();
   }

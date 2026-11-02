@@ -65,7 +65,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ state, onRetry }) =>
 
           {/* Core 3D Logo */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <LuckyDropLogo size={96} animated />
+            <LuckyDropLogo size={112} animated />
           </div>
         </div>
 

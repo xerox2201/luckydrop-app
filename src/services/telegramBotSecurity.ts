@@ -76,7 +76,7 @@ export function buildTonConnectManifest(rawOriginOrDomain?: string): TonConnectM
   return {
     url: baseUrl,
     name: 'LuckyDrop VIP — TON Lottery & 3D Games',
-    iconUrl: `${baseUrl}/favicon.ico`,
+    iconUrl: `${baseUrl}/luckydrop-logo.png`,
     termsOfUseUrl: `${baseUrl}/rules`,
     privacyPolicyUrl: `${baseUrl}/transparency`,
   };

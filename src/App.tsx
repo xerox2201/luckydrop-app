@@ -22,6 +22,7 @@ import { TermsRulesView } from './components/TermsRulesView';
 import { WinnersView } from './components/WinnersView';
 import { HowItWorksView } from './components/HowItWorksView';
 import { ViralTicketCardModal } from './components/ViralTicketCardModal';
+import { LiveDrawCeremonyModal } from './components/LiveDrawCeremonyModal';
 import { FooterAndChat } from './components/FooterAndChat';
 import { SplashScreen } from './components/SplashScreen';
 
@@ -110,6 +111,9 @@ const MainAppContent: React.FC = () => {
 
         {/* Viral Shareable Golden Ticket & Win Certificate Modal */}
         <ViralTicketCardModal />
+
+        {/* Cinematic Live Lottery Draw & Winner Reveal Ceremony Modal */}
+        <LiveDrawCeremonyModal />
 
         {/* Real Two-Way Live VIP Support Drawer & Floating Concierge Button */}
         <FooterAndChat />
