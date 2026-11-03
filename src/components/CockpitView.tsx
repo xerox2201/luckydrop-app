@@ -121,6 +121,9 @@ export const CockpitView: React.FC = () => {
     monthlySuperJackpot,
     updateMonthlySuperJackpotConfig,
     triggerMonthlySuperJackpotDraw,
+    welcomeGrandLottery,
+    updateWelcomeLotteryConfig,
+    triggerWelcomeLotteryDraw,
     sseConnected,
   } = useLottery();
 
@@ -134,6 +137,14 @@ export const CockpitView: React.FC = () => {
   const [seedMonthlyTonDraft, setSeedMonthlyTonDraft] = useState<string>('25');
   const [monthlyVaultBusy, setMonthlyVaultBusy] = useState<boolean>(false);
   const [monthlyVaultBanner, setMonthlyVaultBanner] = useState<string | null>(null);
+
+  const [welcomeTargetUsdtDraft, setWelcomeTargetUsdtDraft] = useState<string>(
+    String(welcomeGrandLottery?.targetPoolUsdt || 1000)
+  );
+  const [welcomeAddReserveTonDraft, setWelcomeAddReserveTonDraft] = useState<string>('0');
+  const [welcomeExtendDaysDraft, setWelcomeExtendDaysDraft] = useState<string>('0');
+  const [welcomeAdminBusy, setWelcomeAdminBusy] = useState<boolean>(false);
+  const [welcomeAdminBanner, setWelcomeAdminBanner] = useState<string | null>(null);
 
   const getAdminFetchHeaders = React.useCallback((): Record<string, string> => {
     const rawWebAppInitData =
@@ -1440,6 +1451,178 @@ export const CockpitView: React.FC = () => {
                   </div>
                 </div>
               )}
+          </div>
+
+          {/* $1,000 WELCOME GRAND LOTTERY (#LD-WELCOME-1000) RESERVE & DRAW ADMIN CONTROLLER */}
+          <div
+            data-testid="cockpit-welcome-lottery-card"
+            className="rounded-2xl bg-gradient-to-br from-[#1C1408]/95 via-[#120D22]/95 to-[#091815]/95 border border-[#fbbf24]/45 p-3.5 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-purple-500/20 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🎉</span>
+                <div>
+                  <h3 className="text-xs font-extrabold text-[#fbbf24]">
+                    مدیریت لاتاری خوش‌آمدگویی ۱,۰۰۰ دلاری (`#LD-WELCOME-1000`)
+                  </h3>
+                  <p className="text-[10px] text-purple-200/80">
+                    تأمین خودکار از حاشیه سود خالص (۲۵٪ از ۱۲٪ سهم پلتفرم) + محافظ تمدید خودکار ۷ روزه تا تکمیل ۱۰۰٪ ذخیره
+                  </p>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-black">
+                {welcomeGrandLottery?.isReserveFullyFunded
+                  ? '✅ 100% FUNDED'
+                  : `⏳ ${(welcomeGrandLottery?.reserveProgressPercent || 0).toFixed(1)}% FUNDED`}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="p-2.5 rounded-xl bg-[#090612] border border-[#fbbf24]/30">
+                <div className="text-[10px] text-purple-200/75">هدف جایزه</div>
+                <div className="font-mono text-xs font-black text-[#fbbf24] mt-0.5" dir="ltr">
+                  ${(welcomeGrandLottery?.targetPoolUsdt || 1000).toLocaleString('en-US')} ({(welcomeGrandLottery?.targetPoolTon || 200).toFixed(2)} TON)
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-[#090612] border border-emerald-500/30">
+                <div className="text-[10px] text-purple-200/75">ذخیره تأمین‌شده (`fundedReserve`)</div>
+                <div
+                  data-testid="cockpit-welcome-funded-reserve-ton"
+                  className="font-mono text-xs font-black text-emerald-300 mt-0.5"
+                  dir="ltr"
+                >
+                  {(welcomeGrandLottery?.fundedReserveTon || 0).toFixed(6)} TON
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-[#090612] border border-purple-500/25">
+                <div className="text-[10px] text-purple-200/75">شرکت‌کنندگان</div>
+                <div className="font-mono text-xs font-black text-white mt-0.5" dir="ltr">
+                  {welcomeGrandLottery?.participantsCount || 0} نفر
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-[#090612] border border-purple-500/25">
+                <div className="text-[10px] text-purple-200/75">تمدید خودکار محافظ</div>
+                <div className="font-mono text-xs font-black text-amber-300 mt-0.5" dir="ltr">
+                  {welcomeGrandLottery?.autoExtensionCount || 0} بار
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-[10px] font-bold text-purple-200 block mb-1">
+                  هدف دلاری (`targetPoolUsdt`):
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  step="50"
+                  dir="ltr"
+                  data-testid="cockpit-welcome-target-usdt-input"
+                  value={welcomeTargetUsdtDraft}
+                  onChange={(e) => setWelcomeTargetUsdtDraft(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-purple-500/25 rounded-xl px-2.5 text-xs text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-emerald-300 block mb-1">
+                  شارژ دستی ذخیره (`+TON`):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  dir="ltr"
+                  data-testid="cockpit-welcome-add-reserve-input"
+                  value={welcomeAddReserveTonDraft}
+                  onChange={(e) => setWelcomeAddReserveTonDraft(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-emerald-500/35 rounded-xl px-2.5 text-xs text-emerald-300 font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-[#fbbf24] block mb-1">
+                  تمدید تایمر (`+Days`):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  dir="ltr"
+                  data-testid="cockpit-welcome-extend-days-input"
+                  value={welcomeExtendDaysDraft}
+                  onChange={(e) => setWelcomeExtendDaysDraft(e.target.value)}
+                  className="w-full h-9 bg-[#090612] border border-[#fbbf24]/35 rounded-xl px-2.5 text-xs text-[#fbbf24] font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={welcomeAdminBusy}
+                data-testid="cockpit-welcome-save-config-btn"
+                onClick={async () => {
+                  setWelcomeAdminBusy(true);
+                  setWelcomeAdminBanner(null);
+                  const targetUsdt = Math.max(
+                    10,
+                    Number(normalizeDigits(welcomeTargetUsdtDraft)) || 1000
+                  );
+                  const addResTon = Math.max(
+                    0,
+                    Number(normalizeDigits(welcomeAddReserveTonDraft)) || 0
+                  );
+                  const extDays = Math.max(
+                    0,
+                    Number(normalizeDigits(welcomeExtendDaysDraft)) || 0
+                  );
+                  const ok = await updateWelcomeLotteryConfig({
+                    targetPoolUsdt: targetUsdt,
+                    addReserveTon: addResTon > 0 ? addResTon : undefined,
+                    resetCycleDays: extDays > 0 ? extDays : undefined,
+                  });
+                  setWelcomeAdminBusy(false);
+                  if (ok) {
+                    setWelcomeAddReserveTonDraft('0');
+                    setWelcomeExtendDaysDraft('0');
+                    setWelcomeAdminBanner(
+                      `✅ تنظیمات لاتاری خوش‌آمدگویی ۱,۰۰۰ دلاری ذخیره شد!`
+                    );
+                  }
+                }}
+                className="h-9 rounded-xl bg-[#fbbf24]/20 hover:bg-[#fbbf24]/30 border border-[#fbbf24]/50 text-[#fbbf24] text-[11px] font-black cursor-pointer"
+              >
+                💾 ذخیره هدف، ذخیره و تایمر خوش‌آمدگویی
+              </button>
+
+              <button
+                type="button"
+                disabled={welcomeAdminBusy}
+                data-testid="cockpit-welcome-trigger-draw-btn"
+                onClick={async () => {
+                  setWelcomeAdminBusy(true);
+                  setWelcomeAdminBanner(null);
+                  const res = await triggerWelcomeLotteryDraw();
+                  setWelcomeAdminBusy(false);
+                  if (res) {
+                    setWelcomeAdminBanner(
+                      `🎉 قرعه‌کشی خوش‌آمدگویی #LD-WELCOME-1000 انجام شد! شماره‌ها: [${res.drawnMain.join(
+                        ', '
+                      )}] + ★${res.drawnGolden} (${res.winnersCount || 0} برنده)`
+                    );
+                  }
+                }}
+                className="h-9 rounded-xl stake-emerald-cta text-[#041f14] text-[11px] font-black cursor-pointer"
+              >
+                🎁 اجرای دستی قرعه‌کشی ۱,۰۰۰ دلاری خوش‌آمدگویی
+              </button>
+            </div>
+
+            {welcomeAdminBanner && (
+              <div className="p-2 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-[11px] font-bold">
+                {welcomeAdminBanner}
+              </div>
+            )}
           </div>
 
           {/* Create New Lottery Round Form (Unlimited Creation + Dynamic 85%/15% Pool) */}

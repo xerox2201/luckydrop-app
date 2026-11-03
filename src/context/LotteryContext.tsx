@@ -96,12 +96,18 @@ import type {
   MonthlySuperJackpotState,
   MonthlySuperJackpotRolloverItem,
   MonthlyVipQualificationResult,
+  UserRakebackVaultState,
+  WelcomeGrandLotteryState,
+  UserWelcomeTicketStatus,
 } from '../services/securityGuard.ts';
 
 export type {
   MonthlySuperJackpotState,
   MonthlySuperJackpotRolloverItem,
   MonthlyVipQualificationResult,
+  UserRakebackVaultState,
+  WelcomeGrandLotteryState,
+  UserWelcomeTicketStatus,
 };
 
 export interface RealtimeLiveTickerEvent {
@@ -734,6 +740,13 @@ interface LotteryContextType {
   // Monthly VIP Loyalty Super-Jackpot Vault & Real-Time SSE Synchronization
   monthlySuperJackpot: MonthlySuperJackpotState;
   monthlyVipQualification: MonthlyVipQualificationResult;
+  rakebackVault: UserRakebackVaultState;
+  claimRakebackVault: () => Promise<{
+    ok: boolean;
+    claimedTon: number;
+    claimedStars: number;
+    message: string;
+  }>;
   liveTickerEvent: RealtimeLiveTickerEvent | null;
   poolPulseKey: number;
   sseConnected: boolean;
@@ -745,6 +758,26 @@ interface LotteryContextType {
     resetCycleDays?: number;
   }) => Promise<boolean>;
   triggerMonthlySuperJackpotDraw: () => Promise<DrawExecutionResult | null>;
+  // $1,000 Welcome Grand Lottery (`#LD-WELCOME-1000`)
+  welcomeGrandLottery: WelcomeGrandLotteryState;
+  welcomeTicketStatus: UserWelcomeTicketStatus;
+  claimWelcomeLotteryTicket: (params: {
+    mainNumbers: number[];
+    goldenBall: number;
+  }) => Promise<{
+    ok: boolean;
+    ticket?: TicketItem;
+    message: string;
+  }>;
+  updateWelcomeLotteryConfig: (params: {
+    targetPoolUsdt?: number;
+    setReserveTon?: number;
+    addReserveTon?: number;
+    houseMarginAllocationRatio?: number;
+    resetCycleDays?: number;
+    autoExtendDaysIfUnfunded?: number;
+  }) => Promise<boolean>;
+  triggerWelcomeLotteryDraw: () => Promise<DrawExecutionResult | null>;
   firestoreConnected: boolean;
   supabaseConnected: boolean;
 }
@@ -1284,6 +1317,45 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       xpProgressPercent: 0,
       overallProgressPercent: 0,
     }));
+  const [rakebackVault, setRakebackVault] = useState<UserRakebackVaultState>(() => ({
+    claimableTon: 0,
+    claimableStars: 0,
+    lifetimeEarnedTon: 0,
+    lifetimeEarnedStars: 0,
+    totalClaimsCount: 0,
+    lastUpdatedIso: new Date().toISOString(),
+  }));
+  const [welcomeGrandLottery, setWelcomeGrandLottery] = useState<WelcomeGrandLotteryState>(() => ({
+    roundId: '#LD-WELCOME-1000',
+    titleFa: '🎉 لاتاری ویژه خوشآمدگویی ۱,۰۰۰ دلاری (Welcome $1,000 Grand Draw)',
+    targetPoolUsdt: 1000,
+    targetPoolTon: 200,
+    fundedReserveTon: 0,
+    fundedReserveUsdt: 0,
+    reserveProgressPercent: 0,
+    isReserveFullyFunded: false,
+    houseMarginAllocationRatio: 0.25,
+    nextDrawTimestampMs: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    autoExtendDaysIfUnfunded: 7,
+    autoExtensionCount: 0,
+    participantsCount: 0,
+    mainCount: 5,
+    mainMax: 50,
+    goldenMax: 15,
+    serverSeedHash: sha256Hex('luckydrop_welcome_1000_grand_lottery_seed_v1'),
+    clientSeed: 'luckydrop_welcome_1000_seed',
+    nonce: 1,
+  }));
+  const [welcomeTicketStatus, setWelcomeTicketStatus] = useState<UserWelcomeTicketStatus>(() => ({
+    welcomeTicketUnlocked: false,
+    welcomeTicketEntitlement: 0,
+    welcomeTicketClaimed: false,
+    welcomeTicketCode: null,
+    chosenMainNumbers: null,
+    chosenGoldenBall: null,
+    statusCode: 'LOCKED_BUY_FIRST_TICKET',
+    statusLabelFa: 'با خرید اولین بلیت لاتاری، ۱ بلیت رایگان با اعداد دلخواه دریافت کنید!',
+  }));
   const [liveTickerEvent, setLiveTickerEvent] = useState<RealtimeLiveTickerEvent | null>(null);
   const [poolPulseKey, setPoolPulseKey] = useState<number>(0);
   const [sseConnected, setSseConnected] = useState<boolean>(false);
@@ -1710,6 +1782,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (data.monthlyVipQualification && typeof data.monthlyVipQualification === 'object') {
         setMonthlyVipQualification(data.monthlyVipQualification);
       }
+      if (data.welcomeGrandLottery && typeof data.welcomeGrandLottery === 'object') {
+        setWelcomeGrandLottery(data.welcomeGrandLottery);
+      }
+      if (data.welcomeTicketStatus && typeof data.welcomeTicketStatus === 'object') {
+        setWelcomeTicketStatus(data.welcomeTicketStatus);
+      }
+      if (data.rakebackVault && typeof data.rakebackVault === 'object') {
+        setRakebackVault(data.rakebackVault);
+      }
       if (typeof data.chestsClaimedCount === 'number') {
         setChestsClaimedCount(data.chestsClaimedCount);
       }
@@ -1917,6 +1998,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (data.monthlyVipQualification && typeof data.monthlyVipQualification === 'object') {
         setMonthlyVipQualification(data.monthlyVipQualification);
+      }
+      if (data.welcomeGrandLottery && typeof data.welcomeGrandLottery === 'object') {
+        setWelcomeGrandLottery(data.welcomeGrandLottery);
+      }
+      if (data.welcomeTicketStatus && typeof data.welcomeTicketStatus === 'object') {
+        setWelcomeTicketStatus(data.welcomeTicketStatus);
       }
       if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
 
@@ -2795,6 +2882,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (typeof data.starsBalance === 'number') {
           setStarsBalance(data.starsBalance);
         }
+        if (data.rakebackVault && typeof data.rakebackVault === 'object') {
+          setRakebackVault(data.rakebackVault);
+        }
         if (data.bonusTicketAwarded) {
           setTickets((prev) => [data.bonusTicketAwarded, ...prev]);
         }
@@ -2901,6 +2991,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (res.ok && data.ok) {
         if (data.pamState) {
           syncPamStateEverywhere(data.pamState);
+        }
+        if (data.rakebackVault) {
+          setRakebackVault(data.rakebackVault);
         }
         if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
         if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
@@ -3381,6 +3474,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ) {
         setMonthlyVipQualification(rawPayload.monthlyVipQualification);
       }
+      if (rawPayload.welcomeGrandLottery && typeof rawPayload.welcomeGrandLottery === 'object') {
+        setWelcomeGrandLottery(rawPayload.welcomeGrandLottery);
+      }
+      if (rawPayload.welcomeTicketStatus && typeof rawPayload.welcomeTicketStatus === 'object') {
+        setWelcomeTicketStatus(rawPayload.welcomeTicketStatus);
+      }
+      if (rawPayload.rakebackVault && typeof rawPayload.rakebackVault === 'object') {
+        setRakebackVault(rawPayload.rakebackVault);
+      }
       if (typeof rawPayload.rolloverReservePoolUsdt === 'number') {
         setRolloverReservePoolUsdt(rawPayload.rolloverReservePoolUsdt);
       }
@@ -3650,6 +3752,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (data.monthlyVipQualification && typeof data.monthlyVipQualification === 'object') {
         setMonthlyVipQualification(data.monthlyVipQualification);
+      }
+      if (data.welcomeGrandLottery && typeof data.welcomeGrandLottery === 'object') {
+        setWelcomeGrandLottery(data.welcomeGrandLottery);
+      }
+      if (data.welcomeTicketStatus && typeof data.welcomeTicketStatus === 'object') {
+        setWelcomeTicketStatus(data.welcomeTicketStatus);
+      }
+      if (data.rakebackVault && typeof data.rakebackVault === 'object') {
+        setRakebackVault(data.rakebackVault);
       }
       if (typeof data.xp === 'number') {
         setTmaXpPoints(data.xp);
@@ -4811,6 +4922,221 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return null;
   };
 
+  const claimRakebackVault = async (): Promise<{
+    ok: boolean;
+    claimedTon: number;
+    claimedStars: number;
+    message: string;
+  }> => {
+    HapticEngine.impactOccurred('medium');
+    const currentClaimTon = Number((rakebackVault.claimableTon || 0).toFixed(6));
+    const currentClaimStars = Math.round(rakebackVault.claimableStars || 0);
+    if (currentClaimTon <= 0 && currentClaimStars <= 0) {
+      HapticEngine.notificationOccurred('warning');
+      return {
+        ok: false,
+        claimedTon: 0,
+        claimedStars: 0,
+        message: '⚠️ موجودی قابل برداشت در قلک کشبک شما صفر است.',
+      };
+    }
+
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/wallet/claim-rakeback', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.pamState) {
+          syncPamStateEverywhere(data.pamState);
+        } else {
+          if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+          if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
+        }
+        if (data.rakebackVault && typeof data.rakebackVault === 'object') {
+          setRakebackVault(data.rakebackVault);
+        }
+        await refreshSnapshot();
+        HapticEngine.notificationOccurred('success');
+        return {
+          ok: true,
+          claimedTon: Number(data.claimedTon || currentClaimTon),
+          claimedStars: Number(data.claimedStars || currentClaimStars),
+          message:
+            data.message ||
+            '🎉 پاداش کشبک و ریکبک شما با موفقیت به کیف پول اصلی اضافه شد!',
+        };
+      }
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        claimedTon: 0,
+        claimedStars: 0,
+        message: data.error || 'خطا در برداشت کشبک به کیف پول',
+      };
+    } catch {
+      // Offline / local PAM fallback
+      if (currentClaimTon > 0) {
+        localPamEngineRef.current.credit({
+          transactionUuid: generateDeterministicUuid('tx_rbk_ton'),
+          referenceTransactionUuid: null,
+          roundId: '#RBK-TON',
+          vertical: 'VIP_LOYALTY_BONUS',
+          currency: 'TON',
+          amountTon: currentClaimTon,
+          amountUsdt: Number((currentClaimTon * 5.0).toFixed(6)),
+          note: `💎 دریافت آنی کشبک و ریکبک VIP (+${currentClaimTon.toFixed(6)} TON)`,
+        });
+      }
+      if (currentClaimStars > 0) {
+        localPamEngineRef.current.credit({
+          transactionUuid: generateDeterministicUuid('tx_rbk_stars'),
+          referenceTransactionUuid: null,
+          roundId: '#RBK-STARS',
+          vertical: 'VIP_LOYALTY_BONUS',
+          currency: 'STARS',
+          amountStars: currentClaimStars,
+          amountUsdt: Number((currentClaimStars * 0.02).toFixed(6)),
+          note: `⭐ دریافت آنی کشبک و ریکبک VIP (+${currentClaimStars} ⭐)`,
+        });
+      }
+      syncPamStateEverywhere(localPamEngineRef.current.getState());
+      setRakebackVault((prev) => ({
+        ...prev,
+        claimableTon: 0,
+        claimableStars: 0,
+        totalClaimsCount: (prev.totalClaimsCount || 0) + 1,
+        lastUpdatedIso: new Date().toISOString(),
+      }));
+      HapticEngine.notificationOccurred('success');
+      return {
+        ok: true,
+        claimedTon: currentClaimTon,
+        claimedStars: currentClaimStars,
+        message: '🎉 پاداش کشبک و ریکبک شما به کیف پول اصلی واریز شد!',
+      };
+    }
+  };
+
+  const claimWelcomeLotteryTicket = async (params: {
+    mainNumbers: number[];
+    goldenBall: number;
+  }): Promise<{
+    ok: boolean;
+    ticket?: TicketItem;
+    message: string;
+  }> => {
+    HapticEngine.impactOccurred('medium');
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/lottery/welcome-1000/claim-ticket', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          mainNumbers: params.mainNumbers,
+          goldenBall: params.goldenBall,
+          clientSeed: pamState.seeds.clientSeed,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.welcomeGrandLottery && typeof data.welcomeGrandLottery === 'object') {
+          setWelcomeGrandLottery(data.welcomeGrandLottery);
+        }
+        if (data.welcomeTicketStatus && typeof data.welcomeTicketStatus === 'object') {
+          setWelcomeTicketStatus(data.welcomeTicketStatus);
+        }
+        if (data.ticket) {
+          setTickets((prev) => [data.ticket, ...prev]);
+        }
+        await refreshSnapshot();
+        HapticEngine.notificationOccurred('success');
+        return {
+          ok: true,
+          ticket: data.ticket,
+          message:
+            data.message ||
+            '🎉 بلیت رایگان لاتاری ۱,۰۰۰ دلاری خوشآمدگویی شما با موفقیت ثبت شد!',
+        };
+      }
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: data.error || 'خطا در ثبت بلیت رایگان خوشآمدگویی',
+      };
+    } catch {
+      return {
+        ok: false,
+        message: 'خطا در ارتباط با سرور (/api/lottery/welcome-1000/claim-ticket)',
+      };
+    }
+  };
+
+  const updateWelcomeLotteryConfig = async (params: {
+    targetPoolUsdt?: number;
+    setReserveTon?: number;
+    addReserveTon?: number;
+    houseMarginAllocationRatio?: number;
+    resetCycleDays?: number;
+    autoExtendDaysIfUnfunded?: number;
+  }): Promise<boolean> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/welcome-lottery/config', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.welcomeGrandLottery) {
+          setWelcomeGrandLottery(data.welcomeGrandLottery);
+        }
+        await refreshSnapshot();
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  };
+
+  const triggerWelcomeLotteryDraw = async (): Promise<DrawExecutionResult | null> => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/welcome-lottery/draw', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.welcomeGrandLottery) {
+          setWelcomeGrandLottery(data.welcomeGrandLottery);
+        }
+        if (data.drawRecord) {
+          setActiveCeremonyDraw(data.drawRecord);
+        }
+        await refreshSnapshot();
+        return {
+          drawnMain: data.drawnMain || [7, 14, 23, 38, 49],
+          drawnGolden: data.drawnGolden ?? 8,
+          hash: data.drawRecord?.primaryHmacHex || '',
+          ticketsEvaluatedCount: data.ticketsEvaluatedCount,
+          winnersCount: data.winnersCount,
+          totalPayoutUsdt: data.totalPayoutUsdt,
+          drawRecord: data.drawRecord,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
   return (
     <LotteryContext.Provider
       value={{
@@ -4989,11 +5315,18 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         openLatestDrawCeremony,
         monthlySuperJackpot,
         monthlyVipQualification,
+        rakebackVault,
+        claimRakebackVault,
         liveTickerEvent,
         poolPulseKey,
         sseConnected,
         updateMonthlySuperJackpotConfig,
         triggerMonthlySuperJackpotDraw,
+        welcomeGrandLottery,
+        welcomeTicketStatus,
+        claimWelcomeLotteryTicket,
+        updateWelcomeLotteryConfig,
+        triggerWelcomeLotteryDraw,
         firestoreConnected,
         supabaseConnected: isSupabaseConfigured,
       }}

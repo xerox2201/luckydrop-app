@@ -69,6 +69,11 @@ export interface IsolatedUserAccountRecord {
   isBanned?: boolean;
   banReason?: string;
   activeGameSession?: ActiveGameSessionState | null;
+  rakebackVault?: UserRakebackVaultState;
+  welcomeTicketUnlocked?: boolean;
+  welcomeTicketEntitlement?: number;
+  welcomeTicketClaimed?: boolean;
+  welcomeTicketCode?: string | null;
   pamState: PAMPlayerState;
   createdAt: string;
   updatedAt: string;
@@ -215,6 +220,18 @@ export function createCleanZeroUserProfile(
     isBanned: false,
     banReason: '',
     activeGameSession: null,
+    rakebackVault: {
+      claimableTon: 0,
+      claimableStars: 0,
+      lifetimeEarnedTon: 0,
+      lifetimeEarnedStars: 0,
+      totalClaimsCount: 0,
+      lastUpdatedIso: nowIso,
+    },
+    welcomeTicketUnlocked: false,
+    welcomeTicketEntitlement: 0,
+    welcomeTicketClaimed: false,
+    welcomeTicketCode: null,
     pamState,
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -2416,6 +2433,697 @@ export function evaluateMonthlyVipQualification(params: {
     overallProgressPercent,
   };
 }
+
+// ============================================================================
+// 14. INSTANT VIP RAKEBACK & CASHBACK VAULT (100% SELF-FUNDED FROM HOUSE MARGIN)
+// - Lottery Ticket Cashback: 3% Instant Rebate out of the 15% House Margin (85% Pool + 12% Net House + 3% User Cashback = 100% Gross Sales)
+// - Mini-Game Rakeback: 1.5% Turnover Rebate on every mini-game bet (win or loss)
+// ============================================================================
+
+export interface UserRakebackVaultState {
+  claimableTon: number;
+  claimableStars: number;
+  lifetimeEarnedTon: number;
+  lifetimeEarnedStars: number;
+  totalClaimsCount: number;
+  lastUpdatedIso: string;
+}
+
+export interface SelfFundedTicketCashbackSplit {
+  grossSalesTon: number;
+  distributablePool85Ton: number;
+  grossHouseMargin15Ton: number;
+  netHouseMargin12Ton: number;
+  userCashback3Ton: number;
+  grossSalesStars: number;
+  userCashback3Stars: number;
+  grossSalesUsdt: number;
+  distributablePool85Usdt: number;
+  netHouseMargin12Usdt: number;
+  userCashback3Usdt: number;
+}
+
+export function normalizeRakebackVaultState(
+  raw?: Partial<UserRakebackVaultState> | null
+): UserRakebackVaultState {
+  return {
+    claimableTon: roundTonClean(Math.max(0, Number(raw?.claimableTon) || 0)),
+    claimableStars: roundStarsClean(Math.max(0, Math.floor(Number(raw?.claimableStars) || 0))),
+    lifetimeEarnedTon: roundTonClean(Math.max(0, Number(raw?.lifetimeEarnedTon) || 0)),
+    lifetimeEarnedStars: roundStarsClean(
+      Math.max(0, Math.floor(Number(raw?.lifetimeEarnedStars) || 0))
+    ),
+    totalClaimsCount: Math.max(0, Math.floor(Number(raw?.totalClaimsCount) || 0)),
+    lastUpdatedIso:
+      typeof raw?.lastUpdatedIso === 'string' && raw.lastUpdatedIso
+        ? raw.lastUpdatedIso
+        : new Date().toISOString(),
+  };
+}
+
+/**
+ * Pure, zero-leakage split verifying:
+ * 85% Distributable Pool + 12% Net House Revenue + 3% User Cashback === 100% Gross Sales
+ * with < 0.000001 TON precision.
+ */
+export function calculateSelfFundedTicketCashbackSplit(params: {
+  currency: 'TON' | 'STARS';
+  grossTon?: number;
+  grossStars?: number;
+  tonUsdRate?: number;
+}): SelfFundedTicketCashbackSplit {
+  const rate =
+    typeof params.tonUsdRate === 'number' && params.tonUsdRate > 0 ? params.tonUsdRate : 5.0;
+  const isStars = params.currency === 'STARS';
+  const grossSalesStars = isStars
+    ? roundStarsClean(Math.max(0, Math.floor(Number(params.grossStars) || 0)))
+    : roundStarsClean(Math.round((Number(params.grossTon) || 0) * 250));
+  const grossSalesTon = isStars
+    ? roundTonClean(grossSalesStars / 250)
+    : roundTonClean(Math.max(0, Number(params.grossTon) || 0));
+
+  const distributablePool85Ton = roundTonClean(grossSalesTon * 0.85);
+  const userCashback3Ton = roundTonClean(grossSalesTon * 0.03);
+  const netHouseMargin12Ton = roundTonClean(
+    Math.max(0, grossSalesTon - distributablePool85Ton - userCashback3Ton)
+  );
+  const grossHouseMargin15Ton = roundTonClean(netHouseMargin12Ton + userCashback3Ton);
+  const userCashback3Stars = isStars
+    ? Math.max(0, Math.floor(grossSalesStars * 0.03))
+    : Math.max(0, Math.floor(userCashback3Ton * 250));
+
+  return {
+    grossSalesTon,
+    distributablePool85Ton,
+    grossHouseMargin15Ton,
+    netHouseMargin12Ton,
+    userCashback3Ton,
+    grossSalesStars,
+    userCashback3Stars,
+    grossSalesUsdt: Number((grossSalesTon * rate).toFixed(6)),
+    distributablePool85Usdt: Number((distributablePool85Ton * rate).toFixed(6)),
+    netHouseMargin12Usdt: Number((netHouseMargin12Ton * rate).toFixed(6)),
+    userCashback3Usdt: Number((userCashback3Ton * rate).toFixed(6)),
+  };
+}
+
+export function accrueLotteryTicketCashback(
+  currentVault: Partial<UserRakebackVaultState> | undefined | null,
+  params: {
+    currency: 'TON' | 'STARS';
+    totalTon: number;
+    totalStars: number;
+  }
+): {
+  updatedVault: UserRakebackVaultState;
+  accruedTon: number;
+  accruedStars: number;
+} {
+  const vault = normalizeRakebackVaultState(currentVault);
+  const nowIso = new Date().toISOString();
+
+  if (params.currency === 'STARS') {
+    const accruedStars = Math.max(0, Math.floor((Number(params.totalStars) || 0) * 0.03));
+    const updatedVault: UserRakebackVaultState = {
+      ...vault,
+      claimableStars: roundStarsClean(vault.claimableStars + accruedStars),
+      lifetimeEarnedStars: roundStarsClean(vault.lifetimeEarnedStars + accruedStars),
+      lastUpdatedIso: nowIso,
+    };
+    return { updatedVault, accruedTon: 0, accruedStars };
+  }
+
+  const accruedTon = roundTonClean(Math.max(0, Number(params.totalTon) || 0) * 0.03);
+  const updatedVault: UserRakebackVaultState = {
+    ...vault,
+    claimableTon: roundTonClean(vault.claimableTon + accruedTon),
+    lifetimeEarnedTon: roundTonClean(vault.lifetimeEarnedTon + accruedTon),
+    lastUpdatedIso: nowIso,
+  };
+  return { updatedVault, accruedTon, accruedStars: 0 };
+}
+
+export function accrueMiniGameRakeback(
+  currentVault: Partial<UserRakebackVaultState> | undefined | null,
+  params: {
+    currency: 'TON' | 'STARS';
+    betAmountTon: number;
+    betAmountStars: number;
+  }
+): {
+  updatedVault: UserRakebackVaultState;
+  accruedTon: number;
+  accruedStars: number;
+} {
+  const vault = normalizeRakebackVaultState(currentVault);
+  const nowIso = new Date().toISOString();
+
+  if (params.currency === 'STARS') {
+    const accruedStars = Math.max(0, Math.floor((Number(params.betAmountStars) || 0) * 0.015));
+    const updatedVault: UserRakebackVaultState = {
+      ...vault,
+      claimableStars: roundStarsClean(vault.claimableStars + accruedStars),
+      lifetimeEarnedStars: roundStarsClean(vault.lifetimeEarnedStars + accruedStars),
+      lastUpdatedIso: nowIso,
+    };
+    return { updatedVault, accruedTon: 0, accruedStars };
+  }
+
+  const accruedTon = roundTonClean(Math.max(0, Number(params.betAmountTon) || 0) * 0.015);
+  const updatedVault: UserRakebackVaultState = {
+    ...vault,
+    claimableTon: roundTonClean(vault.claimableTon + accruedTon),
+    lifetimeEarnedTon: roundTonClean(vault.lifetimeEarnedTon + accruedTon),
+    lastUpdatedIso: nowIso,
+  };
+  return { updatedVault, accruedTon, accruedStars: 0 };
+}
+
+// ============================================================================
+// 15. STRICT "JACKPOT-ONLY (ALL-OR-NOTHING)" EVALUATOR FOR MONTHLY VIP SUPER-JACKPOT
+// - ONLY Tier-1 Jackpot matches (all 5 main numbers + golden ball = all 6 numbers matched) win.
+// - Lower-tier payouts (Tier 2, Tier 3, Tier 4, Tier 5) are 100% eliminated.
+// - If ZERO tickets hit Tier-1 Jackpot, 100% of accumulatedPoolTon and accumulatedPoolStars roll over untouched!
+// ============================================================================
+
+export interface MonthlySuperJackpotTicketEvaluation {
+  ticketCode: string;
+  matchedMainCount: number;
+  matchedGolden: boolean;
+  isTier1JackpotWinner: boolean;
+  prizeTon: number;
+  prizeStars: number;
+  prizeUsdt: number;
+  status: 'WON' | 'LOST';
+  tierLabelFa: string;
+}
+
+export function evaluateMonthlySuperJackpotAllOrNothing(params: {
+  tickets: Array<{
+    ticketCode: string;
+    mainNumbers: number[];
+    goldenBall: number;
+  }>;
+  drawnMain: number[];
+  drawnGolden: number;
+  accumulatedPoolTon: number;
+  accumulatedPoolStars?: number;
+  tonUsdRate?: number;
+}): {
+  tier1WinnersCount: number;
+  totalPaidOutTon: number;
+  totalPaidOutStars: number;
+  totalPaidOutUsdt: number;
+  remainingRolloverTon: number;
+  remainingRolloverStars: number;
+  remainingRolloverUsdt: number;
+  evaluations: MonthlySuperJackpotTicketEvaluation[];
+} {
+  const rate =
+    typeof params.tonUsdRate === 'number' && params.tonUsdRate > 0 ? params.tonUsdRate : 5.0;
+  const startingPoolTon = roundTonClean(Math.max(0, Number(params.accumulatedPoolTon) || 0));
+  const startingPoolStars =
+    typeof params.accumulatedPoolStars === 'number' && params.accumulatedPoolStars >= 0
+      ? roundStarsClean(params.accumulatedPoolStars)
+      : roundStarsClean(startingPoolTon * 250);
+
+  const rawEvaluations = params.tickets.map((t) => {
+    const ev = evaluateTicketPrizeTier({
+      ticketMain: t.mainNumbers,
+      ticketGolden: Number(t.goldenBall || 0),
+      drawnMain: params.drawnMain,
+      drawnGolden: params.drawnGolden,
+      ticketCostUsdt: 5,
+      jackpotUsdt: Math.max(100, Number((startingPoolTon * rate).toFixed(2))),
+    });
+    const isTier1JackpotWinner = Boolean(ev.won && ev.tierCode === 'TIER_1_JACKPOT');
+    return {
+      ticketCode: t.ticketCode,
+      matchedMainCount: ev.matchedMainCount,
+      matchedGolden: ev.matchedGolden,
+      isTier1JackpotWinner,
+      baseEval: ev,
+    };
+  });
+
+  const tier1WinnersCount = rawEvaluations.filter((e) => e.isTier1JackpotWinner).length;
+
+  // If ZERO VIP tickets hit the exact Tier-1 Jackpot (all 6 numbers), 100% rolls over untouched!
+  if (tier1WinnersCount === 0 || startingPoolTon <= 0) {
+    const evaluations: MonthlySuperJackpotTicketEvaluation[] = rawEvaluations.map((e) => ({
+      ticketCode: e.ticketCode,
+      matchedMainCount: e.matchedMainCount,
+      matchedGolden: e.matchedGolden,
+      isTier1JackpotWinner: false,
+      prizeTon: 0,
+      prizeStars: 0,
+      prizeUsdt: 0,
+      status: 'LOST',
+      tierLabelFa:
+        e.matchedMainCount > 0 || e.matchedGolden
+          ? `عدم تطابق کامل ۶ شماره جک‌پات (${e.matchedMainCount} اصلی${e.matchedGolden ? ' + طلایی' : ''} • قانون All-or-Nothing ماهانه VIP)`
+          : 'بدون تطابق جک‌پات (انتقال ۱۰۰٪ استخر به ماه بعد)',
+    }));
+
+    return {
+      tier1WinnersCount: 0,
+      totalPaidOutTon: 0,
+      totalPaidOutStars: 0,
+      totalPaidOutUsdt: 0,
+      remainingRolloverTon: startingPoolTon,
+      remainingRolloverStars: startingPoolStars,
+      remainingRolloverUsdt: Number((startingPoolTon * rate).toFixed(2)),
+      evaluations,
+    };
+  }
+
+  // One or more exact Tier-1 Jackpot winners -> split the accumulated pool among Tier-1 winners only!
+  const perWinnerTon = roundTonClean(Math.floor((startingPoolTon / tier1WinnersCount) * 1_000_000) / 1_000_000);
+  let totalPaidOutTon = 0;
+  let winnersSeen = 0;
+
+  const evaluations: MonthlySuperJackpotTicketEvaluation[] = rawEvaluations.map((e) => {
+    if (!e.isTier1JackpotWinner) {
+      return {
+        ticketCode: e.ticketCode,
+        matchedMainCount: e.matchedMainCount,
+        matchedGolden: e.matchedGolden,
+        isTier1JackpotWinner: false,
+        prizeTon: 0,
+        prizeStars: 0,
+        prizeUsdt: 0,
+        status: 'LOST',
+        tierLabelFa:
+          e.matchedMainCount > 0 || e.matchedGolden
+            ? `عدم تطابق کامل ۶ شماره جک‌پات (${e.matchedMainCount} اصلی${e.matchedGolden ? ' + طلایی' : ''} • قانون All-or-Nothing ماهانه VIP)`
+            : 'بدون تطابق جک‌پات',
+      };
+    }
+
+    winnersSeen += 1;
+    // Last Tier-1 winner receives exact remainder so 100% of startingPoolTon is distributed with 0 dust
+    const prizeTon =
+      winnersSeen === tier1WinnersCount
+        ? roundTonClean(Math.max(0, startingPoolTon - totalPaidOutTon))
+        : perWinnerTon;
+    totalPaidOutTon = roundTonClean(totalPaidOutTon + prizeTon);
+    const prizeStars = roundStarsClean(prizeTon * 250);
+    const prizeUsdt = Number((prizeTon * rate).toFixed(2));
+
+    return {
+      ticketCode: e.ticketCode,
+      matchedMainCount: e.matchedMainCount,
+      matchedGolden: e.matchedGolden,
+      isTier1JackpotWinner: true,
+      prizeTon,
+      prizeStars,
+      prizeUsdt,
+      status: 'WON',
+      tierLabelFa: '👑 برنده مطلق جک‌پات ۶ گوی (Tier-1 Monthly VIP Super-Jackpot)',
+    };
+  });
+
+  const remainingRolloverTon = roundTonClean(Math.max(0, startingPoolTon - totalPaidOutTon));
+  const remainingRolloverStars = roundStarsClean(remainingRolloverTon * 250);
+  const remainingRolloverUsdt = Number((remainingRolloverTon * rate).toFixed(2));
+
+  return {
+    tier1WinnersCount,
+    totalPaidOutTon,
+    totalPaidOutStars: roundStarsClean(totalPaidOutTon * 250),
+    totalPaidOutUsdt: Number((totalPaidOutTon * rate).toFixed(2)),
+    remainingRolloverTon,
+    remainingRolloverStars,
+    remainingRolloverUsdt,
+    evaluations,
+  };
+}
+
+// ============================================================================
+// 16. $1,000 WELCOME GRAND LOTTERY (`#LD-WELCOME-1000`) — FIRST-PURCHASE EXCLUSIVE
+// - Unlocks 1 Free Welcome Ticket Entitlement (`welcomeTicketEntitlement = 1`) on first paid lottery ticket purchase (max 1 per user lifetime).
+// - Self-Funding Reserve Protection: Routes a configurable portion (default 25%) of net house margin into `fundedReserveTon`.
+// - If 30-day timer expires before `fundedReserveTon` reaches the $1,000 target (unless Admin forces draw), auto-extends countdown by 7 days!
+// ============================================================================
+
+export const WELCOME_GRAND_ROUND_ID = '#LD-WELCOME-1000';
+export const WELCOME_INITIAL_CYCLE_MS = 30 * 24 * 60 * 60 * 1000;
+export const WELCOME_AUTO_EXTEND_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface WelcomeGrandLotteryState {
+  roundId: string;
+  titleFa: string;
+  targetPoolUsdt: number;
+  targetPoolTon: number;
+  fundedReserveTon: number;
+  fundedReserveUsdt: number;
+  reserveProgressPercent: number;
+  isReserveFullyFunded: boolean;
+  houseMarginAllocationRatio: number;
+  nextDrawTimestampMs: number;
+  autoExtendDaysIfUnfunded: number;
+  autoExtensionCount: number;
+  participantsCount: number;
+  mainCount: number;
+  mainMax: number;
+  goldenMax: number;
+  serverSeed?: string;
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: number;
+  lastWinnerSummary?: string;
+  lastWinningMain?: number[];
+  lastWinningGolden?: number;
+}
+
+export interface UserWelcomeTicketStatus {
+  welcomeTicketUnlocked: boolean;
+  welcomeTicketEntitlement: number;
+  welcomeTicketClaimed: boolean;
+  welcomeTicketCode: string | null;
+  chosenMainNumbers: number[] | null;
+  chosenGoldenBall: number | null;
+  statusCode: 'LOCKED_BUY_FIRST_TICKET' | 'UNLOCKED_READY_TO_PICK' | 'CLAIMED_REGISTERED';
+  statusLabelFa: string;
+}
+
+export function normalizeWelcomeGrandLotteryState(
+  raw?: Partial<WelcomeGrandLotteryState> | null,
+  tonUsdRate: number = 5.0,
+  participantsCountOverride?: number
+): WelcomeGrandLotteryState {
+  const rate = typeof tonUsdRate === 'number' && tonUsdRate > 0 ? tonUsdRate : 5.0;
+  const targetPoolUsdt = Math.max(
+    100,
+    Number.isFinite(Number(raw?.targetPoolUsdt)) && Number(raw?.targetPoolUsdt) > 0
+      ? Number(raw?.targetPoolUsdt)
+      : 1000
+  );
+  const targetPoolTon = roundTonClean(targetPoolUsdt / rate);
+  const fundedReserveTon = roundTonClean(Math.max(0, Number(raw?.fundedReserveTon) || 0));
+  const fundedReserveUsdt = Number((fundedReserveTon * rate).toFixed(2));
+  const reserveProgressPercent = Math.min(
+    100,
+    Number(((fundedReserveTon / Math.max(0.000001, targetPoolTon)) * 100).toFixed(2))
+  );
+  const isReserveFullyFunded = fundedReserveTon + 0.000001 >= targetPoolTon;
+  const houseMarginAllocationRatio =
+    typeof raw?.houseMarginAllocationRatio === 'number' &&
+    raw.houseMarginAllocationRatio > 0 &&
+    raw.houseMarginAllocationRatio <= 1
+      ? Number(raw.houseMarginAllocationRatio.toFixed(4))
+      : 0.25;
+  const defaultSeed = sha256Hex('luckydrop_welcome_1000_grand_lottery_seed_v1');
+  const serverSeed =
+    typeof raw?.serverSeed === 'string' && raw.serverSeed.length >= 16
+      ? raw.serverSeed
+      : defaultSeed;
+  const nextDrawTimestampMs =
+    typeof raw?.nextDrawTimestampMs === 'number' &&
+    Number.isFinite(raw.nextDrawTimestampMs) &&
+    raw.nextDrawTimestampMs > 0
+      ? raw.nextDrawTimestampMs
+      : Date.now() + WELCOME_INITIAL_CYCLE_MS;
+  const autoExtendDaysIfUnfunded = Math.max(
+    1,
+    Math.floor(Number(raw?.autoExtendDaysIfUnfunded) || 7)
+  );
+  const participantsCount =
+    typeof participantsCountOverride === 'number'
+      ? Math.max(0, Math.floor(participantsCountOverride))
+      : Math.max(0, Math.floor(Number(raw?.participantsCount) || 0));
+
+  return {
+    roundId: WELCOME_GRAND_ROUND_ID,
+    titleFa:
+      String(raw?.titleFa || '').trim() ||
+      '🎉 لاتاری ویژه خوشآمدگویی ۱,۰۰۰ دلاری (Welcome $1,000 Grand Draw)',
+    targetPoolUsdt,
+    targetPoolTon,
+    fundedReserveTon,
+    fundedReserveUsdt,
+    reserveProgressPercent,
+    isReserveFullyFunded,
+    houseMarginAllocationRatio,
+    nextDrawTimestampMs,
+    autoExtendDaysIfUnfunded,
+    autoExtensionCount: Math.max(0, Math.floor(Number(raw?.autoExtensionCount) || 0)),
+    participantsCount,
+    mainCount: 5,
+    mainMax: 50,
+    goldenMax: 15,
+    serverSeed,
+    serverSeedHash: sha256Hex(serverSeed),
+    clientSeed: String(raw?.clientSeed || 'luckydrop_welcome_1000_seed').trim(),
+    nonce: Math.max(1, Math.floor(Number(raw?.nonce) || 1)),
+    lastWinnerSummary: raw?.lastWinnerSummary,
+    lastWinningMain: Array.isArray(raw?.lastWinningMain) ? raw.lastWinningMain : undefined,
+    lastWinningGolden:
+      typeof raw?.lastWinningGolden === 'number' ? raw.lastWinningGolden : undefined,
+  };
+}
+
+export function accrueWelcomeLotteryReserveFromHouseMargin(
+  currentState: Partial<WelcomeGrandLotteryState> | null | undefined,
+  params: {
+    netHouseMarginTon: number;
+    tonUsdRate?: number;
+    participantsCount?: number;
+  }
+): {
+  updatedState: WelcomeGrandLotteryState;
+  allocatedReserveTon: number;
+  remainingNetHouseTon: number;
+} {
+  const rate =
+    typeof params.tonUsdRate === 'number' && params.tonUsdRate > 0 ? params.tonUsdRate : 5.0;
+  const state = normalizeWelcomeGrandLotteryState(
+    currentState,
+    rate,
+    params.participantsCount
+  );
+  const safeNetHouseTon = roundTonClean(Math.max(0, Number(params.netHouseMarginTon) || 0));
+  const allocatedReserveTon = roundTonClean(safeNetHouseTon * state.houseMarginAllocationRatio);
+  const remainingNetHouseTon = roundTonClean(Math.max(0, safeNetHouseTon - allocatedReserveTon));
+  const nextFundedReserveTon = roundTonClean(state.fundedReserveTon + allocatedReserveTon);
+
+  const updatedState = normalizeWelcomeGrandLotteryState(
+    {
+      ...state,
+      fundedReserveTon: nextFundedReserveTon,
+    },
+    rate,
+    params.participantsCount
+  );
+
+  return {
+    updatedState,
+    allocatedReserveTon,
+    remainingNetHouseTon,
+  };
+}
+
+export function evaluateWelcomeLotteryScheduleGuard(
+  currentState: Partial<WelcomeGrandLotteryState> | null | undefined,
+  params: {
+    nowMs?: number;
+    isAdminForceDraw?: boolean;
+    tonUsdRate?: number;
+    participantsCount?: number;
+  }
+): {
+  shouldExecuteDraw: boolean;
+  autoExtended: boolean;
+  updatedState: WelcomeGrandLotteryState;
+  reason: string;
+} {
+  const nowMs = typeof params.nowMs === 'number' ? params.nowMs : Date.now();
+  const rate =
+    typeof params.tonUsdRate === 'number' && params.tonUsdRate > 0 ? params.tonUsdRate : 5.0;
+  const state = normalizeWelcomeGrandLotteryState(
+    currentState,
+    rate,
+    params.participantsCount
+  );
+
+  if (params.isAdminForceDraw) {
+    return {
+      shouldExecuteDraw: true,
+      autoExtended: false,
+      updatedState: state,
+      reason: 'ADMIN_FORCE_DRAW',
+    };
+  }
+
+  if (nowMs < state.nextDrawTimestampMs) {
+    return {
+      shouldExecuteDraw: false,
+      autoExtended: false,
+      updatedState: state,
+      reason: 'COUNTDOWN_IN_PROGRESS',
+    };
+  }
+
+  // Timer expired: check if $1,000 target reserve is 100% self-funded!
+  if (!state.isReserveFullyFunded) {
+    const extensionMs = state.autoExtendDaysIfUnfunded * 24 * 60 * 60 * 1000;
+    const extendedState = normalizeWelcomeGrandLotteryState(
+      {
+        ...state,
+        nextDrawTimestampMs: Math.max(nowMs, state.nextDrawTimestampMs) + extensionMs,
+        autoExtensionCount: (state.autoExtensionCount || 0) + 1,
+      },
+      rate,
+      params.participantsCount
+    );
+    return {
+      shouldExecuteDraw: false,
+      autoExtended: true,
+      updatedState: extendedState,
+      reason: `RESERVE_NOT_YET_1000_USD_AUTO_EXTENDED_${state.autoExtendDaysIfUnfunded}D`,
+    };
+  }
+
+  return {
+    shouldExecuteDraw: true,
+    autoExtended: false,
+    updatedState: state,
+    reason: 'RESERVE_FULLY_FUNDED_READY_FOR_DRAW',
+  };
+}
+
+export function validateAndPrepareWelcomeTicketSelection(params: {
+  mainNumbers: unknown;
+  goldenBall: unknown;
+  mainCount?: number;
+  mainMax?: number;
+  goldenMax?: number;
+}): {
+  valid: boolean;
+  error?: string;
+  cleanMainNumbers: number[];
+  cleanGoldenBall: number;
+} {
+  const mainCount = Math.max(1, Math.floor(Number(params.mainCount) || 5));
+  const mainMax = Math.max(10, Math.floor(Number(params.mainMax) || 50));
+  const goldenMax = Math.max(1, Math.floor(Number(params.goldenMax) || 15));
+
+  if (!Array.isArray(params.mainNumbers)) {
+    return {
+      valid: false,
+      error: `INVALID_MAIN_NUMBERS — لطفاً دقیقاً ${mainCount} شماره اصلی بین ۱ تا ${mainMax} انتخاب کنید.`,
+      cleanMainNumbers: [],
+      cleanGoldenBall: 0,
+    };
+  }
+
+  const uniqueNums = Array.from(
+    new Set(
+      params.mainNumbers
+        .map((n) => Math.floor(Number(n)))
+        .filter((n) => Number.isFinite(n) && n >= 1 && n <= mainMax)
+    )
+  ).sort((a, b) => a - b);
+
+  if (uniqueNums.length !== mainCount) {
+    return {
+      valid: false,
+      error: `INVALID_MAIN_NUMBERS_COUNT — لطفاً دقیقاً ${mainCount} شماره غیرتکراری بین ۱ تا ${mainMax} انتخاب کنید.`,
+      cleanMainNumbers: [],
+      cleanGoldenBall: 0,
+    };
+  }
+
+  const golden = Math.floor(Number(params.goldenBall));
+  if (!Number.isFinite(golden) || golden < 1 || golden > goldenMax) {
+    return {
+      valid: false,
+      error: `INVALID_GOLDEN_BALL — لطفاً گوی طلایی شانس را بین ۱ تا ${goldenMax} انتخاب کنید.`,
+      cleanMainNumbers: [],
+      cleanGoldenBall: 0,
+    };
+  }
+
+  return {
+    valid: true,
+    cleanMainNumbers: uniqueNums,
+    cleanGoldenBall: golden,
+  };
+}
+
+export function evaluateUserWelcomeTicketStatus(params: {
+  userAccount?: Partial<IsolatedUserAccountRecord> | null;
+  paidRegularTicketsCount: number;
+  existingWelcomeTicket?: {
+    ticketCode: string;
+    mainNumbers: string | number[];
+    goldenBall: number;
+  } | null;
+}): UserWelcomeTicketStatus {
+  const hasExistingWelcomeTicket = Boolean(params.existingWelcomeTicket?.ticketCode);
+  const isClaimed = Boolean(params.userAccount?.welcomeTicketClaimed || hasExistingWelcomeTicket);
+  const hasPaidPurchase =
+    Boolean(params.userAccount?.welcomeTicketUnlocked) ||
+    Math.floor(Number(params.paidRegularTicketsCount) || 0) >= 1;
+
+  let chosenMainNumbers: number[] | null = null;
+  if (params.existingWelcomeTicket) {
+    if (Array.isArray(params.existingWelcomeTicket.mainNumbers)) {
+      chosenMainNumbers = params.existingWelcomeTicket.mainNumbers.map(Number);
+    } else {
+      try {
+        const parsed = JSON.parse(String(params.existingWelcomeTicket.mainNumbers));
+        if (Array.isArray(parsed)) chosenMainNumbers = parsed.map(Number);
+      } catch {
+        chosenMainNumbers = null;
+      }
+    }
+  }
+
+  if (isClaimed) {
+    return {
+      welcomeTicketUnlocked: true,
+      welcomeTicketEntitlement: 0,
+      welcomeTicketClaimed: true,
+      welcomeTicketCode:
+        params.existingWelcomeTicket?.ticketCode ||
+        params.userAccount?.welcomeTicketCode ||
+        'WLC-CLAIMED',
+      chosenMainNumbers,
+      chosenGoldenBall:
+        typeof params.existingWelcomeTicket?.goldenBall === 'number'
+          ? params.existingWelcomeTicket.goldenBall
+          : null,
+      statusCode: 'CLAIMED_REGISTERED',
+      statusLabelFa: '🎟️ بلیت شما ثبت شد',
+    };
+  }
+
+  if (hasPaidPurchase) {
+    return {
+      welcomeTicketUnlocked: true,
+      welcomeTicketEntitlement: 1,
+      welcomeTicketClaimed: false,
+      welcomeTicketCode: null,
+      chosenMainNumbers: null,
+      chosenGoldenBall: null,
+      statusCode: 'UNLOCKED_READY_TO_PICK',
+      statusLabelFa: '✅ بلیت رایگان شما فعال شد — انتخاب اعداد شانس',
+    };
+  }
+
+  return {
+    welcomeTicketUnlocked: false,
+    welcomeTicketEntitlement: 0,
+    welcomeTicketClaimed: false,
+    welcomeTicketCode: null,
+    chosenMainNumbers: null,
+    chosenGoldenBall: null,
+    statusCode: 'LOCKED_BUY_FIRST_TICKET',
+    statusLabelFa: 'با خرید اولین بلیت لاتاری، ۱ بلیت رایگان با اعداد دلخواه دریافت کنید!',
+  };
+}
+
 
 
 

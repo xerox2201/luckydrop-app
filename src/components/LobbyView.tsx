@@ -48,6 +48,11 @@ export const LobbyView: React.FC = () => {
     unreadSupportCount,
     monthlySuperJackpot,
     monthlyVipQualification,
+    rakebackVault,
+    claimRakebackVault,
+    welcomeGrandLottery,
+    welcomeTicketStatus,
+    claimWelcomeLotteryTicket,
     liveTickerEvent,
     poolPulseKey,
     sseConnected,
@@ -55,6 +60,13 @@ export const LobbyView: React.FC = () => {
 
   const [buyingQty, setBuyingQty] = useState<number | null>(null);
   const [purchaseToast, setPurchaseToast] = useState<string | null>(null);
+  const [claimingRakeback, setClaimingRakeback] = useState<boolean>(false);
+  const [rakebackToast, setRakebackToast] = useState<string | null>(null);
+  const [welcomeModalOpen, setWelcomeModalOpen] = useState<boolean>(false);
+  const [welcomePickedMain, setWelcomePickedMain] = useState<number[]>([7, 14, 23, 35, 48]);
+  const [welcomePickedGolden, setWelcomePickedGolden] = useState<number>(8);
+  const [claimingWelcomeTicket, setClaimingWelcomeTicket] = useState<boolean>(false);
+  const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [pulseHighlight, setPulseHighlight] = useState<boolean>(false);
 
@@ -117,6 +129,60 @@ export const LobbyView: React.FC = () => {
   const monthlyMinutes = String(Math.floor((monthlyRemainingSec % 3600) / 60)).padStart(2, '0');
   const monthlySeconds = String(monthlyRemainingSec % 60).padStart(2, '0');
   const lastRolloverItem = monthlySuperJackpot?.rolloverHistory?.[0] || null;
+
+  // 30-Day $1,000 Welcome Grand Lottery (#LD-WELCOME-1000) Countdown calculation
+  const welcomeRemainingSec = Math.max(
+    0,
+    Math.floor(((welcomeGrandLottery?.nextDrawTimestampMs || nowMs) - nowMs) / 1000)
+  );
+  const welcomeDays = String(Math.floor(welcomeRemainingSec / 86400)).padStart(2, '0');
+  const welcomeHours = String(Math.floor((welcomeRemainingSec % 86400) / 3600)).padStart(2, '0');
+  const welcomeMinutes = String(Math.floor((welcomeRemainingSec % 3600) / 60)).padStart(2, '0');
+  const welcomeSeconds = String(welcomeRemainingSec % 60).padStart(2, '0');
+
+  const toggleWelcomeMainNumber = (num: number) => {
+    HapticEngine.selectionChanged();
+    setWelcomePickedMain((prev) => {
+      if (prev.includes(num)) {
+        return prev.filter((n) => n !== num);
+      }
+      if (prev.length >= 5) {
+        return [...prev.slice(1), num].sort((a, b) => a - b);
+      }
+      return [...prev, num].sort((a, b) => a - b);
+    });
+  };
+
+  const handleWelcomeQuickPick = () => {
+    HapticEngine.impactOccurred('light');
+    const [slip] = generateBulkQuickPickSlips(1, 5, 50, 15, `welcome_qp_${Date.now()}`);
+    if (slip) {
+      setWelcomePickedMain([...slip.mainNumbers].sort((a, b) => a - b));
+      setWelcomePickedGolden(slip.goldenBall);
+    }
+  };
+
+  const handleMintWelcomeTicket = async () => {
+    if (welcomePickedMain.length !== 5) return;
+    HapticEngine.impactOccurred('medium');
+    setClaimingWelcomeTicket(true);
+    setWelcomeToast(null);
+    const res = await claimWelcomeLotteryTicket({
+      mainNumbers: welcomePickedMain,
+      goldenBall: welcomePickedGolden,
+    });
+    setClaimingWelcomeTicket(false);
+    setWelcomeToast(res.message);
+    if (res.ok) {
+      HapticEngine.notificationOccurred('success');
+      setTimeout(() => {
+        setWelcomeModalOpen(false);
+      }, 900);
+    } else {
+      HapticEngine.notificationOccurred('error');
+    }
+    setTimeout(() => setWelcomeToast(null), 5000);
+  };
 
   const handleQuickBuy = async (qty: number) => {
     HapticEngine.impactOccurred('medium');
@@ -489,8 +555,8 @@ export const LobbyView: React.FC = () => {
             <div className="text-[9px] text-amber-300/90 mt-1">
               {tr(
                 lang,
-                '♾️ قانون انتقال بی‌نهایت به ماه بعد در صورت عدم برنده',
-                '♾️ Infinite Rollover if unclaimed'
+                '♾️ قانون جک‌پات خالص (۶ از ۶): ۱۰۰٪ انتقال به ماه بعد در صورت عدم تطابق کامل',
+                '♾️ Tier-1 All-or-Nothing (6/6): 100% Infinite Rollover if no exact hit'
               )}
             </div>
           </div>
@@ -579,6 +645,422 @@ export const LobbyView: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* 2.35 INSTANT VIP RAKEBACK & CASHBACK VAULT WIDGET */}
+      <section
+        data-testid="instant-vip-cashback-vault-card"
+        className="relative overflow-hidden rounded-3xl p-3.5 bg-gradient-to-br from-[#0D1A22] via-[#0B121E] to-[#19130A] border border-emerald-400/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_10px_24px_rgba(0,0,0,0.5)] space-y-2.5"
+      >
+        <div className="absolute -top-10 -left-10 w-28 h-28 bg-emerald-500/15 rounded-full blur-2xl pointer-events-none" />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-2xl bg-gradient-to-br from-emerald-400 to-[#00F5D4] text-slate-950 flex items-center justify-center shadow-[inset_0_2px_3px_rgba(255,255,255,0.6),_0_6px_14px_rgba(16,185,129,0.35)] shrink-0">
+              <Gift className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-black text-emerald-200 truncate">
+                {tr(
+                  lang,
+                  '💎 قلک کشبک و پاداش برگشتی (Instant VIP Cashback Vault)',
+                  '💎 Instant VIP Cashback & Rakeback Vault'
+                )}
+              </div>
+              <div className="text-[10px] text-slate-400 truncate">
+                {tr(
+                  lang,
+                  'واریز ۱:۱ و بدون کارمزد به کیف پول اصلی در هر لحظه',
+                  'Zero-fee 1:1 instant claim to your main wallet'
+                )}
+              </div>
+            </div>
+          </div>
+
+          <span className="px-2 py-0.5 rounded-full bg-[#FFE066]/15 border border-[#FFE066]/40 text-[#FFE066] text-[9px] font-black shrink-0">
+            {tr(
+              lang,
+              '۳٪ کشبک آنی بلیت + ۱.۵٪ ریکبک بازی‌ها',
+              '3% Ticket + 1.5% Mini-Game Rebate'
+            )}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-2xl bg-[#090614]/85 border border-emerald-400/25 p-2.5 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_6px_14px_rgba(0,0,0,0.4)]">
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'کشبک قابل برداشت (TON):', 'Claimable Cashback (TON):')}
+            </div>
+            <div
+              data-testid="lobby-claimable-rakeback-ton"
+              className="text-sm font-black font-mono text-emerald-300 mt-0.5"
+              dir="ltr"
+            >
+              💎 {(rakebackVault?.claimableTon || 0).toFixed(6)} TON
+            </div>
+            <div className="text-[9px] font-mono text-slate-400 mt-0.5" dir="ltr">
+              {tr(lang, 'کل دریافتی:', 'Lifetime:')} {(rakebackVault?.lifetimeEarnedTon || 0).toFixed(6)} TON
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-[#090614]/85 border border-[#FFE066]/25 p-2.5 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_6px_14px_rgba(0,0,0,0.4)]">
+            <div className="text-[10px] text-slate-400">
+              {tr(lang, 'کشبک قابل برداشت (Stars):', 'Claimable Cashback (Stars):')}
+            </div>
+            <div
+              data-testid="lobby-claimable-rakeback-stars"
+              className="text-sm font-black font-mono text-[#FFE066] mt-0.5"
+              dir="ltr"
+            >
+              ⭐ {Math.round(rakebackVault?.claimableStars || 0).toLocaleString('en-US')}
+            </div>
+            <div className="text-[9px] font-mono text-slate-400 mt-0.5" dir="ltr">
+              {tr(lang, 'کل دریافتی:', 'Lifetime:')}{' '}
+              {Math.round(rakebackVault?.lifetimeEarnedStars || 0).toLocaleString('en-US')} ⭐
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          data-testid="lobby-claim-rakeback-btn"
+          disabled={
+            claimingRakeback ||
+            ((rakebackVault?.claimableTon || 0) <= 0 && (rakebackVault?.claimableStars || 0) <= 0)
+          }
+          onClick={async () => {
+            setClaimingRakeback(true);
+            setRakebackToast(null);
+            const res = await claimRakebackVault();
+            setClaimingRakeback(false);
+            setRakebackToast(res.message);
+            setTimeout(() => setRakebackToast(null), 4500);
+          }}
+          className={`w-full py-2.5 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+            (rakebackVault?.claimableTon || 0) > 0 || (rakebackVault?.claimableStars || 0) > 0
+              ? 'bg-gradient-to-r from-emerald-400 via-[#00F5D4] to-[#FFE066] text-slate-950 border border-emerald-300 shadow-[inset_0_2px_4px_rgba(255,255,255,0.65),_0_10px_22px_rgba(16,185,129,0.35)]'
+              : 'bg-white/5 text-slate-400 border border-white/10 opacity-75 cursor-not-allowed'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 shrink-0" />
+          <span>
+            {claimingRakeback
+              ? tr(lang, 'در حال واریز آنی به کیف پول...', 'Claiming to Wallet...')
+              : tr(
+                  lang,
+                  'دریافت آنی به کیف پول (Claim Now)',
+                  'Claim Instant Cashback to Wallet (Claim Now)'
+                )}
+          </span>
+        </button>
+
+        {rakebackToast && (
+          <div className="p-2 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 text-[11px] font-bold text-center">
+            {rakebackToast}
+          </div>
+        )}
+      </section>
+
+      {/* 2.40 $1,000 WELCOME GRAND LOTTERY (#LD-WELCOME-1000) — FIRST-PURCHASE EXCLUSIVE */}
+      <section
+        data-testid="welcome-grand-lottery-card"
+        className="relative overflow-hidden rounded-3xl p-4 bg-gradient-to-br from-[#1C1408] via-[#110C1F] to-[#0A1917] border border-[#FFE066]/45 shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_12px_28px_rgba(0,0,0,0.55)] space-y-3"
+      >
+        <div className="absolute -top-10 -right-10 w-28 h-28 bg-[#FFE066]/15 rounded-full blur-2xl pointer-events-none" />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-2xl bg-gradient-to-br from-[#FFE066] via-[#F59E0B] to-emerald-400 text-slate-950 flex items-center justify-center shadow-[inset_0_2px_3px_rgba(255,255,255,0.65),_0_6px_14px_rgba(245,158,11,0.4)] shrink-0">
+              <Ticket className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-xs font-black text-[#FFE066] truncate">
+                {tr(
+                  lang,
+                  '🎉 لاتاری ویژه خوش‌آمدگویی ۱,۰۰۰ دلاری (Welcome $1,000 Grand Draw)',
+                  '🎉 Welcome $1,000 Grand Draw (#LD-WELCOME-1000)'
+                )}
+              </h2>
+              <p className="text-[10px] text-slate-300 truncate">
+                {tr(
+                  lang,
+                  'بلیت رایگان اختصاصی اولین خرید با انتخاب اعداد دلخواه شما',
+                  'Exclusive 1st-Purchase Free Ticket with Custom Lucky Numbers'
+                )}
+              </p>
+            </div>
+          </div>
+          <span className="shrink-0 font-mono text-[10px] font-black px-2 py-0.5 rounded-lg bg-[#FFE066]/15 border border-[#FFE066]/40 text-[#FFE066]">
+            {welcomeGrandLottery?.roundId || '#LD-WELCOME-1000'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5 bg-[#080511]/90 border border-[#FFE066]/25 rounded-2xl p-3 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_8px_16px_rgba(0,0,0,0.45)]">
+          <div>
+            <div className="text-[10px] text-slate-400 font-bold">
+              {tr(lang, 'جایزه بزرگ تضمین‌شده:', 'Grand Prize Pool:')}
+            </div>
+            <div
+              data-testid="welcome-lottery-prize-usdt"
+              className="font-mono text-lg font-black text-[#FFE066] mt-0.5"
+              dir="ltr"
+            >
+              ${(welcomeGrandLottery?.targetPoolUsdt || 1000).toLocaleString('en-US')} USDT
+            </div>
+            <div className="font-mono text-[10px] text-emerald-300 font-bold" dir="ltr">
+              Paid in TON (≈ {(welcomeGrandLottery?.targetPoolTon || 200).toFixed(2)} TON)
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-between items-end">
+            <div className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
+              <Clock className="w-3 h-3 text-[#FFE066]" />
+              <span>{tr(lang, 'شمارش معکوس قرعه‌کشی:', '30-Day Countdown:')}</span>
+            </div>
+            <div
+              data-testid="welcome-lottery-countdown"
+              className="flex items-center gap-1 font-mono text-[11px] font-black mt-1"
+              dir="ltr"
+            >
+              <span className="px-1.5 py-0.5 rounded-lg bg-white/10 text-[#FFE066]">
+                {welcomeDays}d
+              </span>
+              <span>:</span>
+              <span className="px-1.5 py-0.5 rounded-lg bg-white/10 text-white">
+                {welcomeHours}h
+              </span>
+              <span>:</span>
+              <span className="px-1.5 py-0.5 rounded-lg bg-white/10 text-white">
+                {welcomeMinutes}m
+              </span>
+              <span>:</span>
+              <span className="px-1.5 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300">
+                {welcomeSeconds}s
+              </span>
+            </div>
+            <div
+              data-testid="welcome-lottery-participants"
+              className="text-[10px] font-mono text-slate-300 mt-1"
+            >
+              {tr(
+                lang,
+                `👥 شرکت‌کنندگان تا این لحظه: ${welcomeGrandLottery?.participantsCount || 0} نفر`,
+                `👥 Participants: ${welcomeGrandLottery?.participantsCount || 0}`
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* User Qualification / Entitlement / Claimed Status Action */}
+        {welcomeTicketStatus?.welcomeTicketClaimed ? (
+          <div
+            data-testid="welcome-ticket-status-claimed"
+            className="flex items-center justify-between px-3 py-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_6px_14px_rgba(0,0,0,0.4)] text-xs"
+          >
+            <span className="font-black text-emerald-300">
+              {tr(
+                lang,
+                '🎟️ بلیت شما ثبت شد',
+                '🎟️ Your Free Welcome Ticket is Registered'
+              )}
+            </span>
+            <span className="font-mono font-black text-[#FFE066]" dir="ltr">
+              {welcomeTicketStatus.welcomeTicketCode || '#LD-WELCOME-1000'}
+            </span>
+          </div>
+        ) : welcomeTicketStatus?.welcomeTicketUnlocked &&
+          (welcomeTicketStatus?.welcomeTicketEntitlement || 0) > 0 ? (
+          <button
+            type="button"
+            data-testid="welcome-open-picker-modal-btn"
+            onClick={() => {
+              HapticEngine.impactOccurred('medium');
+              setWelcomeModalOpen(true);
+            }}
+            className="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-[#FFE066] via-[#F59E0B] to-emerald-400 text-slate-950 font-black text-xs shadow-[inset_0_2px_4px_rgba(255,255,255,0.65),_0_10px_22px_rgba(245,158,11,0.35)] hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>
+              {tr(
+                lang,
+                '✅ بلیت رایگان شما فعال شد — انتخاب اعداد شانس',
+                '✅ Free Ticket Unlocked — Pick Your Lucky Numbers'
+              )}
+            </span>
+          </button>
+        ) : (
+          <div
+            data-testid="welcome-ticket-status-locked"
+            className="px-3 py-2.5 rounded-2xl bg-white/[0.04] border border-[#FFE066]/30 shadow-[inset_0_2px_4px_rgba(255,255,255,0.14),_0_6px_14px_rgba(0,0,0,0.4)] text-[11px] font-bold text-amber-200 text-center"
+          >
+            {tr(
+              lang,
+              'با خرید اولین بلیت لاتاری، ۱ بلیت رایگان با اعداد دلخواه دریافت کنید!',
+              'Buy your first paid lottery ticket to unlock 1 Free $1,000 Welcome Ticket with custom numbers!'
+            )}
+          </div>
+        )}
+
+        {welcomeToast && (
+          <div className="p-2 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 text-emerald-200 text-[11px] font-bold text-center">
+            {welcomeToast}
+          </div>
+        )}
+      </section>
+
+      {/* CUSTOM NUMBER PICKER MODAL FOR $1,000 WELCOME LOTTERY */}
+      {welcomeModalOpen && (
+        <div
+          data-testid="welcome-number-picker-modal"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3"
+        >
+          <div className="w-full max-w-md rounded-3xl bg-gradient-to-b from-[#17112B] via-[#0E0A1C] to-[#090612] border border-[#FFE066]/45 shadow-[inset_0_2px_4px_rgba(255,255,255,0.25),_0_20px_50px_rgba(0,0,0,0.85)] p-4 space-y-3 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+              <div>
+                <h3 className="text-xs font-black text-[#FFE066]">
+                  {tr(
+                    lang,
+                    '🎁 انتخاب اعداد بلیت رایگان ۱,۰۰۰ دلاری خوش‌آمدگویی',
+                    '🎁 Pick Numbers for Free $1,000 Welcome Ticket'
+                  )}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  {tr(
+                    lang,
+                    '۵ عدد اصلی (۱ تا ۵۰) و ۱ گوی طلایی (۱ تا ۱۵) را انتخاب کنید',
+                    'Select 5 main numbers (1-50) and 1 Golden Ball (1-15)'
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWelcomeModalOpen(false)}
+                className="px-2.5 py-1 rounded-xl bg-white/10 text-slate-300 text-xs font-bold hover:bg-white/20 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Selected Preview Bar + Quick Pick */}
+            <div className="flex items-center justify-between gap-2 bg-[#080511] border border-[#FFE066]/30 rounded-2xl p-2.5">
+              <div className="flex items-center gap-1.5" dir="ltr">
+                {[0, 1, 2, 3, 4].map((idx) => {
+                  const val = welcomePickedMain[idx];
+                  return (
+                    <span
+                      key={idx}
+                      className={`w-7 h-7 rounded-xl font-mono text-xs font-black flex items-center justify-center ${
+                        val
+                          ? 'bg-emerald-500/25 border border-emerald-400 text-emerald-200'
+                          : 'bg-white/5 border border-white/15 text-slate-500'
+                      }`}
+                    >
+                      {val ? String(val).padStart(2, '0') : '?'}
+                    </span>
+                  );
+                })}
+                <span className="w-7 h-7 rounded-xl bg-gradient-to-br from-[#FFE066] to-[#B8860B] text-slate-950 font-mono text-xs font-black flex items-center justify-center">
+                  ★{welcomePickedGolden}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                data-testid="welcome-modal-quick-pick-btn"
+                onClick={handleWelcomeQuickPick}
+                className="px-2.5 py-1.5 rounded-xl bg-[#FFE066]/15 hover:bg-[#FFE066]/25 border border-[#FFE066]/40 text-[#FFE066] text-[10px] font-black cursor-pointer shrink-0"
+              >
+                {tr(lang, '🎲 انتخاب تصادفی (Quick Pick)', '🎲 Quick Pick')}
+              </button>
+            </div>
+
+            {/* Main Numbers Grid (1..50) */}
+            <div>
+              <div className="text-[10px] font-bold text-slate-300 mb-1.5">
+                {tr(
+                  lang,
+                  `۵ عدد اصلی را انتخاب کنید (${welcomePickedMain.length}/5):`,
+                  `Select 5 Main Numbers (${welcomePickedMain.length}/5):`
+                )}
+              </div>
+              <div className="grid grid-cols-10 gap-1" dir="ltr">
+                {Array.from({ length: 50 }, (_, i) => i + 1).map((num) => {
+                  const selected = welcomePickedMain.includes(num);
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => toggleWelcomeMainNumber(num)}
+                      className={`h-7 rounded-lg font-mono text-[10px] font-black transition-all cursor-pointer ${
+                        selected
+                          ? 'bg-emerald-400 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.6)] scale-105'
+                          : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Golden Ball Grid (1..15) */}
+            <div>
+              <div className="text-[10px] font-bold text-[#FFE066] mb-1.5">
+                {tr(
+                  lang,
+                  `۱ گوی طلایی شانس را انتخاب کنید (★${welcomePickedGolden}):`,
+                  `Select 1 Golden Ball (★${welcomePickedGolden}):`
+                )}
+              </div>
+              <div className="grid grid-cols-8 gap-1.5" dir="ltr">
+                {Array.from({ length: 15 }, (_, i) => i + 1).map((gNum) => {
+                  const selected = welcomePickedGolden === gNum;
+                  return (
+                    <button
+                      key={gNum}
+                      type="button"
+                      onClick={() => {
+                        HapticEngine.selectionChanged();
+                        setWelcomePickedGolden(gNum);
+                      }}
+                      className={`h-7 rounded-lg font-mono text-[10px] font-black transition-all cursor-pointer ${
+                        selected
+                          ? 'bg-gradient-to-br from-[#FFE066] to-[#F59E0B] text-slate-950 shadow-[0_0_10px_rgba(255,224,102,0.6)] scale-105'
+                          : 'bg-white/5 hover:bg-white/10 text-amber-200 border border-[#FFE066]/20'
+                      }`}
+                    >
+                      ★{gNum}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                data-testid="welcome-modal-submit-btn"
+                disabled={claimingWelcomeTicket || welcomePickedMain.length !== 5}
+                onClick={handleMintWelcomeTicket}
+                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-400 via-[#00F5D4] to-[#FFE066] text-slate-950 font-black text-xs shadow-[inset_0_2px_4px_rgba(255,255,255,0.65),_0_10px_22px_rgba(16,185,129,0.4)] disabled:opacity-50 cursor-pointer"
+              >
+                {claimingWelcomeTicket
+                  ? tr(lang, 'در حال صدور بلیت رایگان...', 'Minting Free Ticket...')
+                  : tr(
+                      lang,
+                      '🎟️ ثبت نهایی بلیت رایگان ۱,۰۰۰ دلاری',
+                      '🎟️ Mint My Free $1,000 Welcome Ticket'
+                    )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setWelcomeModalOpen(false)}
+                className="px-3.5 py-2.5 rounded-2xl bg-white/10 text-slate-300 font-bold text-xs cursor-pointer"
+              >
+                {tr(lang, 'انصراف', 'Cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2.5 LATEST COMPLETED DRAW & CINEMATIC CEREMONY REPLAY CARD */}
       <section

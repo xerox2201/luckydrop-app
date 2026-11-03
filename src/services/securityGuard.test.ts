@@ -851,3 +851,229 @@ test('16. Commercial Support Guide (zero house-cut disclosure) & Live Draw Cerem
   assert.equal(ceremonyPayload.userRoundTickets[0].matchedGoldenBall, true);
 });
 
+test('17. Instant VIP Rakeback & Cashback Vault: 85% Pool + 12% Net House + 3% User Cashback = 100% Gross Sales (< 0.000001 TON) & 1:1 PAM Claim', async () => {
+  const {
+    calculateSelfFundedTicketCashbackSplit,
+    accrueLotteryTicketCashback,
+    accrueMiniGameRakeback,
+    normalizeRakebackVaultState,
+  } = await import('./securityGuard.ts');
+
+  const testGrossTonSamples = [0.2, 0.5, 1.0, 1.333333, 2.75, 5.0, 9.999999, 17.456789, 50.0, 123.456789];
+  for (const grossTon of testGrossTonSamples) {
+    const split = calculateSelfFundedTicketCashbackSplit({
+      currency: 'TON',
+      grossTon,
+    });
+    const exactSumTon = Number(
+      (split.distributablePool85Ton + split.netHouseMargin12Ton + split.userCashback3Ton).toFixed(6)
+    );
+    const diffTon = Math.abs(exactSumTon - Number(grossTon.toFixed(6)));
+    assert.ok(
+      diffTon < 0.000001,
+      `Conservation law violated for ${grossTon} TON: 85% (${split.distributablePool85Ton}) + 12% (${split.netHouseMargin12Ton}) + 3% (${split.userCashback3Ton}) = ${exactSumTon} (diff=${diffTon})`
+    );
+    assert.equal(
+      split.distributablePool85Ton,
+      Number((Number(grossTon.toFixed(6)) * 0.85).toFixed(6)),
+      '85% distributable pool must remain 100% untouched'
+    );
+  }
+
+  // Accrue 3% lottery ticket cashback + 1.5% mini-game turnover rakeback
+  let vault = normalizeRakebackVaultState(null);
+  const ticketAccrualTon = accrueLotteryTicketCashback(vault, {
+    currency: 'TON',
+    totalTon: 10.0,
+    totalStars: 0,
+  });
+  vault = ticketAccrualTon.updatedVault;
+  assert.equal(ticketAccrualTon.accruedTon, 0.3);
+  assert.equal(vault.claimableTon, 0.3);
+  assert.equal(vault.lifetimeEarnedTon, 0.3);
+
+  const gameAccrualTon = accrueMiniGameRakeback(vault, {
+    currency: 'TON',
+    betAmountTon: 4.0,
+    betAmountStars: 0,
+  });
+  vault = gameAccrualTon.updatedVault;
+  assert.equal(gameAccrualTon.accruedTon, 0.06);
+  assert.equal(vault.claimableTon, 0.36);
+  assert.equal(vault.lifetimeEarnedTon, 0.36);
+
+  const ticketAccrualStars = accrueLotteryTicketCashback(vault, {
+    currency: 'STARS',
+    totalTon: 0,
+    totalStars: 500,
+  });
+  vault = ticketAccrualStars.updatedVault;
+  assert.equal(ticketAccrualStars.accruedStars, 15);
+  assert.equal(vault.claimableStars, 15);
+
+  // 1:1 Instant Claim into PAM wallet with zero fees
+  const pam = new PAMSeamlessWalletEngine({
+    playerId: 'tg_rakeback_vip',
+    genesisTonBalance: 5.0,
+    tonBalance: 5.0,
+    genesisStarsBalance: 100,
+    starsBalance: 100,
+  });
+
+  const claimTonRes = pam.credit({
+    transactionUuid: 'rakeback_claim_ton_1',
+    roundId: '#RAKEBACK-VAULT-CLAIM',
+    vertical: 'VIP_RAKEBACK_VAULT_CLAIM',
+    currency: 'TON',
+    amountTon: vault.claimableTon,
+  });
+  assert.equal(claimTonRes.ok, true);
+  vault.claimableTon = 0;
+
+  const claimStarsRes = pam.credit({
+    transactionUuid: 'rakeback_claim_stars_1',
+    roundId: '#RAKEBACK-VAULT-CLAIM',
+    vertical: 'VIP_RAKEBACK_VAULT_CLAIM',
+    currency: 'STARS',
+    amountStars: vault.claimableStars,
+  });
+  assert.equal(claimStarsRes.ok, true);
+  vault.claimableStars = 0;
+
+  assert.equal(pam.getState().tonBalance, 5.36);
+  assert.equal(pam.getState().starsBalance, 115);
+  assert.equal(vault.claimableTon, 0);
+  assert.equal(vault.claimableStars, 0);
+  assert.equal(vault.lifetimeEarnedTon, 0.36);
+  assert.equal(vault.lifetimeEarnedStars, 15);
+  const recon = pam.reconcile();
+  assert.equal(recon.ok, true);
+});
+
+test('18. Monthly VIP Super-Jackpot Strict All-or-Nothing (6/6 Only) & $1,000 Welcome Grand Lottery Self-Funded Reserve Guard', async () => {
+  const {
+    evaluateMonthlySuperJackpotAllOrNothing,
+    normalizeWelcomeGrandLotteryState,
+    accrueWelcomeLotteryReserveFromHouseMargin,
+    evaluateWelcomeLotteryScheduleGuard,
+    validateAndPrepareWelcomeTicketSelection,
+    evaluateUserWelcomeTicketStatus,
+  } = await import('./securityGuard.ts');
+
+  // Part A: Monthly VIP All-or-Nothing — Tier 2/3/4/5 hits must receive 0 payout and 100% of pool must roll over
+  const noJackpotEval = evaluateMonthlySuperJackpotAllOrNothing({
+    accumulatedPoolTon: 1250.555555,
+    accumulatedPoolStars: 312639,
+    drawnMain: [7, 14, 23, 38, 49],
+    drawnGolden: 8,
+    tickets: [
+      // 5 main matched, wrong golden -> Tier 2 in regular, but 0 in Monthly VIP
+      { ticketCode: '#VIP-1', mainNumbers: [7, 14, 23, 38, 49], goldenBall: 1 },
+      // 4 main + golden -> Tier 3 in regular, 0 in Monthly VIP
+      { ticketCode: '#VIP-2', mainNumbers: [7, 14, 23, 38, 2], goldenBall: 8 },
+    ],
+  });
+  assert.equal(noJackpotEval.tier1WinnersCount, 0);
+  assert.equal(noJackpotEval.totalPaidOutTon, 0);
+  assert.equal(noJackpotEval.totalPaidOutStars, 0);
+  assert.equal(noJackpotEval.remainingRolloverTon, 1250.555555);
+  assert.equal(noJackpotEval.remainingRolloverStars, 312639);
+
+  // Exact Tier-1 Jackpot hit (all 5 main + golden ball) wins 100% of accumulated pool
+  const hitJackpotEval = evaluateMonthlySuperJackpotAllOrNothing({
+    accumulatedPoolTon: 1250.555555,
+    accumulatedPoolStars: 312639,
+    drawnMain: [7, 14, 23, 38, 49],
+    drawnGolden: 8,
+    tickets: [
+      { ticketCode: '#VIP-WINNER', mainNumbers: [7, 14, 23, 38, 49], goldenBall: 8 },
+      { ticketCode: '#VIP-NEAR', mainNumbers: [7, 14, 23, 38, 49], goldenBall: 3 },
+    ],
+  });
+  assert.equal(hitJackpotEval.tier1WinnersCount, 1);
+  assert.equal(hitJackpotEval.totalPaidOutTon, 1250.555555);
+  assert.equal(hitJackpotEval.remainingRolloverTon, 0);
+  assert.equal(hitJackpotEval.evaluations[0].prizeTon, 1250.555555);
+  assert.equal(hitJackpotEval.evaluations[1].prizeTon, 0);
+
+  // Part B: $1,000 Welcome Grand Lottery (#LD-WELCOME-1000) custom number picker + self-funding reserve guard
+  const validPick = validateAndPrepareWelcomeTicketSelection({
+    mainNumbers: [48, 7, 23, 14, 35],
+    goldenBall: 8,
+  });
+  assert.equal(validPick.valid, true);
+  assert.deepEqual(validPick.cleanMainNumbers, [7, 14, 23, 35, 48]);
+  assert.equal(validPick.cleanGoldenBall, 8);
+
+  const duplicatePick = validateAndPrepareWelcomeTicketSelection({
+    mainNumbers: [7, 7, 23, 14, 35],
+    goldenBall: 8,
+  });
+  assert.equal(duplicatePick.valid, false);
+
+  const welcomeState = normalizeWelcomeGrandLotteryState(
+    {
+      targetPoolUsdt: 1000,
+      fundedReserveTon: 50,
+      nextDrawTimestampMs: 1000,
+    },
+    5.0
+  );
+  assert.equal(welcomeState.targetPoolTon, 200);
+  assert.equal(welcomeState.isReserveFullyFunded, false);
+
+  // Timer expired at nowMs=2000 while only 50 / 200 TON funded -> auto-extends by 7 days
+  const guardUnfunded = evaluateWelcomeLotteryScheduleGuard(welcomeState, {
+    nowMs: 2000,
+    tonUsdRate: 5.0,
+    isAdminForceDraw: false,
+  });
+  assert.equal(guardUnfunded.shouldExecuteDraw, false);
+  assert.equal(guardUnfunded.autoExtended, true);
+  assert.equal(guardUnfunded.updatedState.autoExtensionCount, 1);
+  assert.equal(guardUnfunded.updatedState.nextDrawTimestampMs, 2000 + 7 * 24 * 60 * 60 * 1000);
+
+  // Accrue reserve from net house margin until >= 200 TON
+  const accrued = accrueWelcomeLotteryReserveFromHouseMargin(welcomeState, {
+    netHouseMarginTon: 600, // 25% of 600 = 150 TON -> 50 + 150 = 200 TON
+    tonUsdRate: 5.0,
+  });
+  assert.equal(accrued.allocatedReserveTon, 150);
+  assert.equal(accrued.updatedState.fundedReserveTon, 200);
+  assert.equal(accrued.updatedState.isReserveFullyFunded, true);
+
+  const guardFunded = evaluateWelcomeLotteryScheduleGuard(accrued.updatedState, {
+    nowMs: 2000,
+    tonUsdRate: 5.0,
+    isAdminForceDraw: false,
+  });
+  assert.equal(guardFunded.shouldExecuteDraw, true);
+  assert.equal(guardFunded.autoExtended, false);
+
+  const userStatusLocked = evaluateUserWelcomeTicketStatus({
+    userAccount: {
+      welcomeTicketUnlocked: false,
+      welcomeTicketEntitlement: 0,
+      welcomeTicketClaimed: false,
+      welcomeTicketCode: null,
+    },
+    paidRegularTicketsCount: 0,
+    existingWelcomeTicket: null,
+  });
+  assert.equal(userStatusLocked.welcomeTicketUnlocked, false);
+
+  const userStatusUnlocked = evaluateUserWelcomeTicketStatus({
+    userAccount: {
+      welcomeTicketUnlocked: true,
+      welcomeTicketEntitlement: 1,
+      welcomeTicketClaimed: false,
+      welcomeTicketCode: null,
+    },
+    paidRegularTicketsCount: 1,
+    existingWelcomeTicket: null,
+  });
+  assert.equal(userStatusUnlocked.welcomeTicketUnlocked, true);
+  assert.equal(userStatusUnlocked.welcomeTicketEntitlement, 1);
+});
+
+

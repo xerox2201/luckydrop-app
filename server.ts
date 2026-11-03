@@ -72,6 +72,17 @@ import {
   formatAdminSupportTelegramAlert,
   calculateUnclaimedRolloverTransfer,
   evaluateMonthlyVipQualification,
+  normalizeRakebackVaultState,
+  calculateSelfFundedTicketCashbackSplit,
+  accrueLotteryTicketCashback,
+  accrueMiniGameRakeback,
+  evaluateMonthlySuperJackpotAllOrNothing,
+  WELCOME_GRAND_ROUND_ID,
+  normalizeWelcomeGrandLotteryState,
+  accrueWelcomeLotteryReserveFromHouseMargin,
+  evaluateWelcomeLotteryScheduleGuard,
+  validateAndPrepareWelcomeTicketSelection,
+  evaluateUserWelcomeTicketStatus,
   type VipSupportMessageRecord,
   type SupportDiagnosticChipType,
   type IsolatedUserAccountRecord,
@@ -79,6 +90,9 @@ import {
   type MonthlySuperJackpotState,
   type MonthlySuperJackpotRolloverItem,
   type MonthlyVipQualificationResult,
+  type UserRakebackVaultState,
+  type WelcomeGrandLotteryState,
+  type UserWelcomeTicketStatus,
 } from './src/services/securityGuard.ts';
 
 const app = express();
@@ -303,6 +317,7 @@ interface PersistentDatabaseSchema {
   autoWithdrawLimitTon?: number;
   adminAuditLogs?: AdminAuditLogEntry[];
   monthlySuperJackpot: MonthlySuperJackpotState;
+  welcomeGrandLottery: WelcomeGrandLotteryState;
 }
 
 const MONTHLY_VIP_ROUND_ID = '#LD-MONTHLY-VIP';
@@ -482,6 +497,7 @@ function buildDefaultDatabase(): PersistentDatabaseSchema {
     autoWithdrawLimitTon: 50,
     adminAuditLogs: [],
     monthlySuperJackpot: buildInitialMonthlySuperJackpot(),
+    welcomeGrandLottery: normalizeWelcomeGrandLotteryState(null, DEFAULT_FX_RATES.TON || 5.0, 0),
   };
 }
 
@@ -549,6 +565,14 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
         }
         parsed.monthlySuperJackpot = normalizeMonthlySuperJackpotState(
           parsed.monthlySuperJackpot
+        );
+        const welcomeParticipants = Array.isArray(parsed.tickets)
+          ? parsed.tickets.filter((t) => t.roundCode === WELCOME_GRAND_ROUND_ID).length
+          : 0;
+        parsed.welcomeGrandLottery = normalizeWelcomeGrandLotteryState(
+          parsed.welcomeGrandLottery,
+          DEFAULT_FX_RATES.TON || 5.0,
+          welcomeParticipants
         );
         return parsed;
       }
@@ -1770,9 +1794,22 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
       creditEntry = creditRes.ledgerEntry || null;
     }
 
-    // Update user XP on verified real wager
-    if (!isFreeDrop && safeBetUsdt > 0) {
+    // Update user XP & 1.5% Instant Mini-Game Rakeback Vault on verified real wager
+    let accruedRakeback = { accruedTon: 0, accruedStars: 0 };
+    if (!isFreeDrop && (safeBetTon > 0 || safeBetStars > 0)) {
       userAccount.xp = Number((userAccount.xp + Math.max(1, Math.round(safeBetUsdt))).toFixed(0));
+      const rakebackRes = accrueMiniGameRakeback(userAccount.rakebackVault, {
+        currency: activeCurrency,
+        betAmountTon: safeBetTon,
+        betAmountStars: safeBetStars,
+      });
+      userAccount.rakebackVault = rakebackRes.updatedVault;
+      accruedRakeback = {
+        accruedTon: rakebackRes.accruedTon,
+        accruedStars: rakebackRes.accruedStars,
+      };
+    } else {
+      userAccount.rakebackVault = normalizeRakebackVaultState(userAccount.rakebackVault);
     }
 
     // Step 4: Zero-Loss Free Lottery Ticket Minting Rule
@@ -1866,6 +1903,13 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
       serverSeed: '',
     };
 
+    sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+      reason: 'MINI_GAME_PLAYED',
+      tonBalance: latestPam.tonBalance,
+      starsBalance: latestPam.starsBalance,
+      rakebackVault: userAccount.rakebackVault,
+    });
+
     return res.json({
       ok: true,
       evaluation: redactedEvaluation,
@@ -1883,6 +1927,8 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
       freePlinkoDrops: userAccount.freePlinkoDrops,
       freeScratchCards: userAccount.freeScratchCards,
       xp: userAccount.xp,
+      rakebackVault: userAccount.rakebackVault,
+      accruedRakeback,
       seeds: {
         ...latestPam.seeds,
         serverSeed: '', // Redact active unrevealed server seed
@@ -2015,6 +2061,12 @@ app.post(
       userAccount.xp = Number(
         (userAccount.xp + Math.max(1, Math.round(safeBetUsdt))).toFixed(0)
       );
+      const sessRakeback = accrueMiniGameRakeback(userAccount.rakebackVault, {
+        currency: activeCurrency,
+        betAmountTon: safeBetTon,
+        betAmountStars: safeBetStars,
+      });
+      userAccount.rakebackVault = sessRakeback.updatedVault;
 
       const sessionId = `sess_${gameId.toLowerCase()}_${seedsBefore.nonce}_${Date.now().toString(36)}`;
 
@@ -2081,6 +2133,13 @@ app.post(
       commitUserAccount();
       const latestPam = userPam.getState();
 
+      sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+        reason: 'GAME_SESSION_STARTED',
+        tonBalance: latestPam.tonBalance,
+        starsBalance: latestPam.starsBalance,
+        rakebackVault: userAccount.rakebackVault,
+      });
+
       return res.json({
         ok: true,
         session: {
@@ -2104,6 +2163,7 @@ app.post(
         debitTransactionUuid: debitUuid,
         tonBalance: latestPam.tonBalance,
         starsBalance: latestPam.starsBalance,
+        rakebackVault: userAccount.rakebackVault,
         pamState: {
           ...latestPam,
           seeds: { ...latestPam.seeds, serverSeed: '' },
@@ -2867,7 +2927,7 @@ function computeUserMonthlyVipQualification(
     (t) => t.userUid === playerId || t.userUid === userKey
   );
   const regularTicketsCount = allUserTickets.filter(
-    (t) => t.roundCode !== MONTHLY_VIP_ROUND_ID
+    (t) => t.roundCode !== MONTHLY_VIP_ROUND_ID && t.roundCode !== WELCOME_GRAND_ROUND_ID
   ).length;
   const existingVipSuperTicketsCount = allUserTickets.filter(
     (t) => t.roundCode === MONTHLY_VIP_ROUND_ID
@@ -2879,6 +2939,49 @@ function computeUserMonthlyVipQualification(
     minTicketsRequired: dbState.monthlySuperJackpot.minTicketsRequired,
     minXpRequired: dbState.monthlySuperJackpot.minXpRequired,
     existingVipSuperTicketsCount,
+  });
+}
+
+function getPublicWelcomeGrandLottery(): WelcomeGrandLotteryState {
+  const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+  const welcomeParticipantsCount = (dbState.tickets || []).filter(
+    (t) =>
+      t.roundCode === WELCOME_GRAND_ROUND_ID &&
+      (String(t.status || '').toUpperCase() === 'ACTIVE' ||
+        String(t.status || '').toUpperCase() === 'MINTED')
+  ).length;
+  dbState.welcomeGrandLottery = normalizeWelcomeGrandLotteryState(
+    dbState.welcomeGrandLottery,
+    tonRate,
+    welcomeParticipantsCount
+  );
+  return {
+    ...dbState.welcomeGrandLottery,
+    serverSeed: undefined,
+  };
+}
+
+function computeUserWelcomeTicketStatus(
+  userAccount: IsolatedUserAccountRecord,
+  playerId: string,
+  userKey: string
+): UserWelcomeTicketStatus {
+  const allUserTickets = (dbState.tickets || []).filter(
+    (t) => t.userUid === playerId || t.userUid === userKey
+  );
+  const paidRegularTicketsCount = allUserTickets.filter(
+    (t) =>
+      t.roundCode !== MONTHLY_VIP_ROUND_ID &&
+      t.roundCode !== WELCOME_GRAND_ROUND_ID &&
+      (parseFloat(String(t.costUsdt || '0')) > 0 || !String(t.currencyNetwork || '').includes('BONUS'))
+  ).length;
+  const existingWelcomeTicket =
+    allUserTickets.find((t) => t.roundCode === WELCOME_GRAND_ROUND_ID) || null;
+
+  return evaluateUserWelcomeTicketStatus({
+    userAccount,
+    paidRegularTicketsCount,
+    existingWelcomeTicket,
   });
 }
 
@@ -2977,6 +3080,13 @@ app.get('/api/realtime/stream', optionalAuth, (req: AuthRequest, res) => {
       playerId,
       session.userKey
     ),
+    welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+    welcomeTicketStatus: computeUserWelcomeTicketStatus(
+      userAccount,
+      playerId,
+      session.userKey
+    ),
+    rakebackVault: normalizeRakebackVaultState(userAccount.rakebackVault),
     totalTicketsCount: dbState.tickets.length,
     killSwitchActive: dbState.killSwitchActive,
     liveOracle: {
@@ -3068,6 +3178,7 @@ function buildSnapshotPayload(req: express.Request) {
     referredByUserId: userAccount.referredByUserId,
     referralCode: userAccount.referralCode,
     quests: userQuests,
+    rakebackVault: normalizeRakebackVaultState(userAccount.rakebackVault),
     activeGameSession: sanitizedActiveSession,
     user: {
       uid: pamState.playerId,
@@ -3148,6 +3259,12 @@ function buildSnapshotPayload(req: express.Request) {
     rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
     monthlySuperJackpot: getPublicMonthlySuperJackpot(),
     monthlyVipQualification: computeUserMonthlyVipQualification(
+      userAccount,
+      playerId,
+      session.userKey
+    ),
+    welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+    welcomeTicketStatus: computeUserWelcomeTicketStatus(
       userAccount,
       playerId,
       session.userKey
@@ -3336,6 +3453,43 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         );
       }
 
+      // 2B. Instant VIP Cashback Vault (3% Instant Rebate out of the 15% House Margin; 85% Pool untouched; 12% Net House)
+      const ticketCashbackRes = accrueLotteryTicketCashback(userAccount.rakebackVault, {
+        currency: activeCurrency,
+        totalTon: ticketCostRes.totalTon,
+        totalStars: ticketCostRes.totalStars,
+      });
+      userAccount.rakebackVault = ticketCashbackRes.updatedVault;
+
+      // 2C. $1,000 Welcome Grand Lottery (`#LD-WELCOME-1000`):
+      // - Unlock 1 Free Welcome Ticket Entitlement on the user's first paid lottery ticket purchase (max 1 per user lifetime)
+      // - Route configurable share (default 25%) of netHouseMargin12Ton into `dbState.welcomeGrandLottery.fundedReserveTon`
+      if (!userAccount.welcomeTicketClaimed && !userAccount.welcomeTicketUnlocked) {
+        userAccount.welcomeTicketUnlocked = true;
+        userAccount.welcomeTicketEntitlement = 1;
+      }
+      const selfFundedSplit = calculateSelfFundedTicketCashbackSplit({
+        currency: activeCurrency,
+        grossTon: ticketCostRes.totalTon,
+        grossStars: ticketCostRes.totalStars,
+        tonUsdRate: liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0,
+      });
+      const currentWelcomeParticipants = (dbState.tickets || []).filter(
+        (t) =>
+          t.roundCode === WELCOME_GRAND_ROUND_ID &&
+          (String(t.status || '').toUpperCase() === 'ACTIVE' ||
+            String(t.status || '').toUpperCase() === 'MINTED')
+      ).length;
+      const welcomeReserveRes = accrueWelcomeLotteryReserveFromHouseMargin(
+        dbState.welcomeGrandLottery,
+        {
+          netHouseMarginTon: selfFundedSplit.netHouseMargin12Ton,
+          tonUsdRate: liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0,
+          participantsCount: currentWelcomeParticipants,
+        }
+      );
+      dbState.welcomeGrandLottery = welcomeReserveRes.updatedState;
+
       dbState.rolloverReservePoolUsdt = Number(
         (dbState.rolloverReservePoolUsdt + zeroLossSplit.rolloverReserveUsdt).toFixed(2)
       );
@@ -3344,11 +3498,13 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         const prevSales = parseFloat(roundObj.totalSalesUsdt) || 0;
         const nextSales = prevSales + totalCostNum;
         const poolSplit = calculateDynamicPariMutuelPool(nextSales, 15);
+        const netHouse12Usdt = Number((poolSplit.grossCollectedUsdt * 0.12).toFixed(6));
+        const cashback3Usdt = Number((poolSplit.grossCollectedUsdt * 0.03).toFixed(6));
         roundObj.totalSalesUsdt = poolSplit.grossCollectedUsdt.toFixed(2);
         roundObj.jackpotUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
         roundObj.totalPayoutUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
-        roundObj.operatorProfitUsdt = poolSplit.siteShare15Usdt.toFixed(2);
-        roundObj.rolloverReserveUsdt = (poolSplit.grossCollectedUsdt * 0.03).toFixed(2);
+        roundObj.operatorProfitUsdt = netHouse12Usdt.toFixed(2);
+        roundObj.rolloverReserveUsdt = cashback3Usdt.toFixed(2);
         roundObj.ticketsSoldCount = (Number(roundObj.ticketsSoldCount) || 0) + slipArray.length;
         roundObj.soldPercent = Math.min(99, (roundObj.soldPercent || 0) + slipArray.length);
       }
@@ -3500,6 +3656,7 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         totalTicketsCount: dbState.tickets.length,
         rounds: publicRoundsSnapshot,
         monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+        welcomeGrandLottery: getPublicWelcomeGrandLottery(),
         rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
         tickerEvent: {
           id: `live_buy_${Date.now()}`,
@@ -3528,6 +3685,20 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
       }
 
       const latestPam = userPam.getState();
+      const updatedWelcomeTicketStatus = computeUserWelcomeTicketStatus(
+        userAccount,
+        latestPam.playerId,
+        userKey
+      );
+
+      sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+        reason: 'TICKET_CASHBACK_ACCRUED',
+        tonBalance: latestPam.tonBalance,
+        starsBalance: latestPam.starsBalance,
+        rakebackVault: userAccount.rakebackVault,
+        welcomeTicketStatus: updatedWelcomeTicketStatus,
+      });
+
       return res.json({
         ok: true,
         ticket: mintedTickets[0],
@@ -3537,6 +3708,11 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         tonBalance: latestPam.tonBalance,
         starsBalance: latestPam.starsBalance,
         xp: userAccount.xp,
+        rakebackVault: userAccount.rakebackVault,
+        accruedCashback: {
+          accruedTon: ticketCashbackRes.accruedTon,
+          accruedStars: ticketCashbackRes.accruedStars,
+        },
         ledgerEntry: debitRes.ledgerEntry,
         pamState: {
           ...latestPam,
@@ -3546,6 +3722,8 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         rolloverReservePoolUsdt: dbState.rolloverReservePoolUsdt,
         monthlySuperJackpot: getPublicMonthlySuperJackpot(),
         monthlyVipQualification: updatedVipQualification,
+        welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+        welcomeTicketStatus: updatedWelcomeTicketStatus,
       });
     });
   } catch (error: any) {
@@ -3898,8 +4076,10 @@ async function executeLotteryDrawWithDynamicPool(params: {
 
 /**
  * Executes the 30-Day Monthly VIP Loyalty Super-Jackpot Draw (`#LD-MONTHLY-VIP`).
- * - Only Loyal VIP Users qualify (`regularTicketsBought >= minTicketsRequired` OR `xp >= minXpRequired` OR holders of `#LD-MONTHLY-VIP` VIP Super-Tickets).
- * - Infinite Rollover Rule: Any unclaimed balance in the Monthly Super-Pot stays inside `monthlySuperJackpot.accumulatedPoolTon` and compounds into the next 30-day cycle!
+ * - STRICT "JACKPOT-ONLY (ALL-OR-NOTHING)" RULE:
+ *   1. ONLY Tier-1 Jackpot matches (all 5 main numbers + golden ball = all 6 numbers matched) win `accumulatedPoolTon` and `accumulatedPoolStars`.
+ *   2. Lower-tier payouts (Tier 2, Tier 3, Tier 4, Tier 5) are 100% eliminated.
+ *   3. If ZERO VIP tickets hit the exact Tier-1 Jackpot, 100% of `accumulatedPoolTon` and `accumulatedPoolStars` rolls over untouched into the next 30-day cycle!
  */
 async function executeMonthlySuperJackpotDraw(params?: {
   isAdmin?: boolean;
@@ -3908,7 +4088,7 @@ async function executeMonthlySuperJackpotDraw(params?: {
 }) {
   dbState.monthlySuperJackpot = normalizeMonthlySuperJackpotState(dbState.monthlySuperJackpot);
   const vault = dbState.monthlySuperJackpot;
-  const tonRate = DEFAULT_FX_RATES.TON || 5.0;
+  const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
 
   const activeServerSeed =
     vault.serverSeed || sha256Hex(`luckydrop_monthly_seed_${Date.now()}`);
@@ -3937,14 +4117,13 @@ async function executeMonthlySuperJackpotDraw(params?: {
       : drawProof.drawnGolden;
 
   const startingPoolTon = roundTonClean(Math.max(0, vault.accumulatedPoolTon));
-  const startingPoolUsdt = Number((startingPoolTon * tonRate).toFixed(2));
+  const startingPoolStars = roundStarsClean(Math.max(0, vault.accumulatedPoolStars || startingPoolTon * 250));
 
-  // Identify all eligible VIP tickets:
-  // 1. Explicit `#LD-MONTHLY-VIP` tickets that are ACTIVE
-  // 2. If a qualified VIP user has no explicit `#LD-MONTHLY-VIP` ticket yet, their most recent regular ticket in this cycle is also evaluated if they meet minTicketsRequired or minXpRequired
+  // Identify all eligible VIP tickets in `#LD-MONTHLY-VIP`
   const candidateTickets: Array<{
     ticket: PersistentTicketRecord;
-    evalResult: ReturnType<typeof evaluateTicketPrizeTier>;
+    parsedMain: number[];
+    goldenBall: number;
   }> = [];
 
   for (const ticket of dbState.tickets) {
@@ -3962,7 +4141,6 @@ async function executeMonthlySuperJackpotDraw(params?: {
             ownerKey
           )
         : null;
-      // Holder of VIP Super-Ticket or qualified VIP user
       if (!qual || qual.isQualified || qual.vipSuperTicketsEarnedTotal > 0) {
         let parsedMain: number[] = [];
         try {
@@ -3970,45 +4148,44 @@ async function executeMonthlySuperJackpotDraw(params?: {
         } catch {
           parsedMain = [7, 14, 21, 33, 49];
         }
-        const evalResult = evaluateTicketPrizeTier({
-          ticketMain: parsedMain,
-          ticketGolden: Number(ticket.goldenBall || 0),
-          drawnMain,
-          drawnGolden,
-          ticketCostUsdt: 5,
-          jackpotUsdt: Math.max(100, startingPoolUsdt),
+        candidateTickets.push({
+          ticket,
+          parsedMain,
+          goldenBall: Number(ticket.goldenBall || 0),
         });
-        candidateTickets.push({ ticket, evalResult });
       }
     }
   }
 
-  const rawWeights = candidateTickets.map((c) => (c.evalResult.won ? c.evalResult.prizeUsdt : 0));
-  const distributedPrizes = distributePoolAmongWinners(startingPoolUsdt, rawWeights);
-  const hasTier1JackpotWinner = candidateTickets.some(
-    (c) => c.evalResult.won && c.evalResult.tierCode === 'TIER_1_JACKPOT'
-  );
+  // Evaluate strict Jackpot-Only (All-or-Nothing) rule: ONLY Tier-1 Jackpot (all 6 numbers matched) wins!
+  const allOrNothingOutcome = evaluateMonthlySuperJackpotAllOrNothing({
+    tickets: candidateTickets.map((c) => ({
+      ticketCode: c.ticket.ticketCode,
+      mainNumbers: c.parsedMain,
+      goldenBall: c.goldenBall,
+    })),
+    drawnMain,
+    drawnGolden,
+    accumulatedPoolTon: startingPoolTon,
+    accumulatedPoolStars: startingPoolStars,
+    tonUsdRate: tonRate,
+  });
 
-  let winnersCount = 0;
-  let totalPaidOutUsdt = 0;
-  let totalPaidOutTon = 0;
+  const winnersCount = allOrNothingOutcome.tier1WinnersCount;
+  const totalPaidOutTon = allOrNothingOutcome.totalPaidOutTon;
+  const totalPaidOutUsdt = allOrNothingOutcome.totalPaidOutUsdt;
 
   for (let idx = 0; idx < candidateTickets.length; idx++) {
-    const { ticket, evalResult } = candidateTickets[idx];
-    const cappedPrizeUsdt = hasTier1JackpotWinner
-      ? distributedPrizes[idx] || 0
-      : Math.min(evalResult.prizeUsdt, distributedPrizes[idx] || 0);
-    const finalPrizeTon = roundTonClean(cappedPrizeUsdt / tonRate);
-    const finalPrizeUsdt = Number((finalPrizeTon * tonRate).toFixed(2));
+    const { ticket } = candidateTickets[idx];
+    const evalItem = allOrNothingOutcome.evaluations[idx];
 
-    if (evalResult.won && finalPrizeTon > 0) {
+    if (evalItem && evalItem.isTier1JackpotWinner && evalItem.prizeTon > 0) {
+      const finalPrizeTon = evalItem.prizeTon;
+      const finalPrizeUsdt = evalItem.prizeUsdt;
       ticket.status = 'WON';
       ticket.prizeWonUsdt = finalPrizeUsdt.toFixed(2);
-      ticket.tierLabelFa = `👑 ${evalResult.tierLabelFa} (ابر جک‌پات ماهانه VIP)`;
+      ticket.tierLabelFa = evalItem.tierLabelFa;
       ticket.claimed = true;
-      winnersCount += 1;
-      totalPaidOutTon = roundTonClean(totalPaidOutTon + finalPrizeTon);
-      totalPaidOutUsdt = Number((totalPaidOutUsdt + finalPrizeUsdt).toFixed(2));
 
       const payoutUuid = `tx_monthly_vip_win_${ticket.ticketCode}_${drawNonce}`;
       const ownerKey = String(ticket.userUid || '').replace(/^tg_/, '');
@@ -4025,7 +4202,7 @@ async function executeMonthlySuperJackpotDraw(params?: {
           currency: 'TON',
           amountTon: finalPrizeTon,
           amountUsdt: finalPrizeUsdt,
-          note: `👑 جایزه ابر جک‌پات ماهانه وفاداری VIP برای بلیت ${ticket.ticketCode} (${evalResult.tierLabelFa})`,
+          note: `👑 جایزه جک‌پات مطلق ماهانه VIP برای بلیت ${ticket.ticketCode} (${evalItem.tierLabelFa})`,
         });
         ownerAccount.pamState = ownerPam.getState();
         ownerAccount.tonBalance = roundTonClean(ownerAccount.pamState.tonBalance);
@@ -4044,7 +4221,7 @@ async function executeMonthlySuperJackpotDraw(params?: {
 
       const tonWon = finalPrizeTon.toFixed(2);
       dbState.transactions.unshift({
-        id: Date.now() + winnersCount,
+        id: Date.now() + idx + 1,
         txHash: `0x${drawProof.primaryHmacHex}`,
         userUid: ticket.userUid,
         type: 'PAYOUT',
@@ -4052,7 +4229,7 @@ async function executeMonthlySuperJackpotDraw(params?: {
         amountUsdt: finalPrizeUsdt.toFixed(2),
         amountCrypto: `${tonWon} TON`,
         winnerName: winnerDisplayName,
-        winnerLocation: '👑 ابر جک‌پات ماهانه وفاداری VIP',
+        winnerLocation: '👑 جک‌پات مطلق ماهانه وفاداری VIP (All-or-Nothing)',
         lotteryTitle: vault.titleFa,
         winningCombo: `[${drawnMain.join(', ')}] + ★${drawnGolden}`,
         timeAgoLabel: 'همین الان',
@@ -4063,24 +4240,25 @@ async function executeMonthlySuperJackpotDraw(params?: {
     } else {
       ticket.status = 'LOST';
       ticket.prizeWonUsdt = '0.00';
-      ticket.tierLabelFa = evalResult.tierLabelFa;
+      ticket.tierLabelFa =
+        evalItem?.tierLabelFa || 'بدون تطابق کامل ۶ شماره جک‌پات (قانون All-or-Nothing)';
     }
   }
 
-  // Infinite Rollover Rule: Any unpaid balance stays inside `vault.accumulatedPoolTon` for the next 30-day cycle!
-  const paidOutTon = totalPaidOutTon;
-  const remainingUnclaimedTon = roundTonClean(Math.max(0, startingPoolTon - paidOutTon));
+  // Infinite Rollover Rule: If 0 Tier-1 winners, 100% of accumulatedPoolTon and accumulatedPoolStars rolls over untouched!
+  const remainingUnclaimedTon = allOrNothingOutcome.remainingRolloverTon;
+  const remainingUnclaimedStars = allOrNothingOutcome.remainingRolloverStars;
 
   vault.accumulatedPoolTon = remainingUnclaimedTon;
-  vault.accumulatedPoolStars = roundStarsClean(remainingUnclaimedTon * 250);
-  vault.accumulatedPoolUsdt = Number((remainingUnclaimedTon * tonRate).toFixed(2));
+  vault.accumulatedPoolStars = remainingUnclaimedStars;
+  vault.accumulatedPoolUsdt = allOrNothingOutcome.remainingRolloverUsdt;
   vault.nextMonthlyDrawTimestampMs = Date.now() + MONTHLY_CYCLE_DURATION_MS;
   vault.lastWinningMain = drawnMain;
   vault.lastWinningGolden = drawnGolden;
   vault.lastWinnerSummary =
     winnersCount > 0
-      ? `${winnersCount} برنده VIP (${paidOutTon.toFixed(2)} TON پرداخت شد • ${remainingUnclaimedTon.toFixed(2)} TON انتقال به ماه بعد)`
-      : `بدون برنده جک‌پات — کل موجودی (${remainingUnclaimedTon.toFixed(2)} TON) به ماه بعد منتقل شد!`;
+      ? `👑 ${winnersCount} برنده جک‌پات مطلق ۶ گوی VIP (${totalPaidOutTon.toFixed(2)} TON پرداخت شد)`
+      : `بدون برنده جک‌پات ۶ گوی (All-or-Nothing) — ۱۰۰٪ موجودی (${remainingUnclaimedTon.toFixed(2)} TON / ${remainingUnclaimedStars.toLocaleString('en-US')} ⭐) دست‌نخورده به ماه بعد منتقل شد!`;
 
   const nextSeed = generateCryptographicServerSeed();
   vault.serverSeed = nextSeed;
@@ -4122,6 +4300,7 @@ async function executeMonthlySuperJackpotDraw(params?: {
     rounds: dbState.rounds.map((r) => ({ ...r, serverSeed: undefined })),
     drawHistory: dbState.drawHistory.slice(0, 30),
     monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+    welcomeGrandLottery: getPublicWelcomeGrandLottery(),
   });
 
   return {
@@ -4132,9 +4311,237 @@ async function executeMonthlySuperJackpotDraw(params?: {
     ticketsEvaluatedCount: candidateTickets.length,
     winnersCount,
     totalPayoutUsdt: totalPaidOutUsdt,
-    paidOutTon,
+    paidOutTon: totalPaidOutTon,
     remainingRolloverTon: remainingUnclaimedTon,
     monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+  };
+}
+
+/**
+ * Executes the $1,000 Welcome Grand Lottery Draw (`#LD-WELCOME-1000`).
+ * Funded 100% from the accumulated `fundedReserveTon` (or `targetPoolTon` when forced by Admin).
+ */
+async function executeWelcomeGrandLotteryDraw(params?: {
+  isAdmin?: boolean;
+  forceWinningMain?: number[];
+  forceWinningGolden?: number;
+}) {
+  const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+  const activeWelcomeTickets = (dbState.tickets || []).filter(
+    (t) =>
+      t.roundCode === WELCOME_GRAND_ROUND_ID &&
+      (String(t.status || '').toUpperCase() === 'ACTIVE' ||
+        String(t.status || '').toUpperCase() === 'MINTED')
+  );
+  dbState.welcomeGrandLottery = normalizeWelcomeGrandLotteryState(
+    dbState.welcomeGrandLottery,
+    tonRate,
+    activeWelcomeTickets.length
+  );
+  const welcomeVault = dbState.welcomeGrandLottery;
+
+  const activeServerSeed =
+    welcomeVault.serverSeed || sha256Hex(`luckydrop_welcome_1000_seed_${Date.now()}`);
+  const activeClientSeed = welcomeVault.clientSeed || 'luckydrop_welcome_1000_seed';
+  const drawNonce = Math.max(1, Number(welcomeVault.nonce) || 1);
+
+  const drawProof = computeServerAuthoritativeLotteryDraw({
+    serverSeed: activeServerSeed,
+    clientSeed: activeClientSeed,
+    nonce: drawNonce,
+    roundCode: WELCOME_GRAND_ROUND_ID,
+    mainCount: 5,
+    mainMax: 50,
+    goldenMax: 15,
+  });
+
+  const drawnMain: number[] =
+    params?.isAdmin &&
+    Array.isArray(params.forceWinningMain) &&
+    params.forceWinningMain.length >= 4
+      ? params.forceWinningMain.map(Number).sort((a, b) => a - b)
+      : drawProof.drawnMain;
+  const drawnGolden: number =
+    params?.isAdmin && typeof params.forceWinningGolden === 'number'
+      ? params.forceWinningGolden
+      : drawProof.drawnGolden;
+
+  const distributableUsdt = Math.max(
+    welcomeVault.fundedReserveUsdt,
+    params?.isAdmin ? welcomeVault.targetPoolUsdt : welcomeVault.fundedReserveUsdt
+  );
+
+  const candidateTickets = activeWelcomeTickets.map((ticket) => {
+    let parsedMain: number[] = [];
+    try {
+      parsedMain = JSON.parse(ticket.mainNumbers);
+    } catch {
+      parsedMain = [7, 14, 21, 33, 49];
+    }
+    const evalResult = evaluateTicketPrizeTier({
+      ticketMain: parsedMain,
+      ticketGolden: Number(ticket.goldenBall || 0),
+      drawnMain,
+      drawnGolden,
+      ticketCostUsdt: 5,
+      jackpotUsdt: Math.max(100, distributableUsdt),
+    });
+    return { ticket, evalResult };
+  });
+
+  const rawWeights = candidateTickets.map((c) => (c.evalResult.won ? c.evalResult.prizeUsdt : 0));
+  const distributedPrizes = distributePoolAmongWinners(distributableUsdt, rawWeights);
+  const hasTier1Winner = candidateTickets.some(
+    (c) => c.evalResult.won && c.evalResult.tierCode === 'TIER_1_JACKPOT'
+  );
+
+  let winnersCount = 0;
+  let totalPaidOutTon = 0;
+  let totalPaidOutUsdt = 0;
+
+  for (let idx = 0; idx < candidateTickets.length; idx++) {
+    const { ticket, evalResult } = candidateTickets[idx];
+    const cappedPrizeUsdt = hasTier1Winner
+      ? distributedPrizes[idx] || 0
+      : Math.min(evalResult.prizeUsdt, distributedPrizes[idx] || 0);
+    const finalPrizeTon = roundTonClean(cappedPrizeUsdt / tonRate);
+    const finalPrizeUsdt = Number((finalPrizeTon * tonRate).toFixed(2));
+
+    if (evalResult.won && finalPrizeTon > 0) {
+      ticket.status = 'WON';
+      ticket.prizeWonUsdt = finalPrizeUsdt.toFixed(2);
+      ticket.tierLabelFa = `🎉 ${evalResult.tierLabelFa} (لاتاری ۱,۰۰۰ دلاری خوشآمدگویی)`;
+      ticket.claimed = true;
+      winnersCount += 1;
+      totalPaidOutTon = roundTonClean(totalPaidOutTon + finalPrizeTon);
+      totalPaidOutUsdt = Number((totalPaidOutUsdt + finalPrizeUsdt).toFixed(2));
+
+      const payoutUuid = `tx_welcome_1000_win_${ticket.ticketCode}_${drawNonce}`;
+      const ownerKey = String(ticket.userUid || '').replace(/^tg_/, '');
+      const ownerAccount = dbState.users?.[ownerKey];
+      let winnerDisplayName = 'کاربر خوش‌شانس LuckyDrop';
+
+      if (ownerAccount) {
+        const ownerPam = new PAMSeamlessWalletEngine(ownerAccount.pamState);
+        const creditRes = ownerPam.credit({
+          transactionUuid: payoutUuid,
+          referenceTransactionUuid: ticket.transactionUuid || null,
+          roundId: WELCOME_GRAND_ROUND_ID,
+          vertical: 'LUCKYDROP_LOTTERY',
+          currency: 'TON',
+          amountTon: finalPrizeTon,
+          amountUsdt: finalPrizeUsdt,
+          note: `🎉 جایزه لاتاری ویژه خوشآمدگویی ۱,۰۰۰ دلاری برای بلیت ${ticket.ticketCode} (${evalResult.tierLabelFa})`,
+        });
+        ownerAccount.pamState = ownerPam.getState();
+        ownerAccount.tonBalance = roundTonClean(ownerAccount.pamState.tonBalance);
+        ownerAccount.starsBalance = roundStarsClean(ownerAccount.pamState.starsBalance);
+        ownerAccount.ledger = ownerAccount.pamState.ledger;
+        winnerDisplayName = ownerAccount.displayName;
+        ticket.payoutTransactionUuid = creditRes.ledgerEntry?.transactionUuid || payoutUuid;
+
+        sendRealtimeToUser(ownerKey, 'USER_BALANCE_UPDATED', {
+          reason: 'WELCOME_1000_LOTTERY_WIN',
+          tonBalance: ownerAccount.tonBalance,
+          starsBalance: ownerAccount.starsBalance,
+          prizeWonTon: finalPrizeTon,
+        });
+      }
+
+      dbState.transactions.unshift({
+        id: Date.now() + winnersCount,
+        txHash: `0x${drawProof.primaryHmacHex}`,
+        userUid: ticket.userUid,
+        type: 'PAYOUT',
+        network: 'TON Welcome $1,000 Vault',
+        amountUsdt: finalPrizeUsdt.toFixed(2),
+        amountCrypto: `${finalPrizeTon.toFixed(2)} TON`,
+        winnerName: winnerDisplayName,
+        winnerLocation: '🎉 لاتاری خوشآمدگویی ۱,۰۰۰ دلاری',
+        lotteryTitle: welcomeVault.titleFa,
+        winningCombo: `[${drawnMain.join(', ')}] + ★${drawnGolden}`,
+        timeAgoLabel: 'همین الان',
+        status: 'CONFIRMED',
+        blockNumber: 62395000 + drawNonce,
+        confirmations: 19,
+      });
+    } else {
+      ticket.status = 'LOST';
+      ticket.prizeWonUsdt = '0.00';
+      ticket.tierLabelFa = evalResult.tierLabelFa;
+    }
+  }
+
+  const remainingReserveTon = roundTonClean(
+    Math.max(0, welcomeVault.fundedReserveTon - totalPaidOutTon)
+  );
+  const nextSeed = generateCryptographicServerSeed();
+  dbState.welcomeGrandLottery = normalizeWelcomeGrandLotteryState(
+    {
+      ...welcomeVault,
+      fundedReserveTon: remainingReserveTon,
+      nextDrawTimestampMs: Date.now() + MONTHLY_CYCLE_DURATION_MS,
+      serverSeed: nextSeed,
+      serverSeedHash: sha256Hex(nextSeed),
+      nonce: drawNonce + 1,
+      lastWinningMain: drawnMain,
+      lastWinningGolden: drawnGolden,
+      lastWinnerSummary:
+        winnersCount > 0
+          ? `🎉 ${winnersCount} برنده لاتاری خوشآمدگویی (${totalPaidOutTon.toFixed(2)} TON پرداخت شد)`
+          : `قرعه‌کشی انجام شد — بدون برنده جک‌پات (${remainingReserveTon.toFixed(2)} TON ذخیره باقی‌مانده)`,
+    },
+    tonRate,
+    0
+  );
+
+  const drawRecord: VerifiableDrawHistoryRecord = {
+    drawId: `DRAW-WELCOME-1000-${drawNonce}`,
+    roundCode: WELCOME_GRAND_ROUND_ID,
+    roundTitleFa: welcomeVault.titleFa,
+    drawnMain,
+    drawnGolden,
+    serverSeed: drawProof.serverSeed,
+    serverSeedHash: drawProof.serverSeedHash,
+    clientSeed: drawProof.clientSeed,
+    nonce: drawProof.nonce,
+    primaryHmacHex: drawProof.primaryHmacHex,
+    first52BitHex: drawProof.first52BitHex,
+    uniformFloatX: drawProof.uniformFloatX,
+    ticketsEvaluatedCount: candidateTickets.length,
+    winnersCount,
+    totalPayoutUsdt: totalPaidOutUsdt,
+    createdAt: new Date().toLocaleTimeString('fa-IR'),
+  };
+  dbState.drawHistory.unshift(drawRecord);
+
+  persistAll();
+
+  broadcastRealtimeEvent('DRAW_EXECUTED', {
+    roundCode: WELCOME_GRAND_ROUND_ID,
+    roundTitleFa: welcomeVault.titleFa,
+    drawnMain,
+    drawnGolden,
+    drawRecord,
+    winnersCount,
+    ticketsEvaluatedCount: candidateTickets.length,
+    totalPayoutUsdt: totalPaidOutUsdt,
+    rounds: dbState.rounds.map((r) => ({ ...r, serverSeed: undefined })),
+    drawHistory: dbState.drawHistory.slice(0, 30),
+    monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+    welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+  });
+
+  return {
+    roundCode: WELCOME_GRAND_ROUND_ID,
+    drawnMain,
+    drawnGolden,
+    drawRecord,
+    ticketsEvaluatedCount: candidateTickets.length,
+    winnersCount,
+    totalPayoutUsdt: totalPaidOutUsdt,
+    paidOutTon: totalPaidOutTon,
+    welcomeGrandLottery: getPublicWelcomeGrandLottery(),
   };
 }
 
@@ -4164,6 +4571,25 @@ setInterval(async () => {
     ) {
       await executeMonthlySuperJackpotDraw({ isAdmin: false });
     }
+
+    // Check $1,000 Welcome Grand Lottery (`#LD-WELCOME-1000`) Schedule Guard:
+    // If 30-day timer expires before `fundedReserveTon` reaches the $1,000 target, auto-extend by 7 days!
+    const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+    const welcomeGuard = evaluateWelcomeLotteryScheduleGuard(dbState.welcomeGrandLottery, {
+      nowMs,
+      isAdminForceDraw: false,
+      tonUsdRate: tonRate,
+    });
+    if (welcomeGuard.autoExtended) {
+      dbState.welcomeGrandLottery = welcomeGuard.updatedState;
+      persistAll();
+      broadcastRealtimeEvent('ROUND_POOL_UPDATED', {
+        roundCode: WELCOME_GRAND_ROUND_ID,
+        welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+      });
+    } else if (welcomeGuard.shouldExecuteDraw) {
+      await executeWelcomeGrandLotteryDraw({ isAdmin: false });
+    }
   } catch (err) {
     console.error('Automated lottery draw scheduler error:', err);
   } finally {
@@ -4192,6 +4618,22 @@ app.post('/api/admin/draw', optionalAuth, async (req: AuthRequest, res) => {
       return res.json({
         ok: true,
         ...monthlyOutcome,
+        rounds: dbState.rounds.map((r) => ({ ...r, serverSeed: undefined })),
+        tonBalance: callerPam.tonBalance,
+        starsBalance: callerPam.starsBalance,
+      });
+    }
+
+    if (roundCode === WELCOME_GRAND_ROUND_ID) {
+      const welcomeOutcome = await executeWelcomeGrandLotteryDraw({
+        isAdmin: session.isAdmin,
+        forceWinningMain,
+        forceWinningGolden,
+      });
+      const callerPam = getOrCreateIsolatedUserContext(req).userPam.getState();
+      return res.json({
+        ok: true,
+        ...welcomeOutcome,
         rounds: dbState.rounds.map((r) => ({ ...r, serverSeed: undefined })),
         tonBalance: callerPam.tonBalance,
         starsBalance: callerPam.starsBalance,
@@ -4322,6 +4764,245 @@ app.post('/api/admin/monthly-super-pot/draw', optionalAuth, async (req: AuthRequ
     return res.status(500).json({
       ok: false,
       error: error.message || 'خطا در اجرای قرعه‌کشی ابر جک‌پات ماهانه VIP',
+    });
+  }
+});
+
+// ============================================================================
+// UPGRADE 2 ENDPOINTS: $1,000 WELCOME GRAND LOTTERY (`#LD-WELCOME-1000`)
+// - User Custom Number Picker Claim (`POST /api/lottery/welcome-1000/claim-ticket`)
+// - Admin Reserve Config & Manual Draw (`POST /api/admin/welcome-lottery/config`, `POST /api/admin/welcome-lottery/draw`)
+// ============================================================================
+
+app.post(
+  '/api/lottery/welcome-1000/claim-ticket',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      if (dbState.killSwitchActive) {
+        return res.status(503).json({
+          ok: false,
+          error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: ثبت بلیت موقتاً متوقف است.',
+        });
+      }
+
+      const { userKey, userAccount, userPam, commitUserAccount } =
+        getOrCreateIsolatedUserContext(req);
+
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const playerId = userPam.getState().playerId;
+        const currentStatus = computeUserWelcomeTicketStatus(userAccount, playerId, userKey);
+
+        if (currentStatus.welcomeTicketClaimed) {
+          return res.status(409).json({
+            ok: false,
+            error:
+              '409 Conflict — WELCOME_TICKET_ALREADY_CLAIMED: شما قبلاً بلیت رایگان ۱,۰۰۰ دلاری خوشآمدگویی خود را ثبت کرده‌اید (حداکثر ۱ بلیت برای هر کاربر).',
+            welcomeTicketStatus: currentStatus,
+            welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+          });
+        }
+
+        if (!currentStatus.welcomeTicketUnlocked || currentStatus.welcomeTicketEntitlement < 1) {
+          return res.status(403).json({
+            ok: false,
+            error:
+              '403 Forbidden — WELCOME_TICKET_NOT_UNLOCKED: برای فعال‌سازی بلیت رایگان ۱,۰۰۰ دلاری خوشآمدگویی، ابتدا حداقل ۱ بلیت در یکی از دورهای لاتاری خریداری کنید.',
+            welcomeTicketStatus: currentStatus,
+            welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+          });
+        }
+
+        const selectionCheck = validateAndPrepareWelcomeTicketSelection({
+          mainNumbers: req.body?.mainNumbers,
+          goldenBall: req.body?.goldenBall,
+          mainCount: 5,
+          mainMax: 50,
+          goldenMax: 15,
+        });
+
+        if (!selectionCheck.valid) {
+          return res.status(400).json({
+            ok: false,
+            error: selectionCheck.error,
+          });
+        }
+
+        const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+        dbState.welcomeGrandLottery = normalizeWelcomeGrandLotteryState(
+          dbState.welcomeGrandLottery,
+          tonRate
+        );
+        const welcomeNonce = dbState.welcomeGrandLottery.nonce;
+        dbState.welcomeGrandLottery.nonce += 1;
+
+        const serialRandom = Math.floor(100000 + Math.random() * 900000);
+        const ticketCode = `WLC-${serialRandom}`;
+        const clientSeed =
+          String(req.body?.clientSeed || userPam.getState().seeds.clientSeed || '').trim() ||
+          'luckydrop_welcome_1000_client_seed';
+        const txHash = `0x${sha256Hex(`welcome_1000:${userKey}:${ticketCode}:${welcomeNonce}`)}`;
+
+        const welcomeTicketRecord: PersistentTicketRecord = {
+          id: Date.now(),
+          ticketCode,
+          userUid: playerId,
+          roundCode: WELCOME_GRAND_ROUND_ID,
+          mainNumbers: JSON.stringify(selectionCheck.cleanMainNumbers),
+          goldenBall: selectionCheck.cleanGoldenBall,
+          costUsdt: '0.00',
+          currencyNetwork: 'WELCOME $1,000 FREE ENTITLEMENT (1ST PURCHASE)',
+          txHash,
+          transactionUuid: `tx_welcome_1000_${userKey}_${ticketCode}`,
+          payoutTransactionUuid: null,
+          clientSeed,
+          serverSeedHash: dbState.welcomeGrandLottery.serverSeedHash,
+          nonce: welcomeNonce,
+          commitHash: txHash.slice(2, 34),
+          status: 'ACTIVE',
+          confirmations: 19,
+          prizeWonUsdt: '0.00',
+          claimed: false,
+          createdAt: new Date().toLocaleTimeString('fa-IR'),
+        };
+
+        dbState.tickets.unshift(welcomeTicketRecord);
+        userAccount.myTickets.unshift(ticketCode);
+        userAccount.welcomeTicketUnlocked = true;
+        userAccount.welcomeTicketEntitlement = 0;
+        userAccount.welcomeTicketClaimed = true;
+        userAccount.welcomeTicketCode = ticketCode;
+
+        commitUserAccount();
+
+        const updatedWelcomeLottery = getPublicWelcomeGrandLottery();
+        const updatedStatus = computeUserWelcomeTicketStatus(userAccount, playerId, userKey);
+
+        broadcastRealtimeEvent('ROUND_POOL_UPDATED', {
+          roundCode: WELCOME_GRAND_ROUND_ID,
+          welcomeGrandLottery: updatedWelcomeLottery,
+          totalTicketsCount: dbState.tickets.length,
+        });
+
+        sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+          reason: 'WELCOME_TICKET_CLAIMED',
+          welcomeTicketStatus: updatedStatus,
+          welcomeGrandLottery: updatedWelcomeLottery,
+        });
+
+        return res.json({
+          ok: true,
+          ticket: welcomeTicketRecord,
+          welcomeGrandLottery: updatedWelcomeLottery,
+          welcomeTicketStatus: updatedStatus,
+          message: `🎉 بلیت رایگان لاتاری ۱,۰۰۰ دلاری خوشآمدگویی شما با کد ${ticketCode} و اعداد [${selectionCheck.cleanMainNumbers.join(', ')}] + ★${selectionCheck.cleanGoldenBall} با موفقیت ثبت شد!`,
+        });
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        ok: false,
+        error: error.message || 'خطا در ثبت بلیت رایگان خوشآمدگویی',
+      });
+    }
+  }
+);
+
+app.post('/api/admin/welcome-lottery/config', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+    const current = getPublicWelcomeGrandLottery();
+    const {
+      targetPoolUsdt,
+      setReserveTon,
+      addReserveTon,
+      houseMarginAllocationRatio,
+      resetCycleDays,
+      autoExtendDaysIfUnfunded,
+    } = req.body || {};
+
+    let nextTargetUsdt = current.targetPoolUsdt;
+    if (typeof targetPoolUsdt === 'number' && Number.isFinite(targetPoolUsdt) && targetPoolUsdt >= 100) {
+      nextTargetUsdt = Number(targetPoolUsdt.toFixed(2));
+    }
+
+    let nextFundedReserveTon = current.fundedReserveTon;
+    if (typeof setReserveTon === 'number' && Number.isFinite(setReserveTon) && setReserveTon >= 0) {
+      nextFundedReserveTon = roundTonClean(setReserveTon);
+    } else if (typeof addReserveTon === 'number' && Number.isFinite(addReserveTon) && addReserveTon > 0) {
+      nextFundedReserveTon = roundTonClean(current.fundedReserveTon + addReserveTon);
+    }
+
+    let nextRatio = current.houseMarginAllocationRatio;
+    if (
+      typeof houseMarginAllocationRatio === 'number' &&
+      houseMarginAllocationRatio > 0 &&
+      houseMarginAllocationRatio <= 1
+    ) {
+      nextRatio = Number(houseMarginAllocationRatio.toFixed(4));
+    }
+
+    let nextDrawMs = current.nextDrawTimestampMs;
+    if (typeof resetCycleDays === 'number' && resetCycleDays > 0) {
+      nextDrawMs = Date.now() + Math.max(1, resetCycleDays) * 24 * 60 * 60 * 1000;
+    }
+
+    const nextAutoExtendDays =
+      typeof autoExtendDaysIfUnfunded === 'number' && autoExtendDaysIfUnfunded >= 1
+        ? Math.floor(autoExtendDaysIfUnfunded)
+        : current.autoExtendDaysIfUnfunded;
+
+    dbState.welcomeGrandLottery = normalizeWelcomeGrandLotteryState(
+      {
+        ...dbState.welcomeGrandLottery,
+        targetPoolUsdt: nextTargetUsdt,
+        fundedReserveTon: nextFundedReserveTon,
+        houseMarginAllocationRatio: nextRatio,
+        nextDrawTimestampMs: nextDrawMs,
+        autoExtendDaysIfUnfunded: nextAutoExtendDays,
+      },
+      tonRate,
+      current.participantsCount
+    );
+
+    persistAll();
+
+    const updated = getPublicWelcomeGrandLottery();
+    broadcastRealtimeEvent('ROUND_POOL_UPDATED', {
+      roundCode: WELCOME_GRAND_ROUND_ID,
+      welcomeGrandLottery: updated,
+    });
+
+    return res.json({
+      ok: true,
+      welcomeGrandLottery: updated,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در بروزرسانی تنظیمات لاتاری خوشآمدگویی ۱,۰۰۰ دلاری',
+    });
+  }
+});
+
+app.post('/api/admin/welcome-lottery/draw', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const { session } = getOrCreateIsolatedUserContext(req);
+    const { forceWinningMain, forceWinningGolden } = req.body || {};
+    const outcome = await executeWelcomeGrandLotteryDraw({
+      isAdmin: session.isAdmin,
+      forceWinningMain,
+      forceWinningGolden,
+    });
+    return res.json({
+      ok: true,
+      ...outcome,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در اجرای قرعه‌کشی لاتاری خوشآمدگویی ۱,۰۰۰ دلاری',
     });
   }
 });
@@ -5600,6 +6281,116 @@ app.post(
   requireTelegramWebAppAuth,
   enforceMutationRateLimit,
   handleCreateStarsInvoice
+);
+
+// 1:1 Instant VIP Rakeback & Cashback Vault Claim Endpoint (`POST /api/wallet/claim-rakeback`)
+app.post(
+  '/api/wallet/claim-rakeback',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      if (dbState.killSwitchActive) {
+        return res.status(503).json({
+          ok: false,
+          status: 'HALTED',
+          error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: تسویه پاداش موقتاً متوقف است.',
+        });
+      }
+
+      const { userKey, userAccount, userPam, commitUserAccount } =
+        getOrCreateIsolatedUserContext(req);
+
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const vault = normalizeRakebackVaultState(userAccount.rakebackVault);
+        const claimTon = roundTonClean(vault.claimableTon);
+        const claimStars = roundStarsClean(vault.claimableStars);
+
+        if (claimTon <= 0 && claimStars <= 0) {
+          return res.status(400).json({
+            ok: false,
+            error: 'NO_CLAIMABLE_RAKEBACK — موجودی قابل برداشت در قلک کشبک شما صفر است.',
+            tonBalance: userPam.getState().tonBalance,
+            starsBalance: userPam.getState().starsBalance,
+            rakebackVault: vault,
+          });
+        }
+
+        const claimBatchId = `RBK-${Date.now()}`;
+        const tonRate = DEFAULT_FX_RATES.TON || 5.0;
+
+        if (claimTon > 0) {
+          userPam.credit({
+            transactionUuid: `tx_rbk_ton_${claimBatchId}_${userKey}`,
+            referenceTransactionUuid: null,
+            roundId: `#${claimBatchId}-TON`,
+            vertical: 'VIP_LOYALTY_BONUS',
+            currency: 'TON',
+            amountTon: claimTon,
+            amountUsdt: Number((claimTon * tonRate).toFixed(6)),
+            note: `💎 دریافت آنی کشبک و ریکبک VIP به کیف پول (+${claimTon.toFixed(6)} TON)`,
+          });
+        }
+
+        if (claimStars > 0) {
+          userPam.credit({
+            transactionUuid: `tx_rbk_stars_${claimBatchId}_${userKey}`,
+            referenceTransactionUuid: null,
+            roundId: `#${claimBatchId}-STARS`,
+            vertical: 'VIP_LOYALTY_BONUS',
+            currency: 'STARS',
+            amountStars: claimStars,
+            amountUsdt: Number((claimStars * 0.02).toFixed(6)),
+            note: `⭐ دریافت آنی کشبک و ریکبک VIP به کیف پول (+${claimStars} Stars)`,
+          });
+        }
+
+        userAccount.rakebackVault = {
+          ...vault,
+          claimableTon: 0,
+          claimableStars: 0,
+          totalClaimsCount: (vault.totalClaimsCount || 0) + 1,
+          lastUpdatedIso: new Date().toISOString(),
+        };
+
+        commitUserAccount();
+        const latestPam = userPam.getState();
+
+        sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+          reason: 'RAKEBACK_VAULT_CLAIMED',
+          claimedTon: claimTon,
+          claimedStars: claimStars,
+          tonBalance: latestPam.tonBalance,
+          starsBalance: latestPam.starsBalance,
+          rakebackVault: userAccount.rakebackVault,
+        });
+
+        return res.json({
+          ok: true,
+          claimedTon: claimTon,
+          claimedStars: claimStars,
+          tonBalance: latestPam.tonBalance,
+          starsBalance: latestPam.starsBalance,
+          rakebackVault: userAccount.rakebackVault,
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+          message: `🎉 پاداش کشبک و ریکبک شما (${
+            claimTon > 0 ? `+${claimTon.toFixed(6)} TON` : ''
+          }${claimTon > 0 && claimStars > 0 ? ' و ' : ''}${
+            claimStars > 0 ? `+${claimStars} ⭐` : ''
+          }) با کارمزد صفر به کیف پول اصلی واریز شد!`,
+        });
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        ok: false,
+        error: error.message || 'خطا در برداشت کشبک به کیف پول',
+      });
+    }
+  }
 );
 
 // Real Telegram Stars (XTR) Withdrawal Endpoint (Mutex-Locked + Strict Balance Check)

@@ -43,6 +43,8 @@ export const TmaWalletView: React.FC = () => {
     liveOracleSnapshot,
     oracleRefreshing,
     refreshPriceOracleNow,
+    rakebackVault,
+    claimRakebackVault,
   } = useLottery();
 
   const [subTab, setSubTab] = useState<'DEPOSIT' | 'WITHDRAW' | 'HISTORY'>('DEPOSIT');
@@ -319,6 +321,68 @@ export const TmaWalletView: React.FC = () => {
           {feedbackToast}
         </div>
       )}
+
+      {/* 1.5 INSTANT VIP RAKEBACK & CASHBACK VAULT BANNER */}
+      <section
+        data-testid="wallet-cashback-vault-card"
+        className="rounded-3xl p-3.5 bg-gradient-to-br from-[#0D1A22] via-[#0B121E] to-[#19130A] border border-emerald-400/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_10px_24px_rgba(0,0,0,0.5)] space-y-2.5"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs font-black text-emerald-200 truncate">
+            {tr(
+              lang,
+              '💎 قلک کشبک و پاداش برگشتی (Instant VIP Cashback Vault)',
+              '💎 Instant VIP Cashback Vault'
+            )}
+          </div>
+          <span className="px-2 py-0.5 rounded-full bg-[#FFE066]/15 border border-[#FFE066]/40 text-[#FFE066] text-[9px] font-black shrink-0">
+            {tr(lang, '۳٪ کشبک آنی بلیت + ۱.۵٪ ریکبک بازی‌ها', '3% Ticket + 1.5% Game Rebate')}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 font-mono text-xs" dir="ltr">
+          <div className="p-2 rounded-2xl bg-[#090614]/85 border border-emerald-400/25 flex items-center justify-between">
+            <span className="text-[10px] text-slate-400">TON:</span>
+            <span className="font-black text-emerald-300">
+              💎 {(rakebackVault?.claimableTon || 0).toFixed(6)}
+            </span>
+          </div>
+          <div className="p-2 rounded-2xl bg-[#090614]/85 border border-[#FFE066]/25 flex items-center justify-between">
+            <span className="text-[10px] text-slate-400">STARS:</span>
+            <span className="font-black text-[#FFE066]">
+              ⭐ {Math.round(rakebackVault?.claimableStars || 0).toLocaleString('en-US')}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          disabled={
+            busy ||
+            ((rakebackVault?.claimableTon || 0) <= 0 && (rakebackVault?.claimableStars || 0) <= 0)
+          }
+          onClick={async () => {
+            setBusy(true);
+            const res = await claimRakebackVault();
+            setBusy(false);
+            showToast(res.message);
+          }}
+          className={`w-full py-2 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+            (rakebackVault?.claimableTon || 0) > 0 || (rakebackVault?.claimableStars || 0) > 0
+              ? 'bg-gradient-to-r from-emerald-400 via-[#00F5D4] to-[#FFE066] text-slate-950 border border-emerald-300 shadow-[inset_0_2px_4px_rgba(255,255,255,0.65),_0_8px_18px_rgba(16,185,129,0.35)]'
+              : 'bg-white/5 text-slate-400 border border-white/10 opacity-75 cursor-not-allowed'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {tr(
+              lang,
+              'دریافت آنی به کیف پول (Claim Now)',
+              'Claim Instant Cashback to Wallet (Claim Now)'
+            )}
+          </span>
+        </button>
+      </section>
 
       {/* 2. SUB-NAVIGATION: DEPOSIT / WITHDRAW / LEDGER */}
       <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-[#110C22] border border-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_8px_16px_rgba(0,0,0,0.45)]">
