@@ -321,6 +321,8 @@ interface LotteryContextType {
   setLang: (lang: CurrencyLang) => void;
   fxRates: ExchangeRates;
   oracleSnapshot: LiveOracleSnapshot | null;
+  liveOracleSnapshot: LiveOracleSnapshot | null;
+  oracleRefreshing: boolean;
   oracleCountdownSec: number;
   oracleMarkupPercent: number;
   setOracleMarkupPercent: (pct: number) => void;
@@ -405,6 +407,7 @@ interface LotteryContextType {
   rotateProvablyFairServerSeed: () => Promise<ProvablyFairSeedState>;
   playInstantMiniGame: (params: {
     gameId: InstantMiniGameId;
+    currency?: ActiveTmaCurrency;
     betAmountUsdt: number;
     betAmountNative?: number;
     amountTon?: number;
@@ -449,6 +452,7 @@ interface LotteryContextType {
   }>;
   startGameSession: (params: {
     gameId: 'MINES' | 'TOWER_3D';
+    currency?: ActiveTmaCurrency;
     betAmountUsdt: number;
     betAmountNative?: number;
     amountTon?: number;
@@ -482,6 +486,8 @@ interface LotteryContextType {
     currentMultiplier?: number;
     nextMultiplier?: number;
     payoutUsdt?: number;
+    payoutTon?: number;
+    payoutStars?: number;
     evaluation?: MiniGameEvaluationResult;
     debitTransactionUuid?: string;
   }>;
@@ -495,6 +501,8 @@ interface LotteryContextType {
     selectedColumns?: number[];
     multiplier?: number;
     payoutUsdt?: number;
+    payoutTon?: number;
+    payoutStars?: number;
     evaluation?: MiniGameEvaluationResult;
     debitTransactionUuid?: string;
   }>;
@@ -2310,8 +2318,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const exactTon =
       effectiveCurrency === 'TON'
         ? typeof params.amountTon === 'number' && params.amountTon > 0
-          ? Number(params.amountTon.toFixed(4))
-          : Number((params.amountUsdt / 5.0).toFixed(4))
+          ? Number(params.amountTon.toFixed(6))
+          : Number((params.amountUsdt / 5.0).toFixed(6))
         : undefined;
     const exactStars =
       effectiveCurrency === 'STARS'
@@ -2361,8 +2369,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           amountStars: exactStars,
           amountUsdt:
             effectiveCurrency === 'TON'
-              ? Number(((exactTon || 0) * 5.0).toFixed(4))
-              : Number(((exactStars || 0) * 0.02).toFixed(4)),
+              ? Number(((exactTon || 0) * 5.0).toFixed(6))
+              : Number(((exactStars || 0) * 0.02).toFixed(6)),
           note: params.note,
         }),
       });
@@ -2404,8 +2412,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const exactTon =
       effectiveCurrency === 'TON'
         ? typeof params.amountTon === 'number' && params.amountTon >= 0
-          ? Number(params.amountTon.toFixed(4))
-          : Number((params.amountUsdt / 5.0).toFixed(4))
+          ? Number(params.amountTon.toFixed(6))
+          : Number((params.amountUsdt / 5.0).toFixed(6))
         : undefined;
     const exactStars =
       effectiveCurrency === 'STARS'
@@ -2429,8 +2437,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           amountStars: exactStars,
           amountUsdt:
             effectiveCurrency === 'TON'
-              ? Number(((exactTon || 0) * 5.0).toFixed(4))
-              : Number(((exactStars || 0) * 0.02).toFixed(4)),
+              ? Number(((exactTon || 0) * 5.0).toFixed(6))
+              : Number(((exactStars || 0) * 0.02).toFixed(6)),
           note: params.note,
           awardLuckyAirdropTicket: Boolean(params.awardLuckyAirdropTicket),
         }),
@@ -2628,6 +2636,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const playInstantMiniGame = async (params: {
     gameId: InstantMiniGameId;
+    currency?: ActiveTmaCurrency;
     betAmountUsdt: number;
     betAmountNative?: number;
     amountTon?: number;
@@ -2671,10 +2680,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const exactBetTon =
       activeTmaCurrency === 'TON'
         ? typeof params.amountTon === 'number' && params.amountTon > 0
-          ? Number(params.amountTon.toFixed(4))
+          ? Number(params.amountTon.toFixed(6))
           : typeof params.betAmountNative === 'number' && params.betAmountNative > 0
-          ? Number(params.betAmountNative.toFixed(4))
-          : Number((numericBetUsdt / 5.0).toFixed(4))
+          ? Number(params.betAmountNative.toFixed(6))
+          : Number((numericBetUsdt / 5.0).toFixed(6))
         : 0;
 
     const exactBetStars =
@@ -2703,8 +2712,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const effectiveDebitUsdt = isFreeBonusRound
       ? 0
       : activeTmaCurrency === 'TON'
-      ? Number((exactBetTon * 5.0).toFixed(4))
-      : Number((exactBetStars * 0.02).toFixed(4));
+      ? Number((exactBetTon * 5.0).toFixed(6))
+      : Number((exactBetStars * 0.02).toFixed(6));
 
     if (!isFreeBonusRound && activeTmaCurrency === 'STARS') {
       if (starsBalance < exactBetStars) {
@@ -2845,6 +2854,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const startGameSession = async (params: {
     gameId: 'MINES' | 'TOWER_3D';
+    currency?: ActiveTmaCurrency;
     betAmountUsdt: number;
     betAmountNative?: number;
     amountTon?: number;
@@ -2855,10 +2865,10 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const exactBetTon =
       activeTmaCurrency === 'TON'
         ? typeof params.amountTon === 'number' && params.amountTon > 0
-          ? Number(params.amountTon.toFixed(4))
+          ? Number(params.amountTon.toFixed(6))
           : typeof params.betAmountNative === 'number' && params.betAmountNative > 0
-          ? Number(params.betAmountNative.toFixed(4))
-          : Number((params.betAmountUsdt / 5.0).toFixed(4))
+          ? Number(params.betAmountNative.toFixed(6))
+          : Number((params.betAmountUsdt / 5.0).toFixed(6))
         : undefined;
     const exactBetStars =
       activeTmaCurrency === 'STARS'
@@ -2881,7 +2891,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           betAmountTon: exactBetTon,
           amountStars: exactBetStars,
           betAmountStars: exactBetStars,
-          betAmountUsdt: Number(params.betAmountUsdt.toFixed(4)),
+          betAmountUsdt: Number(params.betAmountUsdt.toFixed(6)),
           minesCount: params.minesCount,
           towerDifficulty: params.towerDifficulty,
           transaction_uuid: generateDeterministicUuid('sess_debit'),
@@ -3237,7 +3247,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     // TON Withdrawal
-    const safeTon = Number(numericAmount.toFixed(4));
+    const safeTon = Number(numericAmount.toFixed(6));
     if (safeTon < 0.1) {
       HapticEngine.notificationOccurred('error');
       return { ok: false, message: 'حداقل مقدار برداشت در شبکه TON معادل 0.10 TON است.' };
@@ -3631,8 +3641,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       if (referredByCode && referredByCode !== referralCode) {
         const split = calculateZeroLossTicketSplit(totalCostUsdt, true, 85, 2);
-        const commTon = Number((split.referralCommissionUsdt / effectiveTonUsdRate).toFixed(4));
-        setReferralEarningsTon((prev) => Number((prev + commTon).toFixed(4)));
+        const commTon = Number((split.referralCommissionUsdt / effectiveTonUsdRate).toFixed(6));
+        setReferralEarningsTon((prev) => Number((prev + commTon).toFixed(6)));
         setReferredTicketsCount((prev) => prev + slips.length);
       }
       if (data.monthlySuperJackpot && typeof data.monthlySuperJackpot === 'object') {
@@ -3746,9 +3756,9 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return true;
   };
 
-  const depositCrypto = async (amountUsdt: number, network: string) => {
+    const depositCrypto = async (amountUsdt: number, network: string) => {
     const safeRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
-    const amountTon = Number((amountUsdt / safeRate).toFixed(4));
+    const amountTon = Number((amountUsdt / safeRate).toFixed(6));
     if (network.toUpperCase().includes('TON')) {
       const tonRes = await depositTonInstant(amountTon);
       return tonRes.ok;
@@ -3778,7 +3788,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const effectiveMode = params.verificationMode || params.mode || 'ONCHAIN_AUTO';
     if (params.network.toUpperCase().includes('TON') && effectiveMode === 'ONCHAIN_AUTO') {
       const safeRate = tonUsdRate > 0 ? tonUsdRate : DEFAULT_TON_USD_RATE;
-      const amountTon = Number((params.amountUsdt / safeRate).toFixed(4));
+      const amountTon = Number((params.amountUsdt / safeRate).toFixed(6));
       const tonRes = await depositTonInstant(amountTon, params.senderWallet);
       return {
         ok: tonRes.ok,
@@ -4812,6 +4822,8 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setLang,
         fxRates,
         oracleSnapshot,
+        liveOracleSnapshot: oracleSnapshot,
+        oracleRefreshing: false,
         oracleCountdownSec,
         oracleMarkupPercent,
         setOracleMarkupPercent,

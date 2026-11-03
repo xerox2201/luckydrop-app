@@ -11,6 +11,7 @@ import {
 export { formatCurrency, truncateTonAddress, usdtToTmaCurrency, tmaCurrencyToUsdt };
 export type { ActiveTmaCurrency };
 export type CurrencyLang = 'FA' | 'EN' | 'ZH';
+export type Language = CurrencyLang;
 
 export interface ExchangeRates {
   TOMAN: number;
@@ -1496,11 +1497,11 @@ export function calculateDynamicPariMutuelPool(
 ): DynamicPariMutuelPoolBreakdown {
   const safeGross = Math.max(0, Number(grossCollectedUsdt) || 0);
   const clampedMargin = Math.min(30, Math.max(5, Number(siteMarginPercent) || 15));
-  const siteShare15Usdt = Number(((safeGross * clampedMargin) / 100).toFixed(4));
-  const distributablePool85Usdt = Number(Math.max(0, safeGross - siteShare15Usdt).toFixed(4));
+  const siteShare15Usdt = Number(((safeGross * clampedMargin) / 100).toFixed(6));
+  const distributablePool85Usdt = Number(Math.max(0, safeGross - siteShare15Usdt).toFixed(6));
 
   return {
-    grossCollectedUsdt: Number(safeGross.toFixed(4)),
+    grossCollectedUsdt: Number(safeGross.toFixed(6)),
     siteShare15Usdt,
     houseFee15Usdt: siteShare15Usdt,
     distributablePool85Usdt,
@@ -1525,7 +1526,7 @@ export function distributePoolAmongWinners(
   return rawTierWeights.map((w) => {
     const weight = Math.max(0, Number(w) || 0);
     if (weight <= 0) return 0;
-    return Number(((weight / totalWeight) * safePool).toFixed(2));
+    return Number(((weight / totalWeight) * safePool).toFixed(6));
   });
 }
 
@@ -1549,9 +1550,9 @@ export function evaluateHighValueWithdrawalGate(
   const st = requiresAdminApproval ? 'pending_review' : 'completed';
 
   return {
-    amountTon: Number(safeTon.toFixed(2)),
-    autoWithdrawLimitTon: Number(safeLimit.toFixed(2)),
-    thresholdTon: Number(safeLimit.toFixed(2)),
+    amountTon: Number(safeTon.toFixed(6)),
+    autoWithdrawLimitTon: Number(safeLimit.toFixed(6)),
+    thresholdTon: Number(safeLimit.toFixed(6)),
     requiresAdminApproval,
     status: st,
     initialStatus: st,

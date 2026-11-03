@@ -239,8 +239,8 @@ export const TmaWalletView: React.FC = () => {
             </span>
             <span className="truncate max-w-[155px]">
               {liveOracleSnapshot?.providerLabel || 'Live Oracle'} •{' '}
-              {liveOracleSnapshot?.updatedAtIso
-                ? new Date(liveOracleSnapshot.updatedAtIso).toLocaleTimeString([], {
+              {liveOracleSnapshot?.lastUpdatedIso
+                ? new Date(liveOracleSnapshot.lastUpdatedIso).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',

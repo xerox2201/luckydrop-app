@@ -130,10 +130,10 @@ export const LobbyView: React.FC = () => {
       activeLotterySpec.goldenMax,
       `tma_qp_${Date.now()}`
     );
-    const totalCostUsdt = Number((qty * unitPriceUsdt).toFixed(2));
-    const unitPriceTon = Number((unitPriceUsdt / (tonUsdRate || 5)).toFixed(2));
+    const totalCostUsdt = Number((qty * unitPriceUsdt).toFixed(6));
+    const unitPriceTon = Number((unitPriceUsdt / (tonUsdRate || 5)).toFixed(6));
     const unitPriceStars = Math.max(1, Math.round(unitPriceUsdt / (starsUsdRate || 0.02)));
-    const exactCostTon = Number((qty * unitPriceTon).toFixed(2));
+    const exactCostTon = Number((qty * unitPriceTon).toFixed(6));
     const exactCostStars = Math.round(qty * unitPriceStars);
 
     const res = await mintBulkTickets(

@@ -1505,6 +1505,9 @@ export function executeAdminBalanceAdjustment(params: {
       : 0;
 
   const ledgerEntry: PAMPlayerState['ledger'][number] = {
+    id: Date.now(),
+    timestamp: nowIso,
+    playerId: userAccount.pamState.playerId || `tg_${userAccount.telegramUserId}`,
     transactionUuid: txUuid,
     referenceTransactionUuid: null,
     roundId: `#ADMIN-ADJ-${auditId.slice(-6).toUpperCase()}`,
@@ -1513,19 +1516,12 @@ export function executeAdminBalanceAdjustment(params: {
     currency: currency === 'STARS' ? 'STARS' : 'TON',
     amountTon: currency === 'TON' ? absDelta : 0,
     amountStars: currency === 'STARS' ? absDelta : 0,
-    amountUsdt,
-    balanceBeforeTon: currency === 'TON' ? previousBalance : userAccount.pamState.tonBalance,
-    balanceAfterTon: userAccount.pamState.tonBalance,
-    balanceBeforeStars: currency === 'STARS' ? previousBalance : userAccount.pamState.starsBalance,
-    balanceAfterStars: userAccount.pamState.starsBalance,
-    balanceBeforeUsdt: Number((userAccount.pamState.tonBalance * tonRate).toFixed(2)),
-    balanceAfterUsdt: Number((userAccount.pamState.tonBalance * tonRate).toFixed(2)),
-    clientSeed: userAccount.pamState.seeds.clientSeed,
-    serverSeedHash: userAccount.pamState.seeds.serverSeedHash,
-    nonce: userAccount.pamState.seeds.nonce,
+    tonBalanceBefore: currency === 'TON' ? previousBalance : userAccount.pamState.tonBalance,
+    tonBalanceAfter: userAccount.pamState.tonBalance,
+    starsBalanceBefore: currency === 'STARS' ? previousBalance : userAccount.pamState.starsBalance,
+    starsBalanceAfter: userAccount.pamState.starsBalance,
     status: 'COMPLETED',
-    createdAt: nowIso,
-    note: `ADMIN_ADJUSTMENT (${currency} ${appliedDelta >= 0 ? `+${appliedDelta}` : appliedDelta}) توسط ادمین #${params.adminUserId}: ${cleanReason}`,
+    note: `ADMIN_ADJUSTMENT (${currency} ${appliedDelta >= 0 ? `+${appliedDelta}` : appliedDelta} ~ ${amountUsdt.toFixed(2)} USDT) توسط ادمین #${params.adminUserId}: ${cleanReason}`,
   };
 
   userAccount.pamState.ledger.unshift(ledgerEntry);

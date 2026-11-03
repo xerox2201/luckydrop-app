@@ -142,7 +142,9 @@ export function generateDeterministicUuid(prefix: string = 'tx'): string {
 }
 
 function roundTon(val: number): number {
-  return Math.round((Number(val) + Number.EPSILON) * 10000) / 10000;
+  const num = Number(val);
+  if (!Number.isFinite(num)) return 0;
+  return Number(Math.max(0, Math.round((num + Number.EPSILON) * 1_000_000) / 1_000_000).toFixed(6));
 }
 
 function roundStars(val: number): number {
@@ -793,7 +795,7 @@ export class PAMSeamlessWalletEngine {
 
     const discrepancyTon = roundTon(this.state.tonBalance - computedLedgerTonBalance);
     const discrepancyStars = roundStars(this.state.starsBalance - computedLedgerStarsBalance);
-    const reconciled = Math.abs(discrepancyTon) < 0.01 && Math.abs(discrepancyStars) === 0;
+    const reconciled = Math.abs(discrepancyTon) < 0.00001 && Math.abs(discrepancyStars) === 0;
 
     const report: PAMReconciliationReport = {
       reconciled,

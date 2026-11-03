@@ -126,9 +126,9 @@ export const FooterAndChat: React.FC = () => {
           withdrawalCode:
             (withdrawals[0] as any).withdrawalCode || `WDR-${withdrawals[0].id}`,
           netAmountCrypto:
-            (withdrawals[0] as any).netAmountCrypto ||
-            `${Number((Number(withdrawals[0].amountUsdt || 0) / 5.0).toFixed(2))} TON`,
-          netAmountUsdt: Number(withdrawals[0].amountUsdt || 0),
+            withdrawals[0].netAmountCrypto ||
+            `${Number((Number(withdrawals[0].netAmountUsdt || withdrawals[0].grossAmountUsdt || 0) / 5.0).toFixed(2))} TON`,
+          netAmountUsdt: Number(withdrawals[0].netAmountUsdt || withdrawals[0].grossAmountUsdt || 0),
           status: withdrawals[0].status,
           destinationAddress:
             (withdrawals[0] as any).destinationAddress ||

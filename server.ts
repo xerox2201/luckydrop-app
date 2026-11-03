@@ -2889,7 +2889,6 @@ function writeSseFrame(res: express.Response, eventType: string, payload: unknow
       timestampMs: Date.now(),
       ...(payload && typeof payload === 'object' ? payload : { data: payload }),
     });
-    res.write(`event: ${eventType}\ndata: ${serialized}\n\n`);
     res.write(`data: ${serialized}\n\n`);
     return true;
   } catch {
@@ -3687,7 +3686,7 @@ async function executeLotteryDrawWithDynamicPool(params: {
       ? distributedPrizes[idx] || 0
       : Math.min(evalResult.prizeUsdt, distributedPrizes[idx] || 0);
     const finalPrizeTon = roundTonClean(cappedPrizeUsdt / tonRate);
-    const finalPrizeUsdt = Number((finalPrizeTon * tonRate).toFixed(2));
+    const finalPrizeUsdt = Number((finalPrizeTon * tonRate).toFixed(6));
 
     if (evalResult.won && finalPrizeTon > 0) {
       ticket.status = 'WON';
@@ -3695,7 +3694,7 @@ async function executeLotteryDrawWithDynamicPool(params: {
       ticket.tierLabelFa = evalResult.tierLabelFa;
       ticket.claimed = true;
       winnersCount += 1;
-      totalPayoutUsdt = Number((totalPayoutUsdt + finalPrizeUsdt).toFixed(2));
+      totalPayoutUsdt = Number((totalPayoutUsdt + finalPrizeUsdt).toFixed(6));
 
       const payoutUuid = `tx_win_${ticket.ticketCode}_${drawNonce}`;
       const ownerKey = String(ticket.userUid || '').replace(/^tg_/, '');
@@ -3787,7 +3786,7 @@ async function executeLotteryDrawWithDynamicPool(params: {
     distributablePoolUsdt: distributablePool85Usdt,
     actualTotalPaidOutUsdt: totalPayoutUsdt,
     currentAccumulatedPoolTon: dbState.monthlySuperJackpot.accumulatedPoolTon,
-    tonUsdRate: DEFAULT_FX_RATES.TON || 5.0,
+    tonUsdRate: tonRate,
   });
 
   if (rolloverCalc.unclaimedRolloverTon > 0) {
@@ -4999,6 +4998,13 @@ app.post(
         dbState.claimedTicketCodes.push(ticketCode);
         commitUserAccount();
 
+        sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+          reason: 'TICKET_PRIZE_CLAIMED',
+          ticketCode,
+          tonBalance: creditRes.tonBalance,
+          starsBalance: creditRes.starsBalance,
+        });
+
         res.json({
           ok: true,
           ticketCode,
@@ -5218,6 +5224,13 @@ const handleCryptoDeposit = async (req: AuthRequest, res: express.Response) => {
       dbState.deposits.unshift(confirmedItem);
       commitUserAccount();
 
+      sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+        reason: 'CRYPTO_DEPOSIT_CREDITED',
+        depositCode,
+        tonBalance: creditRes.tonBalance,
+        starsBalance: creditRes.starsBalance,
+      });
+
       if (dbState.telegramBotConfig.notifyOnDeposit) {
         await dispatchAdminTelegramAlert({
           eventType: 'DEPOSIT',
@@ -5430,6 +5443,13 @@ app.post(
 
         dbState.deposits.unshift(confirmedItem);
         commitUserAccount();
+
+        sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+          reason: 'TON_BOC_DEPOSIT_CREDITED',
+          depositCode,
+          tonBalance: creditRes.tonBalance,
+          starsBalance: creditRes.starsBalance,
+        });
 
         if (dbState.telegramBotConfig.notifyOnDeposit) {
           await dispatchAdminTelegramAlert({
@@ -5997,7 +6017,7 @@ function buildAdminCrmUserSummary(userAcc: IsolatedUserAccountRecord) {
   const totalTicketsCount = Math.max(userTickets.length, (userAcc.myTickets || []).length);
 
   const ledger = userAcc.pamState?.ledger || userAcc.ledger || [];
-  const totalWageredUsdt = Number(
+  const totalWageredTon = roundTonClean(
     ledger
       .filter(
         (entry) =>
@@ -6006,10 +6026,16 @@ function buildAdminCrmUserSummary(userAcc: IsolatedUserAccountRecord) {
           entry.vertical !== 'TELEGRAM_STARS_TREASURY' &&
           entry.vertical !== 'ADMIN_MANUAL_ADJUSTMENT'
       )
-      .reduce((sum, entry) => sum + (Number(entry.amountUsdt) || 0), 0)
-      .toFixed(2)
+      .reduce(
+        (sum, entry) =>
+          sum +
+          (entry.currency === 'STARS'
+            ? (Number(entry.amountStars) || 0) / 250
+            : Number(entry.amountTon) || 0),
+        0
+      )
   );
-  const totalWageredTon = roundTonClean(totalWageredUsdt / (DEFAULT_FX_RATES.TON || 5.0));
+  const totalWageredUsdt = Number((totalWageredTon * (DEFAULT_FX_RATES.TON || 5.0)).toFixed(2));
 
   return {
     telegramUserId: userAcc.telegramUserId,
