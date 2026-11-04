@@ -111,6 +111,11 @@ import {
   type UserReferralProfileState,
   type GrowthQuestStatusItem,
 } from './src/services/securityGuard.ts';
+import {
+  generateUserConciergeReply,
+  generateAdminCopilotReport,
+  computeAdminExecutiveTelemetry,
+} from './src/services/aiCopilotEngine.ts';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -337,6 +342,7 @@ interface PersistentDatabaseSchema {
   monthlySuperJackpot: MonthlySuperJackpotState;
   welcomeGrandLottery: WelcomeGrandLotteryState;
   syndicatePools?: SyndicatePoolRecord[];
+  aiAutoReplyEnabled?: boolean;
 }
 
 const MONTHLY_VIP_ROUND_ID = '#LD-MONTHLY-VIP';
@@ -518,6 +524,7 @@ function buildDefaultDatabase(): PersistentDatabaseSchema {
     monthlySuperJackpot: buildInitialMonthlySuperJackpot(),
     welcomeGrandLottery: normalizeWelcomeGrandLotteryState(null, DEFAULT_FX_RATES.TON || 5.0, 0),
     syndicatePools: [],
+    aiAutoReplyEnabled: true,
   };
 }
 
@@ -596,6 +603,9 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
         );
         if (!Array.isArray(parsed.syndicatePools)) {
           parsed.syndicatePools = [];
+        }
+        if (typeof parsed.aiAutoReplyEnabled !== 'boolean') {
+          parsed.aiAutoReplyEnabled = true;
         }
         return parsed;
       }
@@ -3173,6 +3183,7 @@ app.get('/api/realtime/stream', optionalAuth, (req: AuthRequest, res) => {
     syndicatePools: dbState.syndicatePools || [],
     totalTicketsCount: dbState.tickets.length,
     killSwitchActive: dbState.killSwitchActive,
+    aiAutoReplyEnabled: dbState.aiAutoReplyEnabled !== false,
     liveOracle: {
       tonUsdPrice: liveMarketOracleState.tonUsdPrice,
       tonChange24hPercent: liveMarketOracleState.tonChange24hPercent,
@@ -3362,6 +3373,7 @@ function buildSnapshotPayload(req: express.Request) {
     chestsClaimedCount: dbState.chestsClaimedCount,
     claimedTicketCodes: dbState.claimedTicketCodes,
     killSwitchActive: dbState.killSwitchActive,
+    aiAutoReplyEnabled: dbState.aiAutoReplyEnabled !== false,
     autoWithdrawLimitTon:
       dbState.autoWithdrawLimitTon || liveSecurityCfg.autoWithdrawLimitTon || 50,
     publicTonTreasuryWallet: liveSecurityCfg.publicTonTreasuryWallet,
@@ -9168,15 +9180,17 @@ app.get('/api/support/my-messages', optionalAuth, (req: AuthRequest, res) => {
   }
 });
 
-// 2. POST /api/support/send (User sends message -> persists + dispatches real-time Telegram Bot alert to Admin)
+// 2. POST /api/support/send (User sends message -> persists + 24/7 VIP AI Concierge auto-reply + SSE SUPPORT_MESSAGES_UPDATED + Admin alert)
 app.post('/api/support/send', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { session, userKey, userAccount, userPam } = getOrCreateIsolatedUserContext(req);
     const {
       message,
-      subject = '💎 پشتیبانی ویژه VIP',
+      subject = 'پشتیبانی ویژه VIP',
       diagnosticType = null,
       diagnosticMetadata = '',
+      quickAskChip = null,
+      locale = 'fa',
       username: reqUsername,
       firstName: reqFirstName,
     } = req.body || {};
@@ -9187,8 +9201,20 @@ app.post('/api/support/send', optionalAuth, async (req: AuthRequest, res) => {
     }
 
     const pamState = userPam.getState();
+    const rawDisplay = String(
+      reqFirstName || userAccount.displayName || pamState.displayName || 'کاربر VIP'
+    ).trim();
+    const normLoc = String(locale || 'fa').trim().toLowerCase();
     const cleanFirstName =
-      String(reqFirstName || userAccount.displayName || pamState.displayName || 'کاربر VIP').trim();
+      normLoc !== 'fa' && /^کاربر(\s|#|$)/.test(rawDisplay)
+        ? normLoc.startsWith('ru')
+          ? 'VIP Участник'
+          : normLoc.startsWith('ar')
+          ? 'عضو VIP'
+          : normLoc.startsWith('es')
+          ? 'Miembro VIP'
+          : 'VIP Member'
+        : rawDisplay;
     const cleanUsername = String(reqUsername || userAccount.username || '')
       .trim()
       .replace(/^@/, '');
@@ -9197,8 +9223,12 @@ app.post('/api/support/send', optionalAuth, async (req: AuthRequest, res) => {
     }
 
     const sessionCode = `TG-${userKey}`;
-    const userTicketsCount = dbState.tickets.filter(
+    const allUserTickets = (dbState.tickets || []).filter(
       (t) => t.userUid === pamState.playerId || t.userUid === userKey
+    );
+    const userTicketsCount = allUserTickets.length;
+    const activeUserTicketsCount = allUserTickets.filter(
+      (t) => String(t.status || '').toUpperCase() === 'ACTIVE'
     ).length;
 
     const inserted: VipSupportMessageRecord = {
@@ -9212,11 +9242,11 @@ app.post('/api/support/send', optionalAuth, async (req: AuthRequest, res) => {
       vipLevel: pamState.vipTier || 'MEMBER',
       tonBalance: roundTonClean(pamState.tonBalance),
       starsBalance: roundStarsClean(pamState.starsBalance),
-      subject: String(subject || '💎 پشتیبانی ویژه VIP').trim(),
+      subject: String(subject || 'پشتیبانی ویژه VIP').trim(),
       message: cleanMessage,
-      walletBalanceLabel: `${roundTonClean(pamState.tonBalance).toFixed(2)} TON | ${roundStarsClean(
+      walletBalanceLabel: `${roundTonClean(pamState.tonBalance).toFixed(6)} TON | ${roundStarsClean(
         pamState.starsBalance
-      )} ⭐`,
+      )} Stars`,
       historySummary: `${userTicketsCount} بلیت ثبت‌شده`,
       diagnosticType: (diagnosticType as SupportDiagnosticChipType) || null,
       diagnosticMetadata: String(diagnosticMetadata || '').trim(),
@@ -9230,6 +9260,131 @@ app.post('/api/support/send', optionalAuth, async (req: AuthRequest, res) => {
     };
 
     dbState.supportMessages.push(inserted);
+
+    // 24/7 VIP User AI Concierge Auto-Reply (Inspects live 6-decimal account telemetry)
+    let aiConciergeReplyMessage: VipSupportMessageRecord | null = null;
+    let aiConciergeMeta: any = null;
+    if (dbState.aiAutoReplyEnabled !== false) {
+      const rakebackVault = normalizeRakebackVaultState(userAccount.rakebackVault);
+      const referralProfile = normalizeReferralProfileState(userAccount);
+      const welcomeGrandLottery = getPublicWelcomeGrandLottery();
+      const welcomeTicketStatus = computeUserWelcomeTicketStatus(
+        userAccount,
+        pamState.playerId,
+        userKey
+      );
+      const monthlySuperJackpot = getPublicMonthlySuperJackpot();
+      const monthlyVipQualification = computeUserMonthlyVipQualification(
+        userAccount,
+        pamState.playerId,
+        userKey
+      );
+
+      const userSyndicates = (dbState.syndicatePools || []).filter((s) =>
+        Array.isArray(s.members) &&
+        s.members.some((m) => m.userKey === userKey || m.userKey === pamState.playerId)
+      );
+      let userSyndicateSharesCount = 0;
+      let userSyndicateContributedTon = 0;
+      for (const syn of userSyndicates) {
+        for (const m of syn.members || []) {
+          if (m.userKey === userKey || m.userKey === pamState.playerId) {
+            userSyndicateSharesCount += Number(m.sharesCount || 0);
+            userSyndicateContributedTon = roundTonClean(
+              userSyndicateContributedTon + (Number(m.contributedTon) || 0)
+            );
+          }
+        }
+      }
+
+      const activeRound = dbState.rounds[0];
+      const conciergeRes = await generateUserConciergeReply(
+        {
+          userKey,
+          displayName: cleanFirstName,
+          username: cleanUsername,
+          vipTier: pamState.vipTier || 'MEMBER',
+          tonBalance: roundTonClean(pamState.tonBalance),
+          starsBalance: roundStarsClean(pamState.starsBalance),
+          xp: Number(userAccount.xp) || 0,
+          activeTicketsCount: activeUserTicketsCount,
+          totalTicketsCount: userTicketsCount,
+          rakebackClaimableTon: roundTonClean(rakebackVault.claimableTon),
+          rakebackClaimableStars: roundStarsClean(rakebackVault.claimableStars),
+          rakebackLifetimeTon: roundTonClean(rakebackVault.lifetimeEarnedTon),
+          referralCode: referralProfile.referralCode,
+          referredByUserKey: referralProfile.referredByUserKey,
+          invitedCount: referralProfile.invitedCount,
+          activeBuyersCount: referralProfile.activeBuyersCount,
+          claimableReferralTon: roundTonClean(referralProfile.claimableReferralTon),
+          claimableReferralStars: roundStarsClean(referralProfile.claimableReferralStars),
+          lifetimeReferralTon: roundTonClean(referralProfile.lifetimeReferralTon),
+          welcomeTicketStatus,
+          welcomeGrandLottery,
+          monthlySuperJackpot,
+          monthlyVipQualification,
+          activeSyndicatesCount: userSyndicates.length,
+          userSyndicateSharesCount,
+          userSyndicateContributedTon,
+          serverSeedHash: activeRound?.serverSeedHash || pamState.seeds.serverSeedHash,
+          clientSeed: pamState.seeds.clientSeed,
+          nonce: pamState.seeds.nonce,
+        },
+        cleanMessage,
+        quickAskChip || diagnosticType,
+        String(locale || 'fa')
+      );
+
+      const resolvedLocale = conciergeRes.locale || 'fa';
+      const localizedSenderByLocale: Record<string, string> = {
+        fa: 'کنسیرج هوشمند VIP (24/7 AI Concierge)',
+        en: '24/7 VIP AI Concierge',
+        ru: '24/7 VIP ИИ-Консьерж',
+        ar: 'كونسيرج الذكاء الاصطناعي VIP 24/7',
+        es: 'Conserje IA VIP 24/7',
+      };
+      const localizedSubjectByLocale: Record<string, string> = {
+        fa: 'پاسخ آنی کنسیرج هوشمند VIP',
+        en: 'Instant 24/7 VIP AI Concierge Reply',
+        ru: 'Мгновенный ответ VIP ИИ-Консьержа',
+        ar: 'رد فوري من كونسيرج الذكاء الاصطناعي VIP',
+        es: 'Respuesta Instantánea del Conserje IA VIP',
+      };
+
+      aiConciergeMeta = conciergeRes;
+      aiConciergeReplyMessage = {
+        id: Date.now() + 1,
+        sessionCode,
+        telegramUserId: String(userKey),
+        username: cleanUsername,
+        firstName: cleanFirstName,
+        senderName:
+          localizedSenderByLocale[resolvedLocale] ||
+          'کنسیرج هوشمند VIP (24/7 AI Concierge)',
+        senderRole: 'OPERATOR',
+        vipLevel: pamState.vipTier || 'MEMBER',
+        tonBalance: roundTonClean(pamState.tonBalance),
+        starsBalance: roundStarsClean(pamState.starsBalance),
+        subject:
+          localizedSubjectByLocale[resolvedLocale] || 'پاسخ آنی کنسیرج هوشمند VIP',
+        message: conciergeRes.replyText,
+        walletBalanceLabel: `${roundTonClean(pamState.tonBalance).toFixed(6)} TON | ${roundStarsClean(
+          pamState.starsBalance
+        )} Stars`,
+        historySummary: `${userTicketsCount} بلیت ثبت‌شده`,
+        diagnosticType: null,
+        diagnosticMetadata: `AI_CONCIERGE_TELEMETRY | ${conciergeRes.detectedIntent} | ${conciergeRes.telemetrySummary.tonBalanceFormatted}`,
+        readByUser: true,
+        readByAdmin: true,
+        createdAt: new Date().toLocaleTimeString('fa-IR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        createdAtIso: new Date().toISOString(),
+      };
+      dbState.supportMessages.push(aiConciergeReplyMessage);
+    }
+
     persistAll();
 
     // Real-Time Admin Alert via Telegram Bot to ADMIN_TELEGRAM_USER_IDS & adminChatId
@@ -9265,9 +9420,25 @@ app.post('/api/support/send', optionalAuth, async (req: AuthRequest, res) => {
     }
 
     const scoped = filterSupportMessagesForUser(dbState.supportMessages, userKey);
+
+    // Push SUPPORT_MESSAGES_UPDATED via SSE immediately
+    sendRealtimeToUser(userKey, 'SUPPORT_MESSAGES_UPDATED', {
+      alsoNotifyAdmins: true,
+      telegramUserId: userKey,
+      sessionCode,
+      message: aiConciergeReplyMessage || inserted,
+      userMessage: inserted,
+      aiReplyMessage: aiConciergeReplyMessage,
+      messages: scoped.messages,
+      unreadOperatorCount: scoped.unreadOperatorCount,
+    });
+
     return res.json({
       ok: true,
       message: inserted,
+      aiReplyMessage: aiConciergeReplyMessage,
+      aiConcierge: aiConciergeMeta,
+      aiAutoReplyEnabled: dbState.aiAutoReplyEnabled !== false,
       messages: scoped.messages,
       unreadOperatorCount: scoped.unreadOperatorCount,
       adminTelegramNotified,
@@ -9280,6 +9451,58 @@ app.post('/api/support/send', optionalAuth, async (req: AuthRequest, res) => {
     });
   }
 });
+
+// Admin Executive AI Copilot & PAM Live Reconciliation Endpoint (`POST /api/admin/ai-copilot` & `GET /api/admin/ai-copilot`)
+const handleAdminAiCopilot = async (req: AuthRequest, res: express.Response) => {
+  try {
+    const body = req.body || {};
+    if (typeof body.aiAutoReplyEnabled === 'boolean') {
+      dbState.aiAutoReplyEnabled = body.aiAutoReplyEnabled;
+      persistAll();
+      broadcastRealtimeEvent('AI_COPILOT_CONFIG_UPDATED', {
+        aiAutoReplyEnabled: dbState.aiAutoReplyEnabled,
+      });
+    } else if (body.toggleAiAutoReply === true) {
+      dbState.aiAutoReplyEnabled = dbState.aiAutoReplyEnabled === false ? true : false;
+      persistAll();
+      broadcastRealtimeEvent('AI_COPILOT_CONFIG_UPDATED', {
+        aiAutoReplyEnabled: dbState.aiAutoReplyEnabled,
+      });
+    }
+
+    const actionType = String(
+      body.actionType || req.query.actionType || 'BALANCE_SHEET'
+    ).trim();
+    const customPrompt = String(body.customPrompt || body.prompt || '').trim();
+    const locale = String(body.locale || req.query.locale || 'fa').trim();
+    const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+
+    const report = await generateAdminCopilotReport({
+      actionType,
+      customPrompt: customPrompt || undefined,
+      locale,
+      usersMap: dbState.users || {},
+      tickets: dbState.tickets || [],
+      syndicatePools: dbState.syndicatePools || [],
+      welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+      monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+      tonUsdRate: tonRate,
+    });
+
+    return res.json({
+      ...report,
+      aiAutoReplyEnabled: dbState.aiAutoReplyEnabled !== false,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در اجرای دستیار هوشمند مدیر ارشد (AI Copilot)',
+    });
+  }
+};
+
+app.get('/api/admin/ai-copilot', optionalAuth, handleAdminAiCopilot);
+app.post('/api/admin/ai-copilot', optionalAuth, handleAdminAiCopilot);
 
 // 3. POST /api/support/reply (Admin replies -> persists + sends direct Telegram Bot message to user's Telegram ID)
 app.post('/api/support/reply', optionalAuth, async (req: AuthRequest, res) => {

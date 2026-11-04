@@ -5,6 +5,23 @@ import {
   calculateDynamicPariMutuelPool,
   getBlockchainExplorerTxUrl,
 } from '../utils/lotteryEngine.ts';
+import {
+  LuxuryIconBadge,
+  AiNeuralCoreIcon,
+  TelemetryChartIcon,
+  SecurityAuditRadarIcon,
+  RoyalJackpotCrownIcon,
+  SquadSyndicateIcon,
+  VipConciergeHeadsetIcon,
+  VipTicketIcon,
+  TonCrystalIcon,
+  ProvablyFairShieldIcon,
+} from './ui/LuxuryIcons.tsx';
+import type {
+  AdminCopilotActionId,
+  AdminExecutiveTelemetrySnapshot,
+} from '../services/aiCopilotEngine.ts';
+import { tr, normalizeLocale } from '../utils/i18n.ts';
 
 type AdminMobileSectionTab =
   | 'ALL'
@@ -77,6 +94,7 @@ const isMaskedBotTokenInput = (val: string): boolean => {
 
 export const CockpitView: React.FC = () => {
   const {
+    lang,
     rounds,
     deposits,
     withdrawals,
@@ -256,10 +274,60 @@ export const CockpitView: React.FC = () => {
     }
   }, [getAdminFetchHeaders]);
 
+  // Admin Executive AI Copilot & 24/7 Concierge Auto-Reply State
+  const [aiAutoReplyEnabled, setAiAutoReplyEnabled] = useState<boolean>(true);
+  const [activeCopilotAction, setActiveCopilotAction] =
+    useState<AdminCopilotActionId>('BALANCE_SHEET');
+  const [aiCopilotBusy, setAiCopilotBusy] = useState<boolean>(false);
+  const [aiCopilotTitle, setAiCopilotTitle] = useState<string>(
+    'گزارش جامع ترازنامه ۵-بخشی و سود خالص سایت (6-Decimal Precision)'
+  );
+  const [aiCopilotReport, setAiCopilotReport] = useState<string>('');
+  const [aiCopilotTelemetry, setAiCopilotTelemetry] =
+    useState<AdminExecutiveTelemetrySnapshot | null>(null);
+
+  const executeAdminAiCopilotAction = React.useCallback(
+    async (
+      actionType: AdminCopilotActionId = 'BALANCE_SHEET',
+      toggleAutoReply?: boolean
+    ) => {
+      setAiCopilotBusy(true);
+      setActiveCopilotAction(actionType);
+      try {
+        const res = await fetch('/api/admin/ai-copilot', {
+          method: 'POST',
+          headers: getAdminFetchHeaders(),
+          body: JSON.stringify({
+            actionType,
+            locale: normalizeLocale(lang),
+            ...(typeof toggleAutoReply === 'boolean'
+              ? { aiAutoReplyEnabled: toggleAutoReply }
+              : {}),
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.ok) {
+          if (typeof data.aiAutoReplyEnabled === 'boolean') {
+            setAiAutoReplyEnabled(data.aiAutoReplyEnabled);
+          }
+          if (data.title || data.titleFa) setAiCopilotTitle(data.title || data.titleFa);
+          if (data.report || data.reportFa) setAiCopilotReport(data.report || data.reportFa);
+          if (data.telemetry) setAiCopilotTelemetry(data.telemetry);
+        }
+      } catch {
+        // ignore network errors
+      } finally {
+        setAiCopilotBusy(false);
+      }
+    },
+    [getAdminFetchHeaders, lang]
+  );
+
   React.useEffect(() => {
     void fetchAdminUsersCrm('');
     void fetchWebhookStatus();
-  }, [fetchAdminUsersCrm, fetchWebhookStatus]);
+    void executeAdminAiCopilotAction('BALANCE_SHEET');
+  }, [fetchAdminUsersCrm, fetchWebhookStatus, executeAdminAiCopilotAction]);
 
   const handleToggleUserBan = async (user: AdminCrmUserItem) => {
     try {
@@ -875,14 +943,54 @@ export const CockpitView: React.FC = () => {
   const showSection = (tab: AdminMobileSectionTab) =>
     activeMobileTab === 'ALL' || activeMobileTab === tab;
 
-  const MOBILE_TABS: Array<{ id: AdminMobileSectionTab; label: string }> = [
-    { id: 'ALL', label: '⚡ همه بخش‌ها' },
-    { id: 'USERS', label: `👥 کاربران CRM (${toPersianDigits(crmTotalCount || crmUsers.length)})` },
-    { id: 'ROUNDS', label: `🎰 مدیریت لاتاری (${toPersianDigits(rounds.length)})` },
-    { id: 'CASHIER', label: `💎 برداشت مبالغ بالا (${toPersianDigits(pendingHighValueWithdrawals.length)})` },
-    { id: 'OVERVIEW', label: '📊 خزانه و نرخ TON' },
-    { id: 'CONFIG', label: '🤖 ربات، وبهوک و برادکست' },
-    { id: 'SHIELD', label: '🛡️ بکاپ دیتابیس و امنیت' },
+  const MOBILE_TABS: Array<{
+    id: AdminMobileSectionTab;
+    label: string;
+    variant: 'gold' | 'emerald' | 'cyan' | 'obsidian';
+    renderIcon: () => React.ReactNode;
+  }> = [
+    {
+      id: 'ALL',
+      label: 'همه بخش‌ها',
+      variant: 'gold',
+      renderIcon: () => <RoyalJackpotCrownIcon size={12} />,
+    },
+    {
+      id: 'USERS',
+      label: `کاربران CRM (${toPersianDigits(crmTotalCount || crmUsers.length)})`,
+      variant: 'emerald',
+      renderIcon: () => <SquadSyndicateIcon size={12} />,
+    },
+    {
+      id: 'ROUNDS',
+      label: `مدیریت لاتاری (${toPersianDigits(rounds.length)})`,
+      variant: 'gold',
+      renderIcon: () => <VipTicketIcon size={12} />,
+    },
+    {
+      id: 'CASHIER',
+      label: `برداشت مبالغ بالا (${toPersianDigits(pendingHighValueWithdrawals.length)})`,
+      variant: 'cyan',
+      renderIcon: () => <TonCrystalIcon size={12} />,
+    },
+    {
+      id: 'OVERVIEW',
+      label: 'خزانه و نرخ TON',
+      variant: 'emerald',
+      renderIcon: () => <TelemetryChartIcon size={12} />,
+    },
+    {
+      id: 'CONFIG',
+      label: 'ربات، وبهوک و برادکست',
+      variant: 'gold',
+      renderIcon: () => <AiNeuralCoreIcon size={12} />,
+    },
+    {
+      id: 'SHIELD',
+      label: 'بکاپ دیتابیس و امنیت',
+      variant: 'emerald',
+      renderIcon: () => <ProvablyFairShieldIcon size={12} />,
+    },
   ];
 
   return (
@@ -918,22 +1026,28 @@ export const CockpitView: React.FC = () => {
             type="button"
             data-testid="cockpit-kill-switch-btn"
             onClick={toggleKillSwitch}
-            className={`h-10 px-2.5 rounded-xl font-bold text-[11px] transition-all cursor-pointer flex items-center justify-center gap-1 ${
+            className={`h-10 px-2.5 rounded-xl font-bold text-[11px] transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               killSwitchActive
                 ? 'bg-[#00f59b] text-[#041f14]'
                 : 'bg-rose-600/90 hover:bg-rose-600 text-white border border-rose-400/50'
             }`}
           >
-            <span>{killSwitchActive ? '✓ رفع انسداد سیستم' : '🚨 توقف اضطراری (Kill)'}</span>
+            <LuxuryIconBadge variant={killSwitchActive ? 'emerald' : 'crimson'} size="xs">
+              <SecurityAuditRadarIcon size={12} />
+            </LuxuryIconBadge>
+            <span>{killSwitchActive ? 'رفع انسداد سیستم' : 'توقف اضطراری (Kill)'}</span>
           </button>
 
           <button
             type="button"
             data-testid="admin-secure-exit-btn"
             onClick={handleSecureAdminExit}
-            className="h-10 px-2.5 rounded-xl bg-[#090612] hover:bg-purple-950/70 border border-[#fbbf24]/45 text-[#fbbf24] font-bold text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+            className="h-10 px-2.5 rounded-xl bg-[#090612] hover:bg-purple-950/70 border border-[#fbbf24]/45 text-[#fbbf24] font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span>🔒 خروج امن ادمین</span>
+            <LuxuryIconBadge variant="gold" size="xs">
+              <ProvablyFairShieldIcon size={12} />
+            </LuxuryIconBadge>
+            <span>خروج امن ادمین</span>
           </button>
         </div>
       </div>
@@ -950,17 +1064,267 @@ export const CockpitView: React.FC = () => {
               type="button"
               data-testid={`admin-mobile-tab-${tab.id}`}
               onClick={() => setActiveMobileTab(tab.id)}
-              className={`h-8 px-3 rounded-xl text-[11px] font-bold shrink-0 border transition-all cursor-pointer ${
+              className={`h-8 px-2.5 rounded-xl text-[11px] font-bold shrink-0 border transition-all cursor-pointer flex items-center gap-1.5 ${
                 active
                   ? 'bg-gradient-to-r from-[#9333ea] to-[#7e22ce] border-purple-300/60 text-white shadow-[0_0_12px_rgba(147,51,234,0.4)]'
                   : 'bg-[#130d24]/90 border-purple-500/20 text-purple-200/80 hover:text-white'
               }`}
             >
-              {tab.label}
+              <LuxuryIconBadge variant={tab.variant} size="xs">
+                {tab.renderIcon()}
+              </LuxuryIconBadge>
+              <span>{tab.label}</span>
             </button>
           );
         })}
       </div>
+
+      {/* =====================================================================
+          ADMIN EXECUTIVE AI COPILOT & LIVE PAM RECONCILIATION VAULT
+          ===================================================================== */}
+      {(showSection('OVERVIEW') || showSection('SHIELD')) && (
+        <section
+          data-testid="admin-ai-copilot-section"
+          className="rounded-2xl bg-gradient-to-br from-[#140E26] via-[#0D091A] to-[#081A17] border border-amber-400/35 p-3.5 shadow-[0_12px_36px_rgba(0,0,0,0.65)] space-y-3"
+        >
+          {/* Header + 24/7 User AI Auto-Reply Toggle */}
+          <div className="flex items-center justify-between gap-2 border-b border-amber-400/20 pb-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <LuxuryIconBadge variant="gold" size="md" glow>
+                <AiNeuralCoreIcon size={20} />
+              </LuxuryIconBadge>
+              <div className="min-w-0">
+                <h2 className="text-xs font-black text-amber-300 truncate">
+                  {tr(
+                    lang,
+                    'دستیار هوشمند مدیر ارشد (AI Executive & Risk Copilot)',
+                    'AI Executive & Risk Copilot'
+                  )}
+                </h2>
+                <p className="text-[10px] text-emerald-300/90 font-mono truncate" dir="ltr">
+                  PAM Discrepancy:{' '}
+                  <span data-testid="copilot-pam-discrepancy">
+                    {aiCopilotTelemetry?.totalPamDiscrepancyFormatted || '0.000000 TON'}
+                  </span>{' '}
+                  • 6-Decimal Engine
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="admin-ai-auto-reply-toggle"
+              onClick={() =>
+                executeAdminAiCopilotAction(activeCopilotAction, !aiAutoReplyEnabled)
+              }
+              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] font-black transition-all cursor-pointer ${
+                aiAutoReplyEnabled
+                  ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300 shadow-[0_0_14px_rgba(16,185,129,0.25)]'
+                  : 'bg-slate-800/80 border-slate-600/50 text-slate-400'
+              }`}
+            >
+              <LuxuryIconBadge variant={aiAutoReplyEnabled ? 'emerald' : 'obsidian'} size="xs">
+                <VipConciergeHeadsetIcon size={12} />
+              </LuxuryIconBadge>
+              <span>
+                {aiAutoReplyEnabled
+                  ? tr(lang, 'پاسخ خودکار AI: روشن', 'AI Auto-Reply: ON')
+                  : tr(lang, 'پاسخ خودکار AI: خاموش', 'AI Auto-Reply: OFF')}
+              </span>
+            </button>
+          </div>
+
+          {/* Live 6-Decimal Executive Telemetry Strip */}
+          <div className="grid grid-cols-3 gap-1.5 text-center">
+            <div className="rounded-xl bg-[#090612]/90 border border-emerald-400/25 p-2">
+              <span className="text-[9px] text-emerald-300 block">
+                {tr(lang, 'سود خالص سایت (7-9%)', 'Net House Profit (7-9%)')}
+              </span>
+              <span
+                data-testid="copilot-net-house-profit-ton"
+                className="text-[10px] font-mono font-black text-emerald-400"
+                dir="ltr"
+              >
+                {(aiCopilotTelemetry?.netHouseProfitTon ?? 0).toFixed(6)} TON
+              </span>
+            </div>
+
+            <div className="rounded-xl bg-[#090612]/90 border border-amber-400/25 p-2">
+              <span className="text-[9px] text-amber-300 block">
+                {tr(lang, 'استخر جوایز (85%)', 'Prize Pool (85%)')}
+              </span>
+              <span
+                data-testid="copilot-locked-pool-85-ton"
+                className="text-[10px] font-mono font-black text-amber-300"
+                dir="ltr"
+              >
+                {(aiCopilotTelemetry?.lockedPrizePool85Ton ?? 0).toFixed(6)} TON
+              </span>
+            </div>
+
+            <div className="rounded-xl bg-[#090612]/90 border border-cyan-400/25 p-2">
+              <span className="text-[9px] text-cyan-300 block">
+                {tr(lang, 'ذخیره ۱,۰۰۰ دلاری (3%)', '$1K Reserve (3%)')}
+              </span>
+              <span
+                data-testid="copilot-welcome-reserve-progress"
+                className="text-[10px] font-mono font-black text-cyan-300"
+                dir="ltr"
+              >
+                {(
+                  aiCopilotTelemetry?.welcomeReserveFundedTon ??
+                  welcomeGrandLottery.fundedReserveTon ??
+                  0
+                ).toFixed(2)}{' '}
+                /{' '}
+                {(
+                  aiCopilotTelemetry?.welcomeReserveTargetTon ??
+                  welcomeGrandLottery.targetPoolTon ??
+                  200
+                ).toFixed(0)}{' '}
+                TON
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 text-center">
+            <div className="rounded-xl bg-[#090612]/80 border border-white/10 px-2.5 py-1.5 flex items-center justify-between">
+              <span className="text-[9px] text-slate-300">
+                {tr(lang, 'تعهد کش‌بک ۳٪:', '3% Cashback Liability:')}
+              </span>
+              <span className="text-[10px] font-mono font-bold text-amber-300" dir="ltr">
+                {(aiCopilotTelemetry?.unclaimedCashbackLiabilityTon ?? 0).toFixed(6)} TON
+              </span>
+            </div>
+            <div className="rounded-xl bg-[#090612]/80 border border-white/10 px-2.5 py-1.5 flex items-center justify-between">
+              <span className="text-[9px] text-slate-300">
+                {tr(lang, 'تعهد رفرال ۲٪:', '2% Referral Liability:')}
+              </span>
+              <span className="text-[10px] font-mono font-bold text-emerald-300" dir="ltr">
+                {(aiCopilotTelemetry?.unclaimedReferralLiabilityTon ?? 0).toFixed(6)} TON
+              </span>
+            </div>
+          </div>
+
+          {/* 4 One-Click Executive Action Buttons (Bespoke 3D SVG Icons inside LuxuryIconBadge — Zero Text Emojis) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              data-testid="copilot-btn-balance-sheet"
+              disabled={aiCopilotBusy}
+              onClick={() => executeAdminAiCopilotAction('BALANCE_SHEET')}
+              className={`flex items-center gap-2 p-2 rounded-xl border text-right transition-all cursor-pointer ${
+                activeCopilotAction === 'BALANCE_SHEET'
+                  ? 'bg-emerald-500/15 border-emerald-400/60 text-white shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                  : 'bg-[#090612]/90 hover:bg-white/5 border-white/10 text-slate-200'
+              }`}
+            >
+              <LuxuryIconBadge variant="emerald" size="xs">
+                <TelemetryChartIcon size={14} />
+              </LuxuryIconBadge>
+              <span className="text-[10px] font-black leading-tight">
+                {tr(
+                  lang,
+                  'گزارش جامع ترازنامه و سود خالص سایت',
+                  '5-Way Balance Sheet & Net Profit'
+                )}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="copilot-btn-pam-reconcile"
+              disabled={aiCopilotBusy}
+              onClick={() => executeAdminAiCopilotAction('PAM_RECONCILE')}
+              className={`flex items-center gap-2 p-2 rounded-xl border text-right transition-all cursor-pointer ${
+                activeCopilotAction === 'PAM_RECONCILE'
+                  ? 'bg-amber-500/15 border-amber-400/60 text-white shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                  : 'bg-[#090612]/90 hover:bg-white/5 border-white/10 text-slate-200'
+              }`}
+            >
+              <LuxuryIconBadge variant="gold" size="xs">
+                <SecurityAuditRadarIcon size={14} />
+              </LuxuryIconBadge>
+              <span className="text-[10px] font-black leading-tight">
+                {tr(
+                  lang,
+                  'ممیزی امنیتی کیف پولها (PAM Reconcile)',
+                  'PAM Wallet Security Audit'
+                )}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="copilot-btn-reserve-vaults"
+              disabled={aiCopilotBusy}
+              onClick={() => executeAdminAiCopilotAction('RESERVE_VAULTS')}
+              className={`flex items-center gap-2 p-2 rounded-xl border text-right transition-all cursor-pointer ${
+                activeCopilotAction === 'RESERVE_VAULTS'
+                  ? 'bg-amber-500/15 border-amber-400/60 text-white shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                  : 'bg-[#090612]/90 hover:bg-white/5 border-white/10 text-slate-200'
+              }`}
+            >
+              <LuxuryIconBadge variant="gold" size="xs">
+                <RoyalJackpotCrownIcon size={14} />
+              </LuxuryIconBadge>
+              <span className="text-[10px] font-black leading-tight">
+                {tr(
+                  lang,
+                  'وضعیت ذخیره لاتاری ۱۰۰۰ دلاری و ابرجکپات',
+                  '$1K Reserve & Monthly VIP Jackpot'
+                )}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="copilot-btn-syndicate-referral"
+              disabled={aiCopilotBusy}
+              onClick={() => executeAdminAiCopilotAction('SYNDICATE_REFERRAL')}
+              className={`flex items-center gap-2 p-2 rounded-xl border text-right transition-all cursor-pointer ${
+                activeCopilotAction === 'SYNDICATE_REFERRAL'
+                  ? 'bg-cyan-500/15 border-cyan-400/60 text-white shadow-[0_0_15px_rgba(6,182,212,0.2)]'
+                  : 'bg-[#090612]/90 hover:bg-white/5 border-white/10 text-slate-200'
+              }`}
+            >
+              <LuxuryIconBadge variant="cyan" size="xs">
+                <SquadSyndicateIcon size={14} />
+              </LuxuryIconBadge>
+              <span className="text-[10px] font-black leading-tight">
+                {tr(
+                  lang,
+                  'تحلیل عملکرد سندیکاها و شبکه رفرال',
+                  'Syndicate Squads & Referral Analytics'
+                )}
+              </span>
+            </button>
+          </div>
+
+          {/* Live AI Copilot Report Output Box */}
+          <div
+            data-testid="copilot-executive-report-box"
+            className="rounded-xl bg-[#07050E]/95 border border-amber-400/30 p-3 space-y-1.5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-black text-amber-300 truncate">
+                {aiCopilotTitle}
+              </span>
+              <span className="text-[9px] font-mono text-emerald-400 shrink-0" dir="ltr">
+                {aiCopilotBusy ? 'ANALYZING...' : 'LIVE 6-DEC AUDIT'}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-200 leading-relaxed whitespace-pre-wrap break-words">
+              {aiCopilotReport ||
+                tr(
+                  lang,
+                  'یکی از دکمه‌های اجرایی بالا را لمس کنید تا گزارش تحلیلی ترازنامه و تطبیق کیف پول‌های PAM با دقت ۶ رقم اعشار صادر شود.',
+                  'Tap one of the executive action buttons above to generate a 6-decimal PAM ledger and balance sheet report.'
+                )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* =====================================================================
           PHASE 3 SECTION 1 & 2: USERS CRM, BAN/FREEZE & MANUAL BALANCE ADJUSTMENT

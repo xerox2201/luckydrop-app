@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Sparkles,
   Gamepad2,
@@ -14,19 +14,25 @@ import {
   HelpCircle,
   FileText,
   Target,
-  Globe,
   Headset,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { useLottery, AppRoute } from '../context/LotteryContext';
 import { HapticEngine } from '../utils/telegramTma';
 import { LuckyDropLogo } from './LuckyDropLogo';
-import { tr } from '../utils/i18n';
+import {
+  tr,
+  GLOBAL_LANGUAGE_OPTIONS,
+  getLanguageOptionMeta,
+} from '../utils/i18n';
 import {
   TonCrystalIcon,
   TelegramStarIcon,
   VipTicketIcon,
   AmbassadorRocketIcon,
   CashbackEmeraldVaultIcon,
+  LuxuryFlagIcon,
 } from './ui/LuxuryIcons';
 
 export const Navbar: React.FC = () => {
@@ -55,16 +61,27 @@ export const Navbar: React.FC = () => {
   } = useLottery();
 
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
+  const langDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  const activeLangMeta = getLanguageOptionMeta(lang);
+
+  useEffect(() => {
+    if (!langMenuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (langDropdownRef.current && !langDropdownRef.current.contains(e.target as Node)) {
+        setLangMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [langMenuOpen]);
 
   const handleTabNav = (route: AppRoute) => {
     HapticEngine.selectionChanged();
     setMoreMenuOpen(false);
+    setLangMenuOpen(false);
     navigateTo(route);
-  };
-
-  const toggleLanguage = () => {
-    const nextLang = lang === 'EN' ? 'FA' : 'EN';
-    setLang(nextLang);
   };
 
   return (
@@ -91,19 +108,65 @@ export const Navbar: React.FC = () => {
               </div>
             </div>
 
-            {/* Bilingual Language Toggle Pill (FA | EN) */}
-            <button
-              type="button"
-              onClick={toggleLanguage}
-              title={tr(lang, 'تغییر زبان (FA / EN)', 'Switch Language (FA / EN)')}
-              data-testid="lang-toggle-btn"
-              className="relative z-20 flex items-center gap-0.5 px-1.5 py-1 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/15 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_6px_14px_rgba(0,0,0,0.45)] text-[10px] font-mono font-black text-white transition-all cursor-pointer shrink-0"
-            >
-              <Globe className="w-2.5 h-2.5 text-[#00F5D4]" />
-              <span className={lang !== 'EN' ? 'text-[#FFE066]' : 'text-slate-400'}>FA</span>
-              <span className="text-white/25">|</span>
-              <span className={lang === 'EN' ? 'text-[#00F5D4]' : 'text-slate-400'}>EN</span>
-            </button>
+            {/* Compact 5-Language Vector Flag Dropdown Menu */}
+            <div ref={langDropdownRef} className="relative z-30 shrink-0" dir="ltr">
+              <button
+                type="button"
+                onClick={() => {
+                  HapticEngine.selectionChanged();
+                  setMoreMenuOpen(false);
+                  setLangMenuOpen((prev) => !prev);
+                }}
+                title={tr(lang, 'تغییر زبان', 'Switch Language')}
+                data-testid="language-selector-dropdown"
+                className="flex items-center gap-1 px-2 py-1 rounded-2xl bg-gradient-to-b from-[#1A132F] to-[#0E0A1C] hover:from-[#231A3E] hover:to-[#130D26] border border-[#FFE066]/35 shadow-[inset_0_1px_2px_rgba(255,255,255,0.22),_0_6px_14px_rgba(0,0,0,0.5)] text-[10px] font-mono font-black text-white transition-all cursor-pointer shrink-0 active:scale-95"
+              >
+                <LuxuryFlagIcon lang={activeLangMeta.locale} size={15} />
+                <span className="text-[#FFE066] tracking-tight">{activeLangMeta.code}</span>
+                <ChevronDown
+                  className={`w-2.5 h-2.5 text-slate-300 transition-transform duration-150 ${
+                    langMenuOpen ? 'rotate-180 text-[#FFE066]' : ''
+                  }`}
+                />
+              </button>
+
+              {langMenuOpen && (
+                <div
+                  data-testid="language-selector-menu"
+                  className="absolute left-0 top-full mt-1.5 w-36 rounded-2xl p-1 bg-[#0C081A]/98 backdrop-blur-2xl border border-[#FFE066]/40 shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),_0_16px_36px_rgba(0,0,0,0.85)] space-y-0.5 z-50"
+                >
+                  {GLOBAL_LANGUAGE_OPTIONS.map((opt) => {
+                    const isSelected = activeLangMeta.locale === opt.locale;
+                    return (
+                      <button
+                        key={opt.locale}
+                        type="button"
+                        data-testid={`language-option-${opt.locale}`}
+                        onClick={() => {
+                          HapticEngine.selectionChanged();
+                          setLang(opt.code);
+                          setLangMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-[#FFE066]/25 to-emerald-500/20 border border-[#FFE066]/50 text-[#FFE066]'
+                            : 'text-slate-200 hover:bg-white/10 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <LuxuryFlagIcon lang={opt.locale} size={16} />
+                          <span className="truncate">{opt.nativeName}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="font-mono text-[9px] text-slate-400">{opt.code}</span>
+                          {isSelected && <Check className="w-3 h-3 text-emerald-400" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             {isTelegramAdmin && (
               <button

@@ -9,6 +9,12 @@ import {
 } from '../utils/provablyFair.ts';
 import { plinkoSoundEngine } from '../utils/plinkoSoundEngine.ts';
 import { tmaCurrencyToUsdt } from '../utils/telegramTma.ts';
+import {
+  TonCrystalIcon,
+  TelegramStarIcon,
+  LuxuryPlinkoPyramidIcon,
+  ProvablyFairShieldIcon,
+} from './ui/LuxuryIcons.tsx';
 
 interface TrailPoint {
   x: number;
@@ -1231,9 +1237,9 @@ export const PlinkoGameArena: React.FC<{
             type="button"
             onClick={() => navigateTo('transparency')}
             aria-label="Provably Fair Verifier"
-            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer"
+            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
           >
-            <span>🛡️</span>
+            <ProvablyFairShieldIcon size={14} />
             <span>#{provablyFairSeeds.nonce}</span>
           </button>
         </div>
@@ -1256,10 +1262,14 @@ export const PlinkoGameArena: React.FC<{
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
               data-testid="plinko-sidebar-balance"
-              className="text-sm shrink-0"
+              className="text-sm shrink-0 inline-flex items-center"
               title={formatActiveTmaAmount(balanceUsdt)}
             >
-              {activeTmaCurrency === 'TON' ? '💎' : '⭐'}
+              {activeTmaCurrency === 'TON' ? (
+                <TonCrystalIcon size={16} />
+              ) : (
+                <TelegramStarIcon size={16} />
+              )}
             </span>
             <input
               id="plinko-bet-input"
@@ -1373,6 +1383,7 @@ export const PlinkoGameArena: React.FC<{
             onClick={handleDropSingleBall}
             className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
+            <LuxuryPlinkoPyramidIcon size={17} />
             <span>Drop Ball</span>
             <span className="px-2 py-0.5 rounded-lg bg-black/25 text-xs font-mono tabular-nums">
               {formatCurrency(betAmount)}

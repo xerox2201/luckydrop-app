@@ -90,6 +90,7 @@ import {
 import {
   detectInitialLanguage,
   persistLanguageSelection,
+  normalizeLocale,
   tr,
 } from '../utils/i18n.ts';
 import type {
@@ -583,6 +584,7 @@ interface LotteryContextType {
     subject?: string;
     diagnosticType?: string | null;
     diagnosticMetadata?: string;
+    quickAskChip?: string | null;
   }) => Promise<{ ok: boolean; error?: string }>;
   markSupportMessagesRead: (
     role?: 'USER' | 'ADMIN',
@@ -3656,7 +3658,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setGrowthQuests(rawPayload.growthQuests);
         }
         void refreshSnapshot();
-      } else if (evtType === 'SUPPORT_REPLY') {
+      } else if (evtType === 'SUPPORT_REPLY' || evtType === 'SUPPORT_MESSAGES_UPDATED') {
         if (Array.isArray(rawPayload.messages)) {
           setMySupportMessages(rawPayload.messages);
         }
@@ -4455,6 +4457,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       subject?: string;
       diagnosticType?: string | null;
       diagnosticMetadata?: string;
+      quickAskChip?: string | null;
     }): Promise<{ ok: boolean; error?: string }> => {
       try {
         const headers = await getHeaders();
@@ -4466,13 +4469,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
             subject: params.subject,
             diagnosticType: params.diagnosticType || null,
             diagnosticMetadata: params.diagnosticMetadata || '',
+            quickAskChip: params.quickAskChip || null,
+            locale: normalizeLocale(lang),
           }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
           return {
             ok: false,
-            error: data.error || 'خطا در ارسال پیام به پشتیبانی VIP.',
+            error: data.error || tr(lang, 'خطا در ارسال پیام به پشتیبانی VIP.', 'Error sending message to VIP Support.'),
           };
         }
         if (Array.isArray(data.messages)) {
@@ -4483,11 +4488,11 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } catch {
         return {
           ok: false,
-          error: 'خطا در ارتباط شبکه با سرور پشتیبانی.',
+          error: tr(lang, 'خطا در ارتباط شبکه با سرور پشتیبانی.', 'Network error connecting to support server.'),
         };
       }
     },
-    [getHeaders, refreshSnapshot]
+    [getHeaders, refreshSnapshot, lang]
   );
 
   const markSupportMessagesRead = useCallback(

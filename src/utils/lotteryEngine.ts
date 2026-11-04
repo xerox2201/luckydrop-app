@@ -10,7 +10,18 @@ import {
 
 export { formatCurrency, truncateTonAddress, usdtToTmaCurrency, tmaCurrencyToUsdt };
 export type { ActiveTmaCurrency };
-export type CurrencyLang = 'FA' | 'EN' | 'ZH';
+export type CurrencyLang =
+  | 'FA'
+  | 'EN'
+  | 'RU'
+  | 'AR'
+  | 'ES'
+  | 'ZH'
+  | 'fa'
+  | 'en'
+  | 'ru'
+  | 'ar'
+  | 'es';
 export type Language = CurrencyLang;
 
 export interface ExchangeRates {

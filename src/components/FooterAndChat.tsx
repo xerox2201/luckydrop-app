@@ -1,14 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Headset,
   Send,
   X,
   ExternalLink,
-  Search,
-  ArrowUpRight,
-  Sparkles,
   CheckCircle2,
-  ShieldCheck,
   RefreshCw,
 } from 'lucide-react';
 import { useLottery } from '../context/LotteryContext';
@@ -16,9 +11,73 @@ import {
   buildQuickDiagnosticSupportAttachment,
   SupportDiagnosticChipType,
 } from '../services/securityGuard';
+import type { UserConciergeQuickChipId } from '../services/aiCopilotEngine';
 import { HapticEngine } from '../utils/telegramTma';
-import { LuckyDropLogo } from './LuckyDropLogo';
 import { tr } from '../utils/i18n';
+import {
+  LuxuryIconBadge,
+  AiNeuralCoreIcon,
+  TelemetryChartIcon,
+  WelcomeGiftVaultIcon,
+  SquadSyndicateIcon,
+  ProvablyFairShieldIcon,
+  VipConciergeHeadsetIcon,
+  RoyalJackpotCrownIcon,
+  TonCrystalIcon,
+  CashbackEmeraldVaultIcon,
+} from './ui/LuxuryIcons';
+
+interface QuickAskSuggestionSpec {
+  id: UserConciergeQuickChipId;
+  testId: string;
+  labelFa: string;
+  labelEn: string;
+  variant: 'gold' | 'emerald' | 'cyan' | 'obsidian';
+  renderIcon: () => React.ReactNode;
+}
+
+const VIP_QUICK_ASK_CHIPS: QuickAskSuggestionSpec[] = [
+  {
+    id: 'ACCOUNT_STATUS',
+    testId: 'concierge-chip-account-status',
+    labelFa: 'وضعیت حساب، کشبک و بلیتهای من',
+    labelEn: 'Account Status, Cashback & My Tickets',
+    variant: 'emerald',
+    renderIcon: () => <TelemetryChartIcon size={14} />,
+  },
+  {
+    id: 'WELCOME_1000_GUIDE',
+    testId: 'concierge-chip-welcome-1000',
+    labelFa: 'راهنمای بلیت رایگان ۱,۰۰۰ دلاری',
+    labelEn: 'Free $1,000 Welcome Ticket Guide',
+    variant: 'gold',
+    renderIcon: () => <WelcomeGiftVaultIcon size={14} />,
+  },
+  {
+    id: 'SYNDICATE_REFERRAL_GUIDE',
+    testId: 'concierge-chip-syndicate-referral',
+    labelFa: 'قوانین سندیکا و پورسانت ۲٪ دعوت',
+    labelEn: 'Syndicate Pools & 2% Referral Rules',
+    variant: 'cyan',
+    renderIcon: () => <SquadSyndicateIcon size={14} />,
+  },
+  {
+    id: 'PROVABLY_FAIR_AUDIT',
+    testId: 'concierge-chip-provably-fair',
+    labelFa: 'بررسی عدالت قرعهکشی (Provably Fair)',
+    labelEn: 'Provably Fair Cryptographic Audit',
+    variant: 'emerald',
+    renderIcon: () => <ProvablyFairShieldIcon size={14} />,
+  },
+  {
+    id: 'HUMAN_ESCALATION',
+    testId: 'concierge-chip-human-escalation',
+    labelFa: 'ارتباط مستقیم با مدیر ارشد (تیکت انسانی)',
+    labelEn: 'Direct Senior Admin Escalation (Human Ticket)',
+    variant: 'gold',
+    renderIcon: () => <VipConciergeHeadsetIcon size={14} />,
+  },
+];
 
 export const FooterAndChat: React.FC = () => {
   const {
@@ -43,6 +102,7 @@ export const FooterAndChat: React.FC = () => {
 
   const [messageInput, setMessageInput] = useState<string>('');
   const [sending, setSending] = useState<boolean>(false);
+  const [activeQuickAskId, setActiveQuickAskId] = useState<UserConciergeQuickChipId | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedDiagnosticChip, setSelectedDiagnosticChip] =
     useState<SupportDiagnosticChipType | null>(null);
@@ -107,6 +167,49 @@ export const FooterAndChat: React.FC = () => {
     document.body.removeChild(anchor);
   };
 
+  const handleQuickAskChipTap = async (chip: QuickAskSuggestionSpec) => {
+    if (sending) return;
+    HapticEngine.impactOccurred('medium');
+    setActiveQuickAskId(chip.id);
+    setSending(true);
+    setSendFeedback(null);
+
+    const textToSend = tr(lang, chip.labelFa, chip.labelEn);
+    const res = await sendUserSupportMessage({
+      message: textToSend,
+      subject: chip.labelFa,
+      quickAskChip: chip.id,
+      diagnosticType: null,
+      diagnosticMetadata: `QUICK_ASK_CHIP:${chip.id}`,
+    });
+
+    setSending(false);
+    setActiveQuickAskId(null);
+
+    if (res.ok) {
+      HapticEngine.notificationOccurred('success');
+      setSendFeedback({
+        type: 'ok',
+        text: tr(
+          lang,
+          'پاسخ آنی کنسیرج هوشمند VIP با ارقام دقیق ۶ رقم اعشاری حساب شما صادر شد.',
+          'Instant 24/7 VIP AI Concierge reply generated with your live 6-decimal account telemetry.'
+        ),
+      });
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } else {
+      HapticEngine.notificationOccurred('error');
+      setSendFeedback({
+        type: 'err',
+        text:
+          res.error ||
+          tr(lang, 'خطا در دریافت پاسخ کنسیرج هوشمند.', 'Failed to reach VIP AI Concierge.'),
+      });
+    }
+  };
+
   const handleQuickDiagnosticTap = (chipType: SupportDiagnosticChipType) => {
     HapticEngine.selectionChanged();
     const latestDeposit = deposits[0]
@@ -114,7 +217,7 @@ export const FooterAndChat: React.FC = () => {
           depositCode: deposits[0].depositCode,
           amountCrypto:
             deposits[0].amountCrypto ||
-            `${Number((Number(deposits[0].amountUsdt || 0) / 5.0).toFixed(2))} TON`,
+            `${Number((Number(deposits[0].amountUsdt || 0) / 5.0).toFixed(6))} TON`,
           amountUsdt: Number(deposits[0].amountUsdt || 0),
           status: deposits[0].status,
           txHash: deposits[0].txHash,
@@ -127,7 +230,7 @@ export const FooterAndChat: React.FC = () => {
             (withdrawals[0] as any).withdrawalCode || `WDR-${withdrawals[0].id}`,
           netAmountCrypto:
             withdrawals[0].netAmountCrypto ||
-            `${Number((Number(withdrawals[0].netAmountUsdt || withdrawals[0].grossAmountUsdt || 0) / 5.0).toFixed(2))} TON`,
+            `${Number((Number(withdrawals[0].netAmountUsdt || withdrawals[0].grossAmountUsdt || 0) / 5.0).toFixed(6))} TON`,
           netAmountUsdt: Number(withdrawals[0].netAmountUsdt || withdrawals[0].grossAmountUsdt || 0),
           status: withdrawals[0].status,
           destinationAddress:
@@ -168,7 +271,7 @@ export const FooterAndChat: React.FC = () => {
       message: cleanText,
       subject:
         diagnosticSubject ||
-        tr(lang, 'گفتگوی زنده پشتیبانی VIP', 'VIP Concierge Live Support'),
+        tr(lang, 'گفتگوی زنده کنسیرج هوشمند VIP', 'VIP AI Concierge Live Support'),
       diagnosticType: selectedDiagnosticChip,
       diagnosticMetadata,
     });
@@ -184,8 +287,8 @@ export const FooterAndChat: React.FC = () => {
         type: 'ok',
         text: tr(
           lang,
-          '✅ پیام شما ثبت شد. پاسخ کارشناسان پشتیبانی VIP به صورت زنده در همین گفتگو و از طریق تلگرام برای شما ارسال خواهد شد.',
-          '✅ Your message has been logged. Our VIP Concierge team will reply live here and via Telegram.'
+          'پیام شما ثبت شد و کنسیرج هوشمند ۲۴/۷ بر اساس اطلاعات لحظه‌ای کیف پول شما پاسخ داد.',
+          'Your message has been logged and answered live by our 24/7 VIP AI Concierge.'
         ),
       });
       setTimeout(() => {
@@ -214,28 +317,33 @@ export const FooterAndChat: React.FC = () => {
 
   // Chronological order (oldest at top, newest at bottom) for natural chat reading
   const orderedMessages = [...mySupportMessages].sort((a, b) => a.id - b.id);
+  const cleanBrandFooter = String(officialBrandTitle || '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .trim();
 
   return (
     <>
-      {/* FLOATING VIP CONCIERGE & LIVE SUPPORT BUTTON (WITH UNREAD RED BADGE) */}
+      {/* FLOATING VIP AI CONCIERGE & LIVE SUPPORT BUTTON (WITH BESPOKE 3D SVG BADGE) */}
       {!aiChatOpen && (
         <button
           type="button"
           onClick={handleOpenDrawer}
           data-testid="floating-vip-support-btn"
           aria-label={tr(lang, 'پشتیبانی زنده VIP', 'VIP Concierge & Live Support')}
-          className="fixed bottom-20 right-3.5 z-40 flex items-center gap-2 px-3 py-2.5 rounded-2xl luckydrop-obsidian-glass luckydrop-specular-gold text-white shadow-[0_12px_32px_rgba(0,0,0,0.85)] hover:scale-[1.03] active:scale-95 transition-all cursor-pointer"
+          className="fixed bottom-20 right-3.5 z-40 flex items-center gap-2 px-3 py-2 rounded-2xl luckydrop-obsidian-glass luckydrop-specular-gold text-white shadow-[0_12px_32px_rgba(0,0,0,0.85)] hover:scale-[1.03] active:scale-95 transition-all cursor-pointer"
         >
-          <div className="relative flex items-center justify-center w-7 h-7 rounded-xl bg-gradient-to-br from-[#FFE066] to-[#B8860B] text-slate-950 shadow-[0_0_15px_rgba(255,215,0,0.45)]">
-            <Headset className="w-4 h-4" />
+          <div className="relative">
+            <LuxuryIconBadge variant="gold" size="sm" glow>
+              <VipConciergeHeadsetIcon size={16} />
+            </LuxuryIconBadge>
             <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0B0716]" />
           </div>
           <div className="text-right leading-tight hidden min-[370px]:block">
             <div className="text-[10px] font-black text-[#FFE066]">
-              {tr(lang, 'پشتیبانی زنده VIP', 'VIP Support')}
+              {tr(lang, 'کنسیرج هوشمند VIP', '24/7 AI Concierge')}
             </div>
             <div className="text-[8px] font-mono text-slate-300">
-              {tr(lang, 'چت دوطرفه + تلگرام', '24/7 Live Concierge')}
+              {tr(lang, 'پاسخگویی آنی ۲۴/۷', 'Live Telemetry Support')}
             </div>
           </div>
 
@@ -250,32 +358,34 @@ export const FooterAndChat: React.FC = () => {
         </button>
       )}
 
-      {/* LUXURY VIP CONCIERGE & TWO-WAY LIVE SUPPORT DRAWER */}
+      {/* LUXURY 24/7 VIP AI CONCIERGE & TWO-WAY LIVE SUPPORT DRAWER */}
       {aiChatOpen && (
         <div
           data-testid="vip-support-drawer"
           className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
         >
-          <div className="w-full max-w-[440px] max-h-[88vh] rounded-t-3xl sm:rounded-3xl luckydrop-obsidian-glass luckydrop-specular-gold flex flex-col overflow-hidden shadow-[0_-16px_60px_rgba(0,0,0,0.92)]">
+          <div className="w-full max-w-[440px] max-h-[90vh] rounded-t-3xl sm:rounded-3xl luckydrop-obsidian-glass luckydrop-specular-gold flex flex-col overflow-hidden shadow-[0_-16px_60px_rgba(0,0,0,0.92)]">
             {/* Drawer Header */}
-            <div className="px-4 py-3.5 bg-gradient-to-r from-[#160F29] via-[#100A20] to-[#1A1130] border-b border-[#FFE066]/20 flex items-center justify-between gap-2">
+            <div className="px-4 py-3 bg-gradient-to-r from-[#160F29] via-[#100A20] to-[#1A1130] border-b border-[#FFE066]/20 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
-                <LuckyDropLogo size={32} />
+                <LuxuryIconBadge variant="gold" size="md" glow>
+                  <AiNeuralCoreIcon size={20} />
+                </LuxuryIconBadge>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-black text-white truncate">
                       {tr(
                         lang,
-                        '💎 کنسیرج VIP و پشتیبانی زنده',
-                        '💎 VIP Concierge & Live Support'
+                        'کنسیرج هوشمند ۲۴/۷ و پشتیبانی VIP',
+                        '24/7 VIP AI Concierge & Live Support'
                       )}
                     </span>
                     <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[8px] font-black">
-                      ONLINE
+                      AI + LIVE
                     </span>
                   </div>
-                  <div className="text-[10px] font-mono text-slate-400 truncate" dir="ltr">
-                    ID: {telegramUser.id} • {telegramUsername} • {tonBalance.toFixed(2)} TON
+                  <div className="text-[10px] font-mono text-slate-300 truncate" dir="ltr">
+                    ID: {telegramUser.id} • {telegramUsername} • {tonBalance.toFixed(6)} TON
                   </div>
                 </div>
               </div>
@@ -300,56 +410,67 @@ export const FooterAndChat: React.FC = () => {
               </div>
             </div>
 
-            {/* Mode B: Direct Telegram Support Banner Button */}
-            <div className="px-3.5 pt-2.5 pb-2 bg-[#0E091D] border-b border-white/10 flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-[10px] font-bold text-slate-200 truncate">
-                  {tr(
-                    lang,
-                    'پشتیبانی مستقیم تلگرام یا چت زنده داخل برنامه',
-                    'Direct Telegram Support or In-App Operator Chat'
-                  )}
-                </div>
-                <div className="text-[9px] font-mono text-[#00F5D4] truncate" dir="ltr">
-                  {supportTelegramUsername}
+            {/* Direct Telegram Support Banner Button */}
+            <div className="px-3.5 py-2 bg-[#0E091D] border-b border-white/10 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <LuxuryIconBadge variant="cyan" size="xs">
+                  <VipConciergeHeadsetIcon size={13} />
+                </LuxuryIconBadge>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold text-slate-200 truncate">
+                    {tr(
+                      lang,
+                      'پشتیبانی مستقیم تلگرام و کنسیرج هوشمند ۲۴/۷',
+                      'Direct Telegram Support & 24/7 AI Concierge'
+                    )}
+                  </div>
+                  <div className="text-[9px] font-mono text-[#00F5D4] truncate" dir="ltr">
+                    {supportTelegramUsername}
+                  </div>
                 </div>
               </div>
               <button
                 type="button"
                 data-testid="direct-telegram-support-btn"
                 onClick={handleOpenDirectTelegramSupport}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#0098EA] to-[#00F5D4] text-slate-950 font-black text-[10px] shadow-[0_0_16px_rgba(0,152,234,0.4)] hover:brightness-110 cursor-pointer"
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#0098EA] to-[#00F5D4] text-slate-950 font-black text-[10px] shadow-[0_0_16px_rgba(0,152,234,0.4)] hover:brightness-110 cursor-pointer"
               >
                 <span>
                   {tr(
                     lang,
-                    '✈️ چت مستقیم در تلگرام',
-                    '✈️ Open Telegram Support'
+                    'چت مستقیم در تلگرام',
+                    'Open Telegram Support'
                   )}
                 </span>
                 <ExternalLink className="w-3 h-3" />
               </button>
             </div>
 
-            {/* Mode A: Persistent Two-Way Operator Chat Thread */}
+            {/* Persistent Two-Way AI Concierge & Operator Chat Thread */}
             <div
               data-testid="support-messages-list"
-              className="flex-1 overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden p-3.5 space-y-2.5 min-h-[220px] max-h-[340px] luckydrop-microgrid-watermark"
+              className="flex-1 overflow-y-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden p-3 space-y-2.5 min-h-[190px] max-h-[290px] luckydrop-microgrid-watermark"
             >
               {/* Welcome System Card */}
               <div className="p-3 rounded-2xl bg-[#130D26]/95 border border-[#FFE066]/25 text-[11px] text-slate-200 leading-relaxed">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-black text-[#FFE066] flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-[#00F5D4]" />
-                    {tr(lang, 'اپراتور ارشد LuckyDrop VIP', 'LuckyDrop VIP Concierge')}
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-black text-[#FFE066] flex items-center gap-1.5">
+                    <LuxuryIconBadge variant="gold" size="xs">
+                      <AiNeuralCoreIcon size={13} />
+                    </LuxuryIconBadge>
+                    <span>
+                      {tr(lang, 'کنسیرج هوشمند LuckyDrop VIP', 'LuckyDrop VIP AI Concierge')}
+                    </span>
                   </span>
-                  <span className="text-[9px] font-mono text-emerald-400">24/7 VIP Concierge</span>
+                  <span className="text-[9px] font-mono text-emerald-400" dir="ltr">
+                    6-DEC TELEMETRY
+                  </span>
                 </div>
                 <p className="text-slate-300 text-[11px]" data-testid="vip-welcome-greeting">
                   {tr(
                     lang,
-                    'به کنسیرج اختصاصی LuckyDrop خوش آمدید ✨ کارشناسان پشتیبانی ما به صورت ۲۴ ساعته آماده پاسخگویی و راهنمایی شما هستند.',
-                    'Welcome to the exclusive LuckyDrop VIP Concierge ✨ Our support specialists are available 24/7 to assist and guide you.'
+                    'به کنسیرج هوشمند ۲۴ ساعته LuckyDrop خوش آمدید. یکی از دکمه‌های استعلام آنی زیر را لمس کنید یا سوال خود را بنویسید تا وضعیت دقیق حساب شما با دقت ۶ رقم اعشار بررسی شود.',
+                    'Welcome to the 24/7 LuckyDrop VIP AI Concierge. Tap any quick-ask chip below or write your question for an instant 6-decimal telemetry check.'
                   )}
                 </p>
               </div>
@@ -360,19 +481,24 @@ export const FooterAndChat: React.FC = () => {
                   className="p-3 rounded-2xl bg-[#16102C]/95 border border-[#FFE066]/40 text-[11px] text-amber-50 leading-relaxed shadow-[0_0_20px_rgba(255,215,0,0.1)]"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-black text-[#FFE066]">
-                      {tr(
-                        lang,
-                        '🎁 راهنمای جوایز و بلیت‌ها',
-                        '🎁 Prizes & Tickets Guide'
-                      )}
+                    <span className="font-black text-[#FFE066] flex items-center gap-1.5">
+                      <LuxuryIconBadge variant="gold" size="xs">
+                        <WelcomeGiftVaultIcon size={12} />
+                      </LuxuryIconBadge>
+                      <span>
+                        {tr(
+                          lang,
+                          'راهنمای جوایز و بلیت‌ها',
+                          'Prizes & Tickets Guide'
+                        )}
+                      </span>
                     </span>
                     <button
                       type="button"
                       onClick={() => setInstantGuideBanner(null)}
                       className="text-[10px] text-amber-200/70 hover:text-white cursor-pointer"
                     >
-                      ✕
+                      ×
                     </button>
                   </div>
                   <p>{instantGuideBanner}</p>
@@ -380,16 +506,17 @@ export const FooterAndChat: React.FC = () => {
               )}
 
               {orderedMessages.length === 0 ? (
-                <div className="py-6 text-center text-[11px] text-slate-400">
+                <div className="py-4 text-center text-[11px] text-slate-400">
                   {tr(
                     lang,
-                    'هنوز تیکتی ثبت نکرده‌اید. از دکمه‌های عیب‌یابی سریع پایین یا کادر پیام استفاده کنید.',
-                    'No support tickets yet. Tap a quick diagnostic chip below or type your message.'
+                    'برای دریافت گزارش آنی موجودی، کش‌بک، بلیت ۱,۰۰۰ دلاری یا سندیکا، یکی از کلیدهای هوشمند زیر را لمس کنید.',
+                    'Tap a smart concierge chip below or type your message to get started.'
                   )}
                 </div>
               ) : (
                 orderedMessages.map((msg) => {
                   const isUser = String(msg.senderRole || '').toUpperCase() === 'USER';
+                  const cleanMessageBody = String(msg.message || '');
                   return (
                     <div
                       key={msg.id}
@@ -402,27 +529,50 @@ export const FooterAndChat: React.FC = () => {
                     >
                       <div className="flex items-center justify-between gap-2 mb-1 text-[10px]">
                         <span
-                          className={`font-black ${
+                          className={`font-black flex items-center gap-1.5 ${
                             isUser ? 'text-[#00F5D4]' : 'text-[#FFE066]'
                           }`}
                         >
-                          {isUser
-                            ? `${msg.senderName} (شما)`
-                            : `👑 ${msg.senderName || 'پشتیبانی رسمی LuckyDrop'}`}
+                          {!isUser && (
+                            <LuxuryIconBadge variant="gold" size="xs">
+                              {String(msg.senderName || '').includes('AI') ||
+                              String(msg.senderName || '').includes('هوشمند') ? (
+                                <AiNeuralCoreIcon size={12} />
+                              ) : (
+                                <RoyalJackpotCrownIcon size={12} />
+                              )}
+                            </LuxuryIconBadge>
+                          )}
+                          <span>
+                            {isUser
+                              ? `${msg.senderName} (${tr(lang, 'شما', 'You', 'Вы', 'أنت', 'Tú')})`
+                              : String(msg.senderName || '').includes('AI') ||
+                                String(msg.senderName || '').includes('هوشمند') ||
+                                !msg.senderName
+                              ? tr(
+                                  lang,
+                                  'کنسیرج هوشمند VIP',
+                                  '24/7 VIP AI Concierge',
+                                  '24/7 VIP ИИ-Консьерж',
+                                  'كونسيرج الذكاء الاصطناعي VIP 24/7',
+                                  'Conserje IA VIP 24/7'
+                                )
+                              : msg.senderName}
+                          </span>
                         </span>
                         <span className="font-mono text-[9px] text-slate-400" dir="ltr">
                           {msg.createdAt}
                         </span>
                       </div>
                       <div className="whitespace-pre-wrap break-words text-[11px]">
-                        {msg.message}
+                        {cleanMessageBody}
                       </div>
                       {msg.diagnosticMetadata && (
                         <div
                           className="mt-2 px-2 py-1 rounded-lg bg-black/40 border border-white/10 font-mono text-[9px] text-slate-300 break-all"
                           dir="ltr"
                         >
-                          📎 {msg.diagnosticMetadata}
+                          {msg.diagnosticMetadata}
                         </div>
                       )}
                     </div>
@@ -432,92 +582,136 @@ export const FooterAndChat: React.FC = () => {
               <div ref={chatEndRef} />
             </div>
 
-            {/* Directive 4: 3 One-Tap Quick Diagnostic Chips */}
-            <div className="px-3.5 pt-2.5 pb-1.5 bg-[#0B0716] border-t border-white/10">
-              <div className="text-[9px] font-bold text-slate-400 mb-1.5 flex items-center justify-between">
-                <span>
-                  {tr(
-                    lang,
-                    '⚡ عیب‌یابی هوشمند ۱-کلیکی (پیوست خودکار اطلاعات حساب):',
-                    '⚡ 1-Tap Quick Diagnostics (Auto-attaches account telemetry):'
-                  )}
+            {/* 5 VIP AI Concierge Quick-Ask Suggestion Chips (Bespoke SVG Icons inside LuxuryIconBadge — Zero Text Emojis) */}
+            <div
+              data-testid="vip-concierge-quick-ask-section"
+              className="px-3.5 pt-2.5 pb-2 bg-[#0B0716] border-t border-white/10 space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <LuxuryIconBadge variant="gold" size="xs">
+                    <AiNeuralCoreIcon size={12} />
+                  </LuxuryIconBadge>
+                  <span className="text-[10px] font-black text-[#FFE066]">
+                    {tr(
+                      lang,
+                      'پاسخگوی هوشمند ۲۴/۷ (انتخاب سریع موضوع):',
+                      '24/7 VIP AI Concierge Quick-Ask:'
+                    )}
+                  </span>
+                </div>
+                <span className="text-[8px] font-mono text-emerald-400" dir="ltr">
+                  LIVE 6-DECIMAL
                 </span>
-                {selectedDiagnosticChip && (
-                  <span className="text-[#00F5D4] font-mono text-[9px]">
-                    ✓ {selectedDiagnosticChip}
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                <button
-                  type="button"
-                  data-testid="diag-chip-deposit"
-                  onClick={() => handleQuickDiagnosticTap('DEPOSIT_TON')}
-                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-xl border text-[10px] font-black transition-all cursor-pointer ${
-                    selectedDiagnosticChip === 'DEPOSIT_TON'
-                      ? 'bg-[#00F5D4]/20 border-[#00F5D4] text-[#00F5D4]'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
-                  }`}
-                >
-                  <Search className="w-3 h-3 shrink-0 text-[#00F5D4]" />
-                  <span className="truncate">
-                    {tr(lang, '🔍 پیگیری واریز TON', '🔍 Track Deposit')}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="diag-chip-withdraw"
-                  onClick={() => handleQuickDiagnosticTap('WITHDRAWAL')}
-                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-xl border text-[10px] font-black transition-all cursor-pointer ${
-                    selectedDiagnosticChip === 'WITHDRAWAL'
-                      ? 'bg-[#FFE066]/20 border-[#FFE066] text-[#FFE066]'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
-                  }`}
-                >
-                  <ArrowUpRight className="w-3 h-3 shrink-0 text-[#FFE066]" />
-                  <span className="truncate">
-                    {tr(lang, '💸 پیگیری برداشت', '💸 Track Withdraw')}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="diag-chip-rtp"
-                  onClick={() => handleQuickDiagnosticTap('FAIRNESS_RTP')}
-                  className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-xl border text-[10px] font-black transition-all cursor-pointer ${
-                    selectedDiagnosticChip === 'FAIRNESS_RTP'
-                      ? 'bg-[#FFE066]/20 border-[#FFE066] text-[#FFE066]'
-                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
-                  }`}
-                >
-                  <Sparkles className="w-3 h-3 shrink-0 text-[#FFE066]" />
-                  <span className="truncate">
-                    {tr(lang, '🎁 راهنمای جوایز و بلیت‌ها', '🎁 Prizes & Tickets')}
-                  </span>
-                </button>
               </div>
 
-              {diagnosticMetadata && (
-                <div
-                  data-testid="support-attached-metadata-preview"
-                  className="mt-1.5 px-2.5 py-1 rounded-lg bg-[#140E28] border border-[#00F5D4]/30 flex items-center justify-between gap-2 text-[9px] font-mono text-[#00F5D4]"
-                  dir="ltr"
-                >
-                  <span className="truncate">📎 {diagnosticMetadata}</span>
+              <div className="grid grid-cols-1 gap-1.5 max-h-[152px] overflow-y-auto no-scrollbar pr-0.5">
+                {VIP_QUICK_ASK_CHIPS.map((chip) => {
+                  const isBusy = sending && activeQuickAskId === chip.id;
+                  return (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      disabled={sending}
+                      data-testid={chip.testId}
+                      onClick={() => handleQuickAskChipTap(chip)}
+                      className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#16102A] to-[#0F0A1E] hover:from-[#1F1638] hover:to-[#150E2A] border border-amber-400/25 hover:border-amber-400/60 text-right transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <LuxuryIconBadge variant={chip.variant} size="xs">
+                          {chip.renderIcon()}
+                        </LuxuryIconBadge>
+                        <span className="text-[10px] font-extrabold text-slate-100 truncate">
+                          {tr(lang, chip.labelFa, chip.labelEn)}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono text-amber-300/90 shrink-0" dir="ltr">
+                        {isBusy ? '...' : 'ASK AI'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 3 One-Tap Quick Diagnostic Attachment Chips (Zero Text Emojis) */}
+              <div className="pt-1 border-t border-white/10">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedDiagnosticChip(null);
-                      setDiagnosticMetadata('');
-                      setDiagnosticSubject('');
-                    }}
-                    className="text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                    data-testid="diag-chip-deposit"
+                    onClick={() => handleQuickDiagnosticTap('DEPOSIT_TON')}
+                    className={`flex items-center justify-center gap-1.5 px-2 py-1 rounded-xl border text-[9px] font-black transition-all cursor-pointer ${
+                      selectedDiagnosticChip === 'DEPOSIT_TON'
+                        ? 'bg-[#00F5D4]/20 border-[#00F5D4] text-[#00F5D4]'
+                        : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
+                    }`}
                   >
-                    ✕
+                    <LuxuryIconBadge variant="cyan" size="xs">
+                      <TonCrystalIcon size={11} />
+                    </LuxuryIconBadge>
+                    <span className="truncate">
+                      {tr(lang, 'پیگیری واریز TON', 'Track Deposit')}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="diag-chip-withdraw"
+                    onClick={() => handleQuickDiagnosticTap('WITHDRAWAL')}
+                    className={`flex items-center justify-center gap-1.5 px-2 py-1 rounded-xl border text-[9px] font-black transition-all cursor-pointer ${
+                      selectedDiagnosticChip === 'WITHDRAWAL'
+                        ? 'bg-[#FFE066]/20 border-[#FFE066] text-[#FFE066]'
+                        : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
+                    }`}
+                  >
+                    <LuxuryIconBadge variant="gold" size="xs">
+                      <CashbackEmeraldVaultIcon size={11} />
+                    </LuxuryIconBadge>
+                    <span className="truncate">
+                      {tr(lang, 'پیگیری برداشت', 'Track Withdraw')}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="diag-chip-rtp"
+                    onClick={() => handleQuickDiagnosticTap('FAIRNESS_RTP')}
+                    className={`flex items-center justify-center gap-1.5 px-2 py-1 rounded-xl border text-[9px] font-black transition-all cursor-pointer ${
+                      selectedDiagnosticChip === 'FAIRNESS_RTP'
+                        ? 'bg-[#FFE066]/20 border-[#FFE066] text-[#FFE066]'
+                        : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-200'
+                    }`}
+                  >
+                    <LuxuryIconBadge variant="emerald" size="xs">
+                      <WelcomeGiftVaultIcon size={11} />
+                    </LuxuryIconBadge>
+                    <span className="truncate">
+                      {tr(lang, 'راهنمای جوایز', 'Prizes Guide')}
+                    </span>
                   </button>
                 </div>
-              )}
+
+                {diagnosticMetadata && (
+                  <div
+                    data-testid="support-attached-metadata-preview"
+                    className="mt-1.5 px-2.5 py-1 rounded-lg bg-[#140E28] border border-[#00F5D4]/30 flex items-center justify-between gap-2 text-[9px] font-mono text-[#00F5D4]"
+                    dir="ltr"
+                  >
+                    <span className="truncate">{diagnosticMetadata}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDiagnosticChip(null);
+                        setDiagnosticMetadata('');
+                        setDiagnosticSubject('');
+                      }}
+                      className="text-slate-400 hover:text-white shrink-0 cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {sendFeedback && (
@@ -546,16 +740,16 @@ export const FooterAndChat: React.FC = () => {
                 onChange={(e) => setMessageInput(e.target.value)}
                 placeholder={tr(
                   lang,
-                  'پیام خود را برای اپراتور پشتیبانی بنویسید...',
-                  'Write your message to VIP Support Operator...'
+                  'سوال خود را از کنسیرج هوشمند یا مدیر ارشد بپرسید...',
+                  'Ask VIP AI Concierge or Senior Support Operator...'
                 )}
-                className="flex-1 bg-[#140F26] border border-white/15 focus:border-[#FFE066]/60 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none"
+                className="flex-1 bg-[#140F26] border border-white/15 focus:border-[#FFE066]/60 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none"
               />
               <button
                 type="submit"
                 data-testid="support-send-submit-btn"
                 disabled={sending || !messageInput.trim()}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] to-[#D4AF37] text-slate-950 font-black text-xs flex items-center gap-1.5 disabled:opacity-40 cursor-pointer shadow-[0_0_15px_rgba(255,215,0,0.3)]"
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#FFE066] to-[#D4AF37] text-slate-950 font-black text-xs flex items-center gap-1.5 disabled:opacity-40 cursor-pointer shadow-[0_0_15px_rgba(255,215,0,0.3)]"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>{sending ? '...' : tr(lang, 'ارسال', 'Send')}</span>
@@ -564,7 +758,7 @@ export const FooterAndChat: React.FC = () => {
 
             {/* Proprietary Official Brand Footer inside Drawer */}
             <div className="px-3.5 py-1.5 bg-[#06040C] border-t border-white/5 text-center text-[9px] font-mono text-slate-400 truncate">
-              {officialBrandTitle}
+              {cleanBrandFooter || 'LuckyDrop Official • Verified Provably Fair Web3 Protocol'}
             </div>
           </div>
         </div>

@@ -10,6 +10,14 @@ import {
 import { crashSoundEngine } from '../utils/crashSoundEngine.ts';
 import { generateDeterministicUuid } from '../services/pamWalletEngine.ts';
 import { tmaCurrencyToUsdt } from '../utils/telegramTma.ts';
+import {
+  TonCrystalIcon,
+  TelegramStarIcon,
+  LuxuryCrashMultiplierIcon,
+  LuxuryMineBombIcon,
+  MinesEmeraldGemIcon,
+  ProvablyFairShieldIcon,
+} from './ui/LuxuryIcons.tsx';
 
 export type CrashPhase = 'COUNTDOWN' | 'IN_PROGRESS' | 'CRASHED';
 
@@ -1352,9 +1360,9 @@ export const CrashGameArena: React.FC<{
             type="button"
             onClick={() => navigateTo('transparency')}
             aria-label="Provably Fair Verifier"
-            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer"
+            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
           >
-            <span>🛡️</span>
+            <ProvablyFairShieldIcon size={14} />
             <span>#{roundNonceRef.current}</span>
           </button>
         </div>
@@ -1418,8 +1426,9 @@ export const CrashGameArena: React.FC<{
               data-testid="crash-crashed-hud"
               className="bg-rose-950/90 border border-rose-500/60 rounded-2xl px-5 py-3 text-center space-y-1 shadow-xl"
             >
-              <div className="text-[10px] font-mono font-bold text-rose-300 uppercase tracking-wider">
-                💥 CRASHED AT
+              <div className="text-[10px] font-mono font-bold text-rose-300 uppercase tracking-wider inline-flex items-center justify-center gap-1">
+                <LuxuryMineBombIcon size={13} />
+                <span>CRASHED AT</span>
               </div>
               <div className="text-3xl font-extrabold font-mono text-rose-400 tabular-nums leading-none">
                 {currentCrashPoint.toFixed(2)}×
@@ -1430,9 +1439,12 @@ export const CrashGameArena: React.FC<{
           {playerWinAmountUsdt !== null && playerCashedOutAt !== null && (
             <div
               data-testid="crash-player-win-banner"
-              className="mt-3 px-4 py-2 rounded-xl bg-[#052e16]/95 border border-[#00f59b] text-white text-xs font-mono font-bold tabular-nums"
+              className="mt-3 px-4 py-2 rounded-xl bg-[#052e16]/95 border border-[#00f59b] text-white text-xs font-mono font-bold tabular-nums inline-flex items-center gap-1.5"
             >
-              🎉 Cashed Out @ {playerCashedOutAt.toFixed(2)}x (+{formatActiveTmaAmount(playerWinAmountUsdt)})
+              <MinesEmeraldGemIcon size={15} />
+              <span>
+                Cashed Out @ {playerCashedOutAt.toFixed(2)}x (+{formatActiveTmaAmount(playerWinAmountUsdt)})
+              </span>
             </div>
           )}
         </div>
@@ -1448,10 +1460,14 @@ export const CrashGameArena: React.FC<{
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
               data-testid="crash-sidebar-balance"
-              className="text-sm shrink-0"
+              className="text-sm shrink-0 inline-flex items-center"
               title={formatActiveTmaAmount(balanceUsdt)}
             >
-              {activeTmaCurrency === 'TON' ? '💎' : '⭐'}
+              {activeTmaCurrency === 'TON' ? (
+                <TonCrystalIcon size={16} />
+              ) : (
+                <TelegramStarIcon size={16} />
+              )}
             </span>
             <input
               id="crash-bet-input"
@@ -1560,6 +1576,7 @@ export const CrashGameArena: React.FC<{
               onClick={handlePrimaryActionClick}
               className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
+              <LuxuryCrashMultiplierIcon size={17} />
               <span>
                 {phase === 'COUNTDOWN'
                   ? betPlacedForCurrentRound
@@ -1581,9 +1598,10 @@ export const CrashGameArena: React.FC<{
               data-testid="crash-launch-now-btn"
               onClick={handleSkipCountdownAndLaunchNow}
               title="Launch Flight Now"
-              className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer"
+              className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer inline-flex items-center gap-1 active:scale-95 transition-transform duration-200"
             >
-              🚀Now
+              <LuxuryCrashMultiplierIcon size={15} />
+              <span>Now</span>
             </button>
           )}
         </div>
@@ -1641,7 +1659,9 @@ export const CrashGameArena: React.FC<{
                     {playerCashedOutAt.toFixed(2)}x
                   </span>
                 ) : phase === 'CRASHED' ? (
-                  <span className="text-rose-400 font-bold text-[10px]">💥</span>
+                  <span className="text-rose-400 font-bold text-[10px] inline-flex items-center justify-center">
+                    <LuxuryMineBombIcon size={13} />
+                  </span>
                 ) : (
                   <span className="text-purple-300 text-[10px]">Flying</span>
                 )}
@@ -1694,7 +1714,9 @@ export const CrashGameArena: React.FC<{
                       {peer.cashedOutAt.toFixed(2)}x
                     </span>
                   ) : isCrashedLoss ? (
-                    <span className="text-rose-400 text-[10px]">💥</span>
+                    <span className="text-rose-400 text-[10px] inline-flex items-center justify-center">
+                      <LuxuryMineBombIcon size={12} />
+                    </span>
                   ) : phase === 'IN_PROGRESS' ? (
                     <span className="text-amber-300/80 text-[10px]">Flying</span>
                   ) : (

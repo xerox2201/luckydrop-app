@@ -29,7 +29,7 @@ import { useLottery } from '../context/LotteryContext';
 import { generateBulkQuickPickSlips, formatCountdownHMS } from '../utils/lotteryEngine';
 import { HapticEngine } from '../utils/telegramTma';
 import { LuckyDropLogo } from './LuckyDropLogo';
-import { tr } from '../utils/i18n';
+import { tr, localizeServerText } from '../utils/i18n';
 import {
   LuxuryIconBadge,
   TonCrystalIcon,
@@ -273,14 +273,14 @@ export const LobbyView: React.FC = () => {
       setPurchaseToast(
         tr(
           lang,
-          `🎉 ${qty} بلیت در دور ${activeLotterySpec.roundCode} صادر شد!`,
-          `🎉 ${qty} ticket(s) minted in round ${activeLotterySpec.roundCode}!`
+          `${qty} بلیت در دور ${activeLotterySpec.roundCode} صادر شد!`,
+          `${qty} ticket(s) minted in round ${activeLotterySpec.roundCode}!`
         )
       );
       setTimeout(() => setPurchaseToast(null), 4000);
     } else if (res.error) {
       HapticEngine.notificationOccurred('error');
-      setPurchaseToast(`⚠️ ${res.error}`);
+      setPurchaseToast(localizeServerText(lang, res.error));
       setTimeout(() => setPurchaseToast(null), 4000);
     }
   };
@@ -453,7 +453,7 @@ export const LobbyView: React.FC = () => {
               }`}
             >
               {tab.icon}
-              <span>{lang === 'EN' ? tab.labelEn : tab.labelFa}</span>
+              <span>{tr(lang, tab.labelFa, tab.labelEn)}</span>
               {tab.badge && (
                 <span
                   className={`absolute -top-1 -left-1 px-1.5 py-0.5 rounded-full font-mono text-[9px] leading-none font-black shadow-md flex items-center justify-center ${
@@ -496,7 +496,7 @@ export const LobbyView: React.FC = () => {
                   >
                     <span className="w-2 h-2 rounded-full bg-[#00F5D4] animate-pulse" />
                     <span>
-                      {lang === 'EN' ? r.titleEn || cleanTitleFa(r.titleFa) : cleanTitleFa(r.titleFa)}
+                      {localizeServerText(lang, cleanTitleFa(r.titleFa))}
                     </span>
                     <span className="font-mono text-[10px] text-[#FFE066]">{r.roundCode}</span>
                   </button>
@@ -535,11 +535,7 @@ export const LobbyView: React.FC = () => {
             {/* Center Jackpot Display */}
             <div className="relative z-10 text-center py-1">
               <div className="text-xs font-bold text-slate-300 mb-1">
-                {lang === 'EN'
-                  ? activeRoundObj?.titleEn ||
-                    activeLotterySpec.titleEn ||
-                    cleanTitleFa(activeLotterySpec.titleFa)
-                  : cleanTitleFa(activeLotterySpec.titleFa)}
+                {localizeServerText(lang, cleanTitleFa(activeLotterySpec.titleFa))}
               </div>
               <div
                 data-testid="hero-live-jackpot-amount"
@@ -729,7 +725,7 @@ export const LobbyView: React.FC = () => {
                           {t.ticketCode}
                         </span>
                         <span className="text-[10px] font-bold text-emerald-300">
-                          {t.status === 'WON' ? tr(lang, '🏆 برنده', '🏆 WON') : tr(lang, 'فعال', 'ACTIVE')}
+                          {t.status === 'WON' ? tr(lang, 'برنده', 'WON') : tr(lang, 'فعال', 'ACTIVE')}
                         </span>
                       </div>
                       <div className="flex items-center gap-1" dir="ltr">
@@ -780,7 +776,8 @@ export const LobbyView: React.FC = () => {
                 onClick={() => openLatestDrawCeremony(latestCompletedDraw)}
                 className="min-h-[42px] shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 font-black text-[11px] shadow-[inset_0_2px_4px_rgba(255,255,255,0.6)] active:scale-95 transition-all cursor-pointer"
               >
-                <span>{tr(lang, '🎬 مراسم قرعه‌کشی', '🎬 Watch Draw')}</span>
+                <RoyalJackpotCrownIcon size={13} />
+                <span>{tr(lang, 'مراسم قرعه‌کشی', 'Watch Draw')}</span>
               </button>
             </div>
 
@@ -1819,10 +1816,9 @@ export const LobbyView: React.FC = () => {
                     Math.round((q.currentProgress / Math.max(1, q.targetProgress)) * 100)
                   );
                   const isBusy = claimingQuestId === q.id;
-                  const cleanTitle = (lang === 'EN' ? q.titleEn : q.titleFa).replace(
-                    /^[^\w\u0600-\u06FF]+/,
-                    ''
-                  );
+                  const cleanFa = String(q.titleFa || '').replace(/^[^\w\u0600-\u06FF]+/, '').trim();
+                  const cleanEn = String(q.titleEn || '').replace(/^[^\w\u0600-\u06FF]+/, '').trim();
+                  const cleanTitle = tr(lang, cleanFa, cleanEn);
                   return (
                     <div
                       key={q.id}
@@ -2331,7 +2327,9 @@ export const LobbyView: React.FC = () => {
             <div className="rounded-2xl p-3 bg-black/50 border border-emerald-400/30 space-y-1 text-[11px]">
               <div className="flex items-center justify-between text-slate-300">
                 <span>{tr(lang, 'دور هدف:', 'Target Round:')}</span>
-                <span className="font-mono font-bold text-white">{activeLotterySpec.titleFa}</span>
+                <span className="font-mono font-bold text-white">
+                  {localizeServerText(lang, cleanTitleFa(activeLotterySpec.titleFa))}
+                </span>
               </div>
               <div className="flex items-center justify-between text-slate-300">
                 <span>{tr(lang, 'مبلغ پرداختی:', 'Total Cost:')}</span>

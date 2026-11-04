@@ -12,6 +12,14 @@ import {
   formatTmaCurrency,
 } from '../utils/telegramTma.ts';
 import { plinkoSoundEngine } from '../utils/plinkoSoundEngine.ts';
+import {
+  TonCrystalIcon,
+  TelegramStarIcon,
+  LuxuryDiceCubeIcon,
+  LuxuryMineBombIcon,
+  MinesEmeraldGemIcon,
+  ProvablyFairShieldIcon,
+} from './ui/LuxuryIcons.tsx';
 
 interface MinesGameArenaProps {
   onRoundSettled?: (evaluation: MiniGameEvaluationResult, debitUuid: string) => void;
@@ -235,10 +243,14 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
 
         {/* Top-Right: Floating Translucent Pill for Gems & Nonce */}
         <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono tabular-nums">
-          <span className="text-[#00f59b] font-bold">
-            💎 {25 - minesCount - revealedTiles.length}
+          <span className="text-[#00f59b] font-bold inline-flex items-center gap-1">
+            <MinesEmeraldGemIcon size={14} />
+            <span>{25 - minesCount - revealedTiles.length}</span>
           </span>
-          <span className="text-purple-300/60">#{provablyFairSeeds.nonce}</span>
+          <span className="text-purple-300/60 inline-flex items-center gap-0.5">
+            <ProvablyFairShieldIcon size={12} />
+            <span>#{provablyFairSeeds.nonce}</span>
+          </span>
         </div>
 
         {/* Center 5x5 Tactile 3D Vault Grid */}
@@ -272,11 +284,14 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
                 }`}
               >
                 {isExploded ? (
-                  <span className="text-lg animate-bounce">💥</span>
+                  <LuxuryMineBombIcon size={24} className="animate-bounce" />
                 ) : isRevealedSafe ? (
-                  <span className="text-lg">💎</span>
+                  <MinesEmeraldGemIcon
+                    size={24}
+                    className="scale-105 transition-transform duration-200"
+                  />
                 ) : isUnrevealedMineAfterEnd ? (
-                  <span className="text-sm opacity-80">💣</span>
+                  <LuxuryMineBombIcon size={18} className="opacity-80" />
                 ) : (
                   <span className="w-2 h-2 rounded-full bg-purple-400/35" />
                 )}
@@ -289,20 +304,24 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
         {cashedOutWin && (
           <div
             data-testid="mines-win-banner"
-            className="absolute bottom-2.5 inset-x-4 px-3 py-1.5 rounded-xl bg-[#052e16]/95 border border-[#00f59b] text-[#00f59b] font-mono text-xs font-bold text-center"
+            className="absolute bottom-2.5 inset-x-4 px-3 py-1.5 rounded-xl bg-[#052e16]/95 border border-[#00f59b] text-[#00f59b] font-mono text-xs font-bold text-center flex items-center justify-center gap-1.5"
           >
-            🎉 WON +{formatTmaCurrency(cashedOutWin.payoutCurrency, activeTmaCurrency)} (
-            {cashedOutWin.multiplier.toFixed(2)}x)
+            <MinesEmeraldGemIcon size={15} />
+            <span>
+              WON +{formatTmaCurrency(cashedOutWin.payoutCurrency, activeTmaCurrency)} (
+              {cashedOutWin.multiplier.toFixed(2)}x)
+            </span>
           </div>
         )}
 
         {explodedTile !== null && (
           <div
             data-testid="mines-boom-banner"
-            className="absolute bottom-2.5 inset-x-4 px-3 py-1.5 rounded-xl bg-rose-950/95 border border-[#f43f5e] text-rose-200 font-mono text-xs font-bold text-center"
+            className="absolute bottom-2.5 inset-x-4 px-3 py-1.5 rounded-xl bg-rose-950/95 border border-[#f43f5e] text-rose-200 font-mono text-xs font-bold text-center flex items-center justify-center gap-1.5"
             dir="rtl"
           >
-            💥 برخورد با مین در خانه #{explodedTile + 1}!
+            <LuxuryMineBombIcon size={15} />
+            <span>برخورد با مین در خانه #{explodedTile + 1}!</span>
           </div>
         )}
 
@@ -321,8 +340,12 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
         {/* ROW 1: Bet Amount Input (h-11 rounded-xl bg-[#090612] px-3) with 1/2, 2x, MAX */}
         <div className="h-11 rounded-xl bg-[#090612] px-3 border border-purple-500/20 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="text-sm shrink-0">
-              {activeTmaCurrency === 'TON' ? '💎' : '⭐'}
+            <span className="text-sm shrink-0 inline-flex items-center">
+              {activeTmaCurrency === 'TON' ? (
+                <TonCrystalIcon size={16} />
+              ) : (
+                <TelegramStarIcon size={16} />
+              )}
             </span>
             <input
               type="number"
@@ -383,8 +406,9 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
 
         {/* ROW 2: Mines Count Segmented Selector (h-10 rounded-xl) */}
         <div className="h-10 rounded-xl bg-[#090612] px-2.5 border border-purple-500/20 flex items-center justify-between gap-2">
-          <span className="text-[11px] font-medium text-purple-300/60">
-            💣 Mines Count:
+          <span className="text-[11px] font-medium text-purple-300/60 inline-flex items-center gap-1.5">
+            <LuxuryMineBombIcon size={14} />
+            <span>Mines Count:</span>
           </span>
           <div className="flex items-center gap-1">
             {[1, 3, 5, 10, 16].map((cnt) => (
@@ -418,6 +442,7 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
               onClick={() => settleCashout()}
               className="w-full h-12 rounded-xl font-bold text-sm text-[#041f14] bg-[#00f59b] shadow-[0_4px_0_#059669] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
+              <MinesEmeraldGemIcon size={16} />
               <span>Cash Out ({currentMultiplier.toFixed(2)}x)</span>
               <span className="px-2 py-0.5 rounded-lg bg-black/15 text-xs font-mono tabular-nums">
                 {formatTmaCurrency(currentPayoutCurrency, activeTmaCurrency, false)}
@@ -428,9 +453,10 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
               type="button"
               data-testid="mines-random-pick-btn"
               onClick={handlePickRandomSafeTile}
-              className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-semibold text-purple-200 shrink-0 cursor-pointer"
+              className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-semibold text-purple-200 shrink-0 cursor-pointer inline-flex items-center gap-1.5 active:scale-95 transition-transform duration-200"
             >
-              🎲Pick
+              <LuxuryDiceCubeIcon size={15} />
+              <span>Pick</span>
             </button>
           </div>
         ) : (
@@ -440,6 +466,7 @@ export const MinesGameArena: React.FC<MinesGameArenaProps> = ({ onRoundSettled }
             onClick={startMinesRound}
             className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
+            <LuxuryMineBombIcon size={17} />
             <span>Start Mines</span>
             <span className="px-2 py-0.5 rounded-lg bg-black/25 text-xs font-mono tabular-nums">
               {formatTmaCurrency(betAmountCurrency, activeTmaCurrency)}

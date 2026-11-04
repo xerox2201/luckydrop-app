@@ -19,6 +19,44 @@ import {
 import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 import { HapticEngine } from '../utils/telegramTma.ts';
 import { tr } from '../utils/i18n.ts';
+import {
+  LuxuryIconBadge,
+  LuxuryDiceCubeIcon,
+  LuxuryMineBombIcon,
+  MinesEmeraldGemIcon,
+  LuxuryPlinkoPyramidIcon,
+  LuxuryCrashMultiplierIcon,
+  ProvablyFairShieldIcon,
+  VipTicketIcon,
+  RoyalJackpotCrownIcon,
+  WelcomeGiftVaultIcon,
+  TonCrystalIcon,
+} from './ui/LuxuryIcons.tsx';
+
+const renderMiniGameEmblem = (id: InstantMiniGameId, size = 18) => {
+  switch (id) {
+    case 'PLINKO':
+      return <LuxuryPlinkoPyramidIcon size={size} />;
+    case 'CRASH_X':
+      return <LuxuryCrashMultiplierIcon size={size} />;
+    case 'DICE_52':
+      return <LuxuryDiceCubeIcon size={size} />;
+    case 'MINES':
+      return <LuxuryMineBombIcon size={size} />;
+    case 'TOWER_3D':
+      return <RoyalJackpotCrownIcon size={size} />;
+    case 'WHEEL_3D':
+      return <MinesEmeraldGemIcon size={size} />;
+    case 'HILO_3D':
+      return <VipTicketIcon size={size} />;
+    case 'SCRATCH':
+      return <WelcomeGiftVaultIcon size={size} />;
+    case 'GOLDEN_COIN':
+      return <TonCrystalIcon size={size} />;
+    default:
+      return <LuxuryDiceCubeIcon size={size} />;
+  }
+};
 
 interface GameCardSpec {
   id: InstantMiniGameId;
@@ -307,20 +345,25 @@ export const InstantMiniGamesView: React.FC = () => {
           className="absolute inset-0 w-full h-full object-cover opacity-35 pointer-events-none"
         />
         <div className="absolute inset-0 bg-gradient-to-l from-[#090514]/90 via-[#130d24]/82 to-[#090514]/90 pointer-events-none" />
-        <div className="relative z-10 min-w-0">
-          <div className="text-xs font-extrabold text-white flex items-center gap-1.5 flex-wrap">
-            <span className="whitespace-nowrap">
-              {tr(lang, '🎮 آرنا سه‌بعدی LuckyDrop', '🎮 LuckyDrop 3D Arena')}
-            </span>
-            <span
-              dir="ltr"
-              className="px-1.5 py-0.5 rounded-md bg-[#00f59b]/15 border border-[#00f59b]/30 text-[10px] font-mono text-[#00f59b] whitespace-nowrap shrink-0"
-            >
-              0.01 – ∞ TON
-            </span>
-          </div>
-          <div className="text-[10px] text-purple-200/85 mt-0.5 font-mono truncate" dir="ltr">
-            Free Ticket XP: {xpProgressInCurrentCycle}/100 • Tickets: {tickets.length}
+        <div className="relative z-10 min-w-0 flex items-center gap-2.5">
+          <LuxuryIconBadge variant="gold" size="sm" glow>
+            <LuxuryDiceCubeIcon size={18} />
+          </LuxuryIconBadge>
+          <div className="min-w-0">
+            <div className="text-xs font-extrabold text-white flex items-center gap-1.5 flex-wrap">
+              <span className="whitespace-nowrap">
+                {tr(lang, 'آرنا سه‌بعدی LuckyDrop', 'LuckyDrop 3D Arena')}
+              </span>
+              <span
+                dir="ltr"
+                className="px-1.5 py-0.5 rounded-md bg-[#00f59b]/15 border border-[#00f59b]/30 text-[10px] font-mono text-[#00f59b] whitespace-nowrap shrink-0"
+              >
+                0.01 – ∞ TON
+              </span>
+            </div>
+            <div className="text-[10px] text-purple-200/85 mt-0.5 font-mono truncate" dir="ltr">
+              Free Ticket XP: {xpProgressInCurrentCycle}/100 • Tickets: {tickets.length}
+            </div>
           </div>
         </div>
 
@@ -331,16 +374,21 @@ export const InstantMiniGamesView: React.FC = () => {
             HapticEngine.selectionChanged();
             setShowCategoryCatalog((prev) => !prev);
           }}
-          className={`relative z-10 h-8 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-1 whitespace-nowrap ${
+          className={`relative z-10 h-8 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
             showCategoryCatalog
               ? 'bg-[#00f59b] text-[#041f14] border-[#00f59b]'
               : 'bg-purple-600/45 text-white border-amber-400/40 hover:bg-purple-600/60'
           }`}
         >
+          {showCategoryCatalog ? (
+            <LuxuryPlinkoPyramidIcon size={14} />
+          ) : (
+            <MinesEmeraldGemIcon size={14} />
+          )}
           <span>
             {showCategoryCatalog
-              ? tr(lang, '🎯 بازگشت به بازی', '🎯 Back to Game')
-              : tr(lang, '🗂️ دسته‌بندی (۹ بازی)', '🗂️ All 9 Games')}
+              ? tr(lang, 'بازگشت به بازی', 'Back to Game')
+              : tr(lang, 'دسته‌بندی (۹ بازی)', 'All 9 Games')}
           </span>
         </button>
       </div>
@@ -365,13 +413,15 @@ export const InstantMiniGamesView: React.FC = () => {
                 setActiveGame(g.id);
                 setShowCategoryCatalog(false);
               }}
-              className={`h-9 px-3.5 rounded-full border text-xs font-semibold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+              className={`h-9 px-3.5 rounded-full border text-xs font-semibold transition-all duration-200 active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5 ${
                 isSelected
                   ? 'bg-gradient-to-r from-[#9333ea] to-[#7e22ce] border-purple-400/60 text-white shadow-[0_0_16px_rgba(147,51,234,0.4)]'
                   : 'bg-[#130d24]/90 border-purple-500/20 text-purple-200/80 hover:text-white'
               }`}
             >
-              <span>{g.badge}</span>
+              <span className="inline-flex items-center justify-center transition-transform duration-200">
+                {renderMiniGameEmblem(g.id, 16)}
+              </span>
               <span>{g.label}</span>
             </motion.button>
           );
@@ -443,9 +493,19 @@ export const InstantMiniGamesView: React.FC = () => {
                         } p-3 flex items-center justify-between gap-3 cursor-pointer`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-11 h-11 rounded-xl bg-[#090612]/90 border border-purple-400/30 flex items-center justify-center text-2xl shrink-0 shadow-inner">
-                            {gm.badge}
-                          </div>
+                          <LuxuryIconBadge
+                            variant={
+                              gm.id === 'MINES'
+                                ? 'crimson'
+                                : gm.id === 'PLINKO' || gm.id === 'WHEEL_3D'
+                                ? 'emerald'
+                                : 'gold'
+                            }
+                            size="lg"
+                            glow={isCurrent}
+                          >
+                            {renderMiniGameEmblem(gm.id, 24)}
+                          </LuxuryIconBadge>
                           <div className="min-w-0">
                             <div className="text-xs font-extrabold text-white truncate">
                               {tr(lang, gm.titleFa, gm.titleEn)}
@@ -526,12 +586,15 @@ export const InstantMiniGamesView: React.FC = () => {
         {/* Clean Player Loyalty XP Progress Bar */}
         <div className="rounded-xl bg-[#090612]/90 border border-purple-500/20 p-2.5 space-y-1.5">
           <div className="flex items-center justify-between text-[11px]">
-            <span className="font-bold text-[#fbbf24]">
-              {tr(
-                lang,
-                '🎟️ پاداش وفاداری LuckyDrop (بلیت رایگان لاتاری)',
-                '🎟️ LuckyDrop Loyalty Reward (Free Lottery Ticket)'
-              )}
+            <span className="font-bold text-[#fbbf24] inline-flex items-center gap-1.5">
+              <VipTicketIcon size={15} />
+              <span>
+                {tr(
+                  lang,
+                  'پاداش وفاداری LuckyDrop (بلیت رایگان لاتاری)',
+                  'LuckyDrop Loyalty Reward (Free Lottery Ticket)'
+                )}
+              </span>
             </span>
             <span className="font-mono text-[10px] text-[#00f59b]" dir="ltr">
               {xpProgressInCurrentCycle} / 100 XP
@@ -553,12 +616,15 @@ export const InstantMiniGamesView: React.FC = () => {
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] text-purple-200/80">
-            {tr(
-              lang,
-              '🔒 کد هش (hash) پس از پایان هر دست بازی نمایش داده می‌شود.',
-              '🔒 Round HMAC-SHA256 hash is revealed immediately after each bet.'
-            )}
+          <span className="text-[10px] text-purple-200/80 inline-flex items-center gap-1.5">
+            <ProvablyFairShieldIcon size={14} className="shrink-0" />
+            <span>
+              {tr(
+                lang,
+                'کد هش (hash) پس از پایان هر دست بازی نمایش داده می‌شود.',
+                'Round HMAC-SHA256 hash is revealed immediately after each bet.'
+              )}
+            </span>
           </span>
 
           <div className="flex items-center gap-1 shrink-0" dir="ltr">

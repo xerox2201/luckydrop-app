@@ -14,6 +14,12 @@ import {
 } from '../utils/provablyFair.ts';
 import { diceSoundEngine } from '../utils/diceSoundEngine.ts';
 import { tmaCurrencyToUsdt } from '../utils/telegramTma.ts';
+import {
+  TonCrystalIcon,
+  TelegramStarIcon,
+  LuxuryDiceCubeIcon,
+  ProvablyFairShieldIcon,
+} from './ui/LuxuryIcons.tsx';
 
 interface DiceRollHistoryBadge {
   id: string;
@@ -647,8 +653,11 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
           className="p-3 rounded-2xl bg-[#130d24]/90 border border-[#fbbf24]/50 text-[#fbbf24] text-xs font-semibold flex items-center justify-between gap-2"
           dir="rtl"
         >
-          <span>
-            🎰 جک‌پات LUCKY {lucky7777Banner.rollResult.toFixed(2)} فعال شد! (+۱ بلیت رایگان لاتاری)
+          <span className="inline-flex items-center gap-1.5">
+            <LuxuryDiceCubeIcon size={16} />
+            <span>
+              جک‌پات LUCKY {lucky7777Banner.rollResult.toFixed(2)} فعال شد! (+۱ بلیت رایگان لاتاری)
+            </span>
           </span>
           <button
             type="button"
@@ -711,9 +720,9 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
               type="button"
               onClick={() => navigateTo('transparency')}
               aria-label="Provably Fair Verifier"
-              className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer"
+              className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
             >
-              <span>🛡️</span>
+              <ProvablyFairShieldIcon size={14} />
               <span>#{provablyFairSeeds.nonce}</span>
             </button>
           </div>
@@ -944,10 +953,14 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
               data-testid="dice-sidebar-balance"
-              className="text-sm shrink-0"
+              className="text-sm shrink-0 inline-flex items-center"
               title={formatActiveTmaAmount(balanceUsdt)}
             >
-              {activeTmaCurrency === 'TON' ? '💎' : '⭐'}
+              {activeTmaCurrency === 'TON' ? (
+                <TonCrystalIcon size={16} />
+              ) : (
+                <TelegramStarIcon size={16} />
+              )}
             </span>
             <input
               id="dice-bet-input"
@@ -1038,6 +1051,7 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
             onClick={handlePrimaryBetAction}
             className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
+            <LuxuryDiceCubeIcon size={17} />
             <span>{rollingNow ? 'Rolling 52-Bit...' : `Roll Dice (${multiplier.toFixed(2)}x)`}</span>
             <span className="px-2 py-0.5 rounded-lg bg-black/25 text-xs font-mono tabular-nums">
               {formatCurrency(betAmount)}
@@ -1049,9 +1063,10 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
             data-testid="dice-test-lucky7777-btn"
             onClick={handleSimulateLucky7777Roll}
             title="Test Lucky 77.77 Free Ticket"
-            className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer"
+            className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer inline-flex items-center gap-1 active:scale-95 transition-transform duration-200"
           >
-            🎰77
+            <LuxuryDiceCubeIcon size={15} />
+            <span>77</span>
           </button>
         </div>
       </div>
