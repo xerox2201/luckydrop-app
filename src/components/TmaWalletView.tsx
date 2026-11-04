@@ -16,7 +16,7 @@ import {
   HapticEngine,
   TON_CONNECT_STANDARD_WALLETS,
 } from '../utils/telegramTma';
-import { tr } from '../utils/i18n';
+import { tr, localizeServerText } from '../utils/i18n';
 
 export const TmaWalletView: React.FC = () => {
   const {
@@ -727,7 +727,7 @@ export const TmaWalletView: React.FC = () => {
                 >
                   <div className="min-w-0 pr-1">
                     <div className="text-xs font-bold text-white truncate">
-                      {entry.note}
+                      {localizeServerText(lang, entry.note)}
                     </div>
                     <div className="text-[9px] font-mono text-slate-400 mt-0.5" dir="ltr">
                       {entry.vertical} • {entry.roundId}

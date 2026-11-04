@@ -18,6 +18,7 @@ import {
 } from './Extra3DMiniGamesArena.tsx';
 import { LUXURY_IMAGES } from './PageHeroBanner.tsx';
 import { HapticEngine } from '../utils/telegramTma.ts';
+import { useSoundHaptics } from '../services/soundHaptics.ts';
 import { tr } from '../utils/i18n.ts';
 import {
   LuxuryIconBadge,
@@ -31,6 +32,8 @@ import {
   RoyalJackpotCrownIcon,
   WelcomeGiftVaultIcon,
   TonCrystalIcon,
+  LuxurySoundOnIcon,
+  LuxurySoundMuteIcon,
 } from './ui/LuxuryIcons.tsx';
 
 const renderMiniGameEmblem = (id: InstantMiniGameId, size = 18) => {
@@ -94,7 +97,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
     games: [
       {
         id: 'PLINKO',
-        badge: '🟢',
+        badge: 'PLINKO',
         label: 'Plinko',
         titleFa: 'پلینکو سه‌بعدی (Plinko 3D)',
         titleEn: 'Plinko 3D Pyramid',
@@ -106,7 +109,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
       },
       {
         id: 'CRASH_X',
-        badge: '🚀',
+        badge: 'CRASH',
         label: 'Crash',
         titleFa: 'انفجار کوانتومی (Crash X 3D)',
         titleEn: 'Quantum Crash X 3D',
@@ -129,7 +132,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
     games: [
       {
         id: 'MINES',
-        badge: '💣',
+        badge: 'MINES',
         label: 'Mines',
         titleFa: 'میدان مین و الماس (Mines 5×5)',
         titleEn: 'Mines & Diamonds (5×5)',
@@ -141,7 +144,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
       },
       {
         id: 'TOWER_3D',
-        badge: '🏰',
+        badge: 'TOWER',
         label: 'Tower 3D',
         titleFa: 'برج کریستالی ۸ طبقه (Tower Rush 3D)',
         titleEn: '8-Floor Crystal Tower 3D',
@@ -164,7 +167,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
     games: [
       {
         id: 'WHEEL_3D',
-        badge: '🎡',
+        badge: 'WHEEL',
         label: 'Wheel 3D',
         titleFa: 'گردونه شانس رویال (Wheel Royale 3D)',
         titleEn: 'Wheel Royale 3D',
@@ -176,7 +179,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
       },
       {
         id: 'DICE_52',
-        badge: '🎲',
+        badge: 'DICE',
         label: '52-Bit Dice',
         titleFa: 'تاس کوانتومی ۵۲ بیتی (52-Bit Dice)',
         titleEn: '52-Bit Quantum Dice',
@@ -199,7 +202,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
     games: [
       {
         id: 'HILO_3D',
-        badge: '🃏',
+        badge: 'HILO',
         label: 'Hi-Lo 3D',
         titleFa: 'کارت سایبری بالاتر/پایین‌تر (Hi-Lo 3D)',
         titleEn: 'Cyber Hi-Lo Cards 3D',
@@ -211,7 +214,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
       },
       {
         id: 'SCRATCH',
-        badge: '✨',
+        badge: 'SCRATCH',
         label: 'Scratch',
         titleFa: 'کارت اسکرچ هولوگرافیک (Scratch 3×3)',
         titleEn: 'Holographic Scratch 3×3',
@@ -223,7 +226,7 @@ const GAME_CATEGORIES_3D: GameCategorySpec[] = [
       },
       {
         id: 'GOLDEN_COIN',
-        badge: '🪙',
+        badge: 'COIN',
         label: 'Coin 3D',
         titleFa: 'پرتاب سکه طلایی (Golden Coin 3D)',
         titleEn: 'Golden TON Coin Flip 3D',
@@ -277,6 +280,8 @@ export const InstantMiniGamesView: React.FC = () => {
     lang,
   } = useLottery();
 
+  const { isMuted, toggleMute, haptics } = useSoundHaptics();
+
   const [activeGame, setActiveGame] = useState<InstantMiniGameId>('PLINKO');
   const [showCategoryCatalog, setShowCategoryCatalog] = useState<boolean>(false);
   const [lastResult, setLastResult] = useState<MiniGameEvaluationResult | null>(null);
@@ -306,8 +311,8 @@ export const InstantMiniGamesView: React.FC = () => {
       setStatusBanner(
         tr(
           lang,
-          `↩️ دور ${lastResult.roundId} باطل و مبلغ شرط از طریق PAM Rollback مسترد شد!`,
-          `↩️ Round ${lastResult.roundId} voided and refunded via PAM Rollback!`
+          `دور ${lastResult.roundId} باطل و مبلغ شرط از طریق PAM Rollback مسترد شد!`,
+          `Round ${lastResult.roundId} voided and refunded via PAM Rollback!`
         )
       );
       setLastDebitUuid(null);
@@ -316,18 +321,17 @@ export const InstantMiniGamesView: React.FC = () => {
 
   const MINI_GAME_TABS: Array<{
     id: InstantMiniGameId;
-    badge: string;
     label: string;
   }> = [
-    { id: 'PLINKO', badge: '🟢', label: 'Plinko' },
-    { id: 'CRASH_X', badge: '🚀', label: 'Crash' },
-    { id: 'DICE_52', badge: '🎲', label: '52-Bit Dice' },
-    { id: 'MINES', badge: '💣', label: 'Mines' },
-    { id: 'TOWER_3D', badge: '🏰', label: 'Tower 3D' },
-    { id: 'WHEEL_3D', badge: '🎡', label: 'Wheel 3D' },
-    { id: 'HILO_3D', badge: '🃏', label: 'Hi-Lo 3D' },
-    { id: 'SCRATCH', badge: '✨', label: 'Scratch' },
-    { id: 'GOLDEN_COIN', badge: '🪙', label: 'Coin 3D' },
+    { id: 'PLINKO', label: 'Plinko' },
+    { id: 'CRASH_X', label: 'Crash' },
+    { id: 'DICE_52', label: '52-Bit Dice' },
+    { id: 'MINES', label: 'Mines' },
+    { id: 'TOWER_3D', label: 'Tower 3D' },
+    { id: 'WHEEL_3D', label: 'Wheel 3D' },
+    { id: 'HILO_3D', label: 'Hi-Lo 3D' },
+    { id: 'SCRATCH', label: 'Scratch' },
+    { id: 'GOLDEN_COIN', label: 'Coin 3D' },
   ];
 
   const xpProgressInCurrentCycle = tmaXpPoints % 100;
@@ -335,9 +339,9 @@ export const InstantMiniGamesView: React.FC = () => {
   return (
     <div className="space-y-3 px-3 pt-2 pb-28 max-w-[440px] mx-auto">
       {/* =====================================================================
-          TOP HEADER BAR: QUICK PILL SWITCHER + CATEGORIZED 3D HUB TOGGLE
+          TOP HEADER BAR: QUICK PILL SWITCHER + GLOBAL MUTE TOGGLE + HUB TOGGLE
           ===================================================================== */}
-      <div className="relative overflow-hidden flex items-center justify-between gap-2 rounded-2xl bg-[#130d24]/95 border border-amber-400/30 px-3.5 py-2.5 shadow-lg">
+      <div className="relative overflow-hidden flex items-center justify-between gap-2 rounded-2xl bg-[#110b22]/95 backdrop-blur-xl border border-amber-500/30 px-3.5 py-2.5 shadow-[inset_0_2px_20px_rgba(0,0,0,0.8),0_12px_32px_rgba(0,0,0,0.55)]">
         <img
           src={LUXURY_IMAGES.gamesBanner3d}
           alt="LuckyDrop 3D Games Arena Banner"
@@ -367,30 +371,50 @@ export const InstantMiniGamesView: React.FC = () => {
           </div>
         </div>
 
-        <button
-          type="button"
-          data-testid="toggle-games-category-hub-btn"
-          onClick={() => {
-            HapticEngine.selectionChanged();
-            setShowCategoryCatalog((prev) => !prev);
-          }}
-          className={`relative z-10 h-8 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
-            showCategoryCatalog
-              ? 'bg-[#00f59b] text-[#041f14] border-[#00f59b]'
-              : 'bg-purple-600/45 text-white border-amber-400/40 hover:bg-purple-600/60'
-          }`}
-        >
-          {showCategoryCatalog ? (
-            <LuxuryPlinkoPyramidIcon size={14} />
-          ) : (
-            <MinesEmeraldGemIcon size={14} />
-          )}
-          <span>
-            {showCategoryCatalog
-              ? tr(lang, 'بازگشت به بازی', 'Back to Game')
-              : tr(lang, 'دسته‌بندی (۹ بازی)', 'All 9 Games')}
-          </span>
-        </button>
+        <div className="relative z-10 flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            data-testid="global-minigames-mute-toggle"
+            onClick={() => toggleMute()}
+            aria-label={isMuted ? tr(lang, 'وصل صدا', 'Sound On') : tr(lang, 'قطع صدا', 'Muted')}
+            title={isMuted ? tr(lang, 'وصل صدا', 'Sound On') : tr(lang, 'قطع صدا', 'Muted')}
+            className={`h-8 px-2 rounded-xl border text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 active:scale-95 ${
+              isMuted
+                ? 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+                : 'bg-[#090612]/85 border-amber-500/35 text-amber-200 hover:text-white'
+            }`}
+          >
+            {isMuted ? <LuxurySoundMuteIcon size={15} /> : <LuxurySoundOnIcon size={15} />}
+            <span className="text-[10px] hidden sm:inline">
+              {isMuted ? tr(lang, 'قطع صدا', 'Muted') : tr(lang, 'صدا فعال', 'Sound On')}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="toggle-games-category-hub-btn"
+            onClick={() => {
+              haptics.selectionChanged();
+              setShowCategoryCatalog((prev) => !prev);
+            }}
+            className={`h-8 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer shrink-0 flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
+              showCategoryCatalog
+                ? 'bg-[#00f59b] text-[#041f14] border-[#00f59b]'
+                : 'bg-purple-600/45 text-white border-amber-400/40 hover:bg-purple-600/60'
+            }`}
+          >
+            {showCategoryCatalog ? (
+              <LuxuryPlinkoPyramidIcon size={14} />
+            ) : (
+              <MinesEmeraldGemIcon size={14} />
+            )}
+            <span>
+              {showCategoryCatalog
+                ? tr(lang, 'بازگشت به بازی', 'Back to Game')
+                : tr(lang, 'دسته‌بندی (۹ بازی)', 'All 9 Games')}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* =====================================================================
@@ -582,7 +606,7 @@ export const InstantMiniGamesView: React.FC = () => {
           PLAYER LOYALTY XP BAR & POST-GAME VERIFICATION RESULT
           (Pre-game hash is hidden; hash is displayed strictly AFTER round finishes)
           ===================================================================== */}
-      <div className="rounded-2xl bg-[#130d24]/90 border border-purple-500/20 p-3 shadow-[0_8px_30px_rgb(0,0,0,0.4)] backdrop-blur-md space-y-2.5">
+      <div className="rounded-2xl bg-[#110b22]/95 border border-amber-500/25 p-3 shadow-[inset_0_2px_20px_rgba(0,0,0,0.75),0_8px_30px_rgb(0,0,0,0.45)] backdrop-blur-xl space-y-2.5">
         {/* Clean Player Loyalty XP Progress Bar */}
         <div className="rounded-xl bg-[#090612]/90 border border-purple-500/20 p-2.5 space-y-1.5">
           <div className="flex items-center justify-between text-[11px]">

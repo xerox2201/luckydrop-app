@@ -13,7 +13,7 @@ import {
 } from '../services/securityGuard';
 import type { UserConciergeQuickChipId } from '../services/aiCopilotEngine';
 import { HapticEngine } from '../utils/telegramTma';
-import { tr } from '../utils/i18n';
+import { tr, localizeServerText } from '../utils/i18n';
 import {
   LuxuryIconBadge,
   AiNeuralCoreIcon,
@@ -315,50 +315,17 @@ export const FooterAndChat: React.FC = () => {
     setRefreshing(false);
   };
 
-  // Chronological order (oldest at top, newest at bottom) for natural chat reading
   const orderedMessages = [...mySupportMessages].sort((a, b) => a.id - b.id);
-  const cleanBrandFooter = String(officialBrandTitle || '')
-    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
-    .trim();
+  const cleanBrandFooter = localizeServerText(
+    lang,
+    String(officialBrandTitle || '')
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+      .trim()
+  );
 
   return (
     <>
-      {/* FLOATING VIP AI CONCIERGE & LIVE SUPPORT BUTTON (WITH BESPOKE 3D SVG BADGE) */}
-      {!aiChatOpen && (
-        <button
-          type="button"
-          onClick={handleOpenDrawer}
-          data-testid="floating-vip-support-btn"
-          aria-label={tr(lang, 'پشتیبانی زنده VIP', 'VIP Concierge & Live Support')}
-          className="fixed bottom-20 right-3.5 z-40 flex items-center gap-2 px-3 py-2 rounded-2xl luckydrop-obsidian-glass luckydrop-specular-gold text-white shadow-[0_12px_32px_rgba(0,0,0,0.85)] hover:scale-[1.03] active:scale-95 transition-all cursor-pointer"
-        >
-          <div className="relative">
-            <LuxuryIconBadge variant="gold" size="sm" glow>
-              <VipConciergeHeadsetIcon size={16} />
-            </LuxuryIconBadge>
-            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#0B0716]" />
-          </div>
-          <div className="text-right leading-tight hidden min-[370px]:block">
-            <div className="text-[10px] font-black text-[#FFE066]">
-              {tr(lang, 'کنسیرج هوشمند VIP', '24/7 AI Concierge')}
-            </div>
-            <div className="text-[8px] font-mono text-slate-300">
-              {tr(lang, 'پاسخگویی آنی ۲۴/۷', 'Live Telemetry Support')}
-            </div>
-          </div>
-
-          {unreadSupportCount > 0 && (
-            <span
-              data-testid="support-unread-badge"
-              className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white font-mono text-[10px] font-black flex items-center justify-center shadow-[0_0_12px_rgba(244,63,94,0.8)] animate-bounce"
-            >
-              {unreadSupportCount}
-            </span>
-          )}
-        </button>
-      )}
-
-      {/* LUXURY 24/7 VIP AI CONCIERGE & TWO-WAY LIVE SUPPORT DRAWER */}
+      {/* LUXURY 24/7 VIP AI CONCIERGE & TWO-WAY LIVE SUPPORT DRAWER (Opened via Single Header Support Icon) */}
       {aiChatOpen && (
         <div
           data-testid="vip-support-drawer"

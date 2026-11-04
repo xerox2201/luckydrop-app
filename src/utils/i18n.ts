@@ -809,6 +809,543 @@ const GLOBAL_PHRASE_DICTIONARY: Record<string, MultiLangPhrase> = {
     ar: 'قائد إحالة VIP (دعوة 5 مشترين نشطين)',
     es: 'Líder de Referidos VIP (Invitar 5 Compradores Activos)',
   },
+
+  // Instant Mini-Games Arena, Sound/Haptics & FX Labels
+  'LuckyDrop 3D Arena': {
+    ru: '3D Арена LuckyDrop',
+    ar: 'ساحة LuckyDrop ثلاثية الأبعاد',
+    es: 'Arena 3D LuckyDrop',
+  },
+  'Back to Game': {
+    ru: 'К игре',
+    ar: 'العودة للعبة',
+    es: 'Volver al Juego',
+  },
+  'All 9 Games': {
+    ru: 'Все 9 игр',
+    ar: 'جميع الألعاب (9)',
+    es: 'Los 9 Juegos',
+  },
+  'Sound On': {
+    ru: 'Звук Вкл',
+    ar: 'الصوت مفعل',
+    es: 'Sonido Activo',
+  },
+  Muted: {
+    ru: 'Без звука',
+    ar: 'صامت',
+    es: 'Silenciado',
+  },
+  'Mute Audio': {
+    ru: 'Выключить звук',
+    ar: 'كتم الصوت',
+    es: 'Silenciar Audio',
+  },
+  'Unmute Audio': {
+    ru: 'Включить звук',
+    ar: 'تشغيل الصوت',
+    es: 'Activar Audio',
+  },
+  'Start Mines': {
+    ru: 'Начать Mines',
+    ar: 'بدء لعبة الألغام',
+    es: 'Iniciar Mines',
+  },
+  'Mines Count:': {
+    ru: 'Число мин:',
+    ar: 'عدد الألغام:',
+    es: 'Cantidad de Minas:',
+  },
+  Pick: {
+    ru: 'Случайно',
+    ar: 'اختيار عشوائي',
+    es: 'Elegir',
+  },
+  'Drop Ball': {
+    ru: 'Бросить шар',
+    ar: 'إسقاط الكرة',
+    es: 'Lanzar Bola',
+  },
+  'Rolling 52-Bit...': {
+    ru: 'Бросок 52-Bit...',
+    ar: 'جاري الرمي...',
+    es: 'Lanzando 52-Bit...',
+  },
+  Multiplier: {
+    ru: 'Множитель',
+    ar: 'المضاعف',
+    es: 'Multiplicador',
+  },
+  'Roll Over': {
+    ru: 'Больше',
+    ar: 'أعلى من',
+    es: 'Mayor que',
+  },
+  'Roll Under': {
+    ru: 'Меньше',
+    ar: 'أقل من',
+    es: 'Menor que',
+  },
+  'Win Chance %': {
+    ru: 'Шанс %',
+    ar: 'فرصة الفوز %',
+    es: 'Probabilidad %',
+  },
+  'Auto Cashout:': {
+    ru: 'Авто-вывод:',
+    ar: 'سحب تلقائي:',
+    es: 'Auto Retiro:',
+  },
+  'Place Bet': {
+    ru: 'Сделать ставку',
+    ar: 'وضع رهان',
+    es: 'Apostar',
+  },
+  'Cancel Bet': {
+    ru: 'Отменить ставку',
+    ar: 'إلغاء الرهان',
+    es: 'Cancelar Apuesta',
+  },
+  'Cancel Queued Bet': {
+    ru: 'Отменить очередь',
+    ar: 'إلغاء الرهان القادم',
+    es: 'Cancelar en Cola',
+  },
+  'Bet (Next Flight)': {
+    ru: 'Ставка (След. раунд)',
+    ar: 'رهان (الجولة القادمة)',
+    es: 'Apostar (Próximo)',
+  },
+  'NEXT FLIGHT IN': {
+    ru: 'СЛЕДУЮЩИЙ ВЗЛЁТ ЧЕРЕЗ',
+    ar: 'الإقلاع القادم خلال',
+    es: 'PRÓXIMO VUELO EN',
+  },
+  'CRASHED AT': {
+    ru: 'ВЗРЫВ НА',
+    ar: 'انفجر عند',
+    es: 'ESTRELLADO EN',
+  },
+  'LuckyDrop Loyalty Reward (Free Lottery Ticket)': {
+    ru: 'Награда лояльности LuckyDrop (Бесплатный билет)',
+    ar: 'مكافأة ولاء LuckyDrop (تذكرة يانصيب مجانية)',
+    es: 'Recompensa de Lealtad LuckyDrop (Boleto Gratis)',
+  },
+  'Round HMAC-SHA256 hash is revealed immediately after each bet.': {
+    ru: 'Хэш раунда HMAC-SHA256 раскрывается сразу после каждой ставки.',
+    ar: 'يتم كشف تجزئة HMAC-SHA256 للجولة فور انتهاء كل رهان.',
+    es: 'El hash HMAC-SHA256 de la ronda se revela tras cada apuesta.',
+  },
+  Lobby: {
+    ru: 'Лобби',
+    ar: 'الردهة',
+    es: 'Lobby',
+  },
+  'Play Lottery': {
+    ru: 'Играть в лотерею',
+    ar: 'العب اليانصيب',
+    es: 'Jugar Lotería',
+  },
+  'Special Jackpots': {
+    ru: 'Спец-Джекпоты',
+    ar: 'الجوائز الخاصة',
+    es: 'Jackpots Especiales',
+  },
+  Syndicates: {
+    ru: 'Синдикаты',
+    ar: 'النقابات',
+    es: 'Sindicatos',
+  },
+  'Rewards & Earn': {
+    ru: 'Награды',
+    ar: 'المكافآت',
+    es: 'Premios',
+  },
+  Rewards: {
+    ru: 'Награды',
+    ar: 'المكافآت',
+    es: 'Premios',
+  },
+  '85% Prize Pool': {
+    ru: '85% Призовой фонд',
+    ar: '85% مجمع الجوائز',
+    es: '85% Pozo de Premios',
+  },
+  Days: {
+    ru: 'Дни',
+    ar: 'أيام',
+    es: 'Días',
+  },
+  Hours: {
+    ru: 'Часы',
+    ar: 'ساعات',
+    es: 'Horas',
+  },
+  Minutes: {
+    ru: 'Мин',
+    ar: 'دقائق',
+    es: 'Minutos',
+  },
+  Seconds: {
+    ru: 'Сек',
+    ar: 'ثواني',
+    es: 'Segundos',
+  },
+  '1 Ticket': {
+    ru: '1 Билет',
+    ar: 'تذكرة واحدة',
+    es: '1 Boleto',
+  },
+  '5 Tickets': {
+    ru: '5 Билетов',
+    ar: '5 تذاكر',
+    es: '5 Boletos',
+  },
+  '10 Tickets': {
+    ru: '10 Билетов',
+    ar: '10 تذاكر',
+    es: '10 Boletos',
+  },
+  'POPULAR • +1 VIP': {
+    ru: 'ХИТ • +1 VIP',
+    ar: 'الأكثر شعبية • +1 VIP',
+    es: 'POPULAR • +1 VIP',
+  },
+  'STARTER': {
+    ru: 'СТАРТ',
+    ar: 'مبتدئ',
+    es: 'INICIAL',
+  },
+  'WHALE • +2 VIP': {
+    ru: 'КИТ • +2 VIP',
+    ar: 'حوت • +2 VIP',
+    es: 'BALLENA • +2 VIP',
+  },
+  '$1,000 Welcome Ticket': {
+    ru: 'Билет на $1,000',
+    ar: 'تذكرة ترحيب 1,000$',
+    es: 'Boleto Bienvenida $1,000',
+  },
+  'CLAIM NOW': {
+    ru: 'ЗАБРАТЬ',
+    ar: 'استلام فوري',
+    es: 'RECLAMAR',
+  },
+  'OPEN VAULT': {
+    ru: 'ОТКРЫТЬ СЕЙФ',
+    ar: 'فتح الخزينة',
+    es: 'ABRIR BÓVEDA',
+  },
+  'Watch Draw': {
+    ru: 'Смотреть тираж',
+    ar: 'مشاهدة السحب',
+    es: 'Ver Sorteo',
+  },
+  WON: {
+    ru: 'ВЫИГРЫШ',
+    ar: 'فائز',
+    es: 'GANADOR',
+  },
+  'OPEN • Instant Share Mint': {
+    ru: 'ОТКРЫТ • Мгновенная доля',
+    ar: 'مفتوح • إصدار فوري للحصص',
+    es: 'ABIERTO • Emisión Instantánea',
+  },
+  'FULL SQUAD': {
+    ru: 'ЗАПОЛНЕН',
+    ar: 'مكتمل العدد',
+    es: 'ESCUADRÓN LLENO',
+  },
+  'Telegram Quests & Loyalty Rewards': {
+    ru: 'Задания Telegram и Награды Лояльности',
+    ar: 'مهام تيليجرام ومكافآت الولاء',
+    es: 'Misiones de Telegram y Recompensas de Lealtad',
+  },
+  'Earn Free Drops & Invite Friends': {
+    ru: 'Бесплатные призы и приглашение друзей',
+    ar: 'اكسب جوائز مجانية وادعُ أصدقاءك',
+    es: 'Gana Premios Gratis e Invita Amigos',
+  },
+  'XP Score': {
+    ru: 'Очки XP',
+    ar: 'نقاط XP',
+    es: 'Puntos XP',
+  },
+  'Free Plinko Drops': {
+    ru: 'Бесплатные шары Plinko',
+    ar: 'كرات Plinko مجانية',
+    es: 'Bolas Gratis de Plinko',
+  },
+  'Free Scratch Cards': {
+    ru: 'Бесплатные скретч-карты',
+    ar: 'بطاقات خدش مجانية',
+    es: 'Tarjetas Rasca Gratis',
+  },
+  'Free Lottery Slips': {
+    ru: 'Бесплатные билеты лотереи',
+    ar: 'تذاكر يانصيب مجانية',
+    es: 'Boletos de Lotería Gratis',
+  },
+  '7-Day Telegram Activity Streak': {
+    ru: '7-дневная серия активности Telegram',
+    ar: 'سلسلة النشاط لمدة 7 أيام في تيليجرام',
+    es: 'Racha de Actividad de 7 Días en Telegram',
+  },
+  'Active Quests (Turnover-Locked Rewards)': {
+    ru: 'Активные задания (Награды за оборот)',
+    ar: 'المهام النشطة (مكافآت التداول)',
+    es: 'Misiones Activas (Recompensas en Juego)',
+  },
+  Completed: {
+    ru: 'Выполнено',
+    ar: 'مكتمل',
+    es: 'Completado',
+  },
+  'Join & Verify': {
+    ru: 'Вступить и проверить',
+    ar: 'انضم وتحقق',
+    es: 'Unirse y Verificar',
+  },
+  'Claim Reward': {
+    ru: 'Забрать награду',
+    ar: 'استلام المكافأة',
+    es: 'Reclamar Recompensa',
+  },
+  'Telegram Affiliate Program': {
+    ru: 'Партнёрская программа Telegram',
+    ar: 'برنامج الإحالة في تيليجرام',
+    es: 'Programa de Afiliados de Telegram',
+  },
+  'Earn 10% of the house fee on every ticket & game played by your referrals': {
+    ru: 'Получайте 10% комиссии платформы с каждого билета и игры ваших друзей',
+    ar: 'اكسب 10% من رسوم المنصة على كل تذكرة ولعبة يلعبها أصدقاؤك',
+    es: 'Gana el 10% de la comisión en cada boleto y juego de tus invitados',
+  },
+  'Copied!': {
+    ru: 'Скопировано!',
+    ar: 'تم النسخ!',
+    es: '¡Copiado!',
+  },
+  'Share Invite Link in Telegram Chats': {
+    ru: 'Отправить ссылку в чаты Telegram',
+    ar: 'مشاركة رابط الدعوة في محادثات تيليجرام',
+    es: 'Compartir Enlace en Chats de Telegram',
+  },
+  'Active Referrals': {
+    ru: 'Активные рефералы',
+    ar: 'الإحالات النشطة',
+    es: 'Referidos Activos',
+  },
+  Users: {
+    ru: 'Польз.',
+    ar: 'مستخدمين',
+    es: 'Usuarios',
+  },
+  'Claimable Commission': {
+    ru: 'Доступная комиссия',
+    ar: 'العمولة القابلة للسحب',
+    es: 'Comisión Disponible',
+  },
+  '💸 Transfer Commission to Main Wallet': {
+    ru: '💸 Перевести комиссию на кошелёк',
+    ar: '💸 تحويل العمولة إلى المحفظة الرئيسية',
+    es: '💸 Transferir Comisión a la Billetera',
+  },
+  'Connect Standard Non-Custodial TON Wallet': {
+    ru: 'Подключить кошелёк TON (Tonkeeper / MyTonWallet)',
+    ar: 'ربط محفظة TON القياسية (Tonkeeper / MyTonWallet)',
+    es: 'Conectar Billetera TON Estándar',
+  },
+  'Connect Tonkeeper, MyTonWallet, Tonhub, or Bitget Wallet': {
+    ru: 'Подключите Tonkeeper, MyTonWallet, Tonhub или Bitget Wallet',
+    ar: 'اربط محفظة Tonkeeper أو MyTonWallet أو Tonhub أو Bitget',
+    es: 'Conecta Tonkeeper, MyTonWallet, Tonhub o Bitget Wallet',
+  },
+  'Join the official community channel for draw alerts': {
+    ru: 'Подпишитесь на официальный канал для уведомлений о тиражах',
+    ar: 'انضم للقناة الرسمية لتلقي إشعارات السحب',
+    es: 'Únete al canal oficial para alertas de sorteos',
+  },
+  '7-Day Daily Check-In Streak': {
+    ru: 'Ежедневный вход (Серия 7 дней)',
+    ar: 'تسجيل الدخول اليومي لمدة 7 أيام',
+    es: 'Racha de Ingreso Diario de 7 Días',
+  },
+  'Check in daily to receive a free Scratch Card & XP': {
+    ru: 'Заходите каждый день, чтобы получить скретч-карту и XP',
+    ar: 'سجل دخولك يومياً للحصول على بطاقة خدش مجانية ونقاط XP',
+    es: 'Ingresa a diario para recibir una tarjeta rasca gratis y XP',
+  },
+  'Play 10 Instant Mini-Game Rounds': {
+    ru: 'Сыграть 10 раундов в быстрые мини-игры',
+    ar: 'العب 10 جولات في الألعاب الفورية',
+    es: 'Jugar 10 Rondas de Mini-Juegos Instantáneos',
+  },
+  'Play 10 rounds across any Instant Mini-Game': {
+    ru: 'Сыграйте 10 раундов в любой мини-игре',
+    ar: 'العب 10 جولات في أي لعبة فورية',
+    es: 'Juega 10 rondas en cualquier mini-juego instantáneo',
+  },
+  '+2 Free Plinko Drops + 50 XP': {
+    ru: '+2 бесплатных шара Plinko + 50 XP',
+    ar: '+2 كرات Plinko مجانية + 50 XP',
+    es: '+2 Bolas Plinko Gratis + 50 XP',
+  },
+  '+1 Free Lottery Ticket + 40 XP': {
+    ru: '+1 бесплатный билет лотереи + 40 XP',
+    ar: '+1 تذكرة يانصيب مجانية + 40 XP',
+    es: '+1 Boleto de Lotería Gratis + 40 XP',
+  },
+  '+1 Free Scratch Card + 35 XP': {
+    ru: '+1 бесплатная скретч-карта + 35 XP',
+    ar: '+1 بطاقة خدش مجانية + 35 XP',
+    es: '+1 Tarjeta Rasca Gratis + 35 XP',
+  },
+  '+3 Free Plinko Drops + 80 XP': {
+    ru: '+3 бесплатных шара Plinko + 80 XP',
+    ar: '+3 كرات Plinko مجانية + 80 XP',
+    es: '+3 Bolas Plinko Gratis + 80 XP',
+  },
+  'TON Connect 2.0 Seamless Wallet': {
+    ru: 'Единый кошелёк TON Connect 2.0',
+    ar: 'محفظة TON Connect 2.0 المتكاملة',
+    es: 'Billetera Integrada TON Connect 2.0',
+  },
+  'Connect Standard Non-Custodial TON Wallet:': {
+    ru: 'Подключить стандартный кошелёк сети TON:',
+    ar: 'ربط محفظة شبكة TON القياسية:',
+    es: 'Conectar Billetera Estándar de Red TON:',
+  },
+  '💎 Instant VIP Cashback Vault': {
+    ru: 'Сейф мгновенного VIP кэшбэка',
+    ar: 'خزينة الاسترداد النقدي الفوري VIP',
+    es: 'Bóveda de Reembolso VIP Instantáneo',
+  },
+  '3% Ticket + 1.5% Game Rebate': {
+    ru: '3% с билетов + 1.5% с игр',
+    ar: '3% للتذاكر + 1.5% للألعاب',
+    es: '3% Boletos + 1.5% Juegos',
+  },
+  'Claim Instant Cashback to Wallet (Claim Now)': {
+    ru: 'Вывести кэшбэк на кошелёк (Забрать)',
+    ar: 'سحب الاسترداد النقدي فوراً للمحفظة',
+    es: 'Reclamar Reembolso Instantáneo a la Billetera',
+  },
+  Deposit: {
+    ru: 'Пополнить',
+    ar: 'إيداع',
+    es: 'Depositar',
+  },
+  Withdraw: {
+    ru: 'Вывести',
+    ar: 'سحب',
+    es: 'Retirar',
+  },
+  'PAM Ledger': {
+    ru: 'Реестр PAM',
+    ar: 'سجل PAM',
+    es: 'Libro PAM',
+  },
+  'Automated On-Chain TON Deposit': {
+    ru: 'Автоматическое пополнение в сети TON',
+    ar: 'إيداع تلقائي عبر شبكة TON',
+    es: 'Depósito Automático en Red TON',
+  },
+  '1-Tap TON Connect 2.0 Smart Contract Transfer (0% Platform Fee)': {
+    ru: 'Перевод через смарт-контракт TON Connect 2.0 в 1 клик (Комиссия 0%)',
+    ar: 'تحويل مباشر عبر العقد الذكي TON Connect 2.0 (بدون عمولة)',
+    es: 'Transferencia en 1 Clic vía Contrato Inteligente TON Connect 2.0 (0% Comisión)',
+  },
+  'Connect & Deposit TON': {
+    ru: 'Подключить и пополнить TON',
+    ar: 'ربط وإيداع TON',
+    es: 'Conectar y Depositar TON',
+  },
+  'Official TON Treasury Vault Address:': {
+    ru: 'Официальный адрес казначейства TON:',
+    ar: 'عنوان خزينة TON الرسمية:',
+    es: 'Dirección Oficial de Bóveda TON:',
+  },
+  Copied: {
+    ru: 'Скопировано',
+    ar: 'تم النسخ',
+    es: 'Copiado',
+  },
+  Copy: {
+    ru: 'Копировать',
+    ar: 'نسخ',
+    es: 'Copiar',
+  },
+  'Paste TXID or signed BOC for on-chain verification': {
+    ru: 'Вставьте TXID или BOC для проверки транзакции в блокчейне',
+    ar: 'الصق معرف المعاملة TXID أو BOC للتحقق المباشر',
+    es: 'Pega el TXID o BOC firmado para verificación en cadena',
+  },
+  '1-Tap Top-Up with Telegram Stars (XTR)': {
+    ru: 'Пополнение в 1 клик через Telegram Stars (XTR)',
+    ar: 'شحن بنقرة واحدة عبر نجوم تيليجرام (Stars)',
+    es: 'Recarga en 1 Clic con Telegram Stars (XTR)',
+  },
+  'Official in-app Telegram Stars invoice — no external wallet needed': {
+    ru: 'Официальная оплата Telegram Stars внутри приложения — внешний кошелёк не нужен',
+    ar: 'دفع رسمي داخل تيليجرام بدون الحاجة لمحفظة خارجية',
+    es: 'Factura oficial de Telegram Stars en la app — sin billetera externa',
+  },
+  'Starter Pack': {
+    ru: 'Стартовый',
+    ar: 'باقة البداية',
+    es: 'Paquete Inicial',
+  },
+  'Most Popular': {
+    ru: 'Популярный',
+    ar: 'الأكثر شعبية',
+    es: 'Más Popular',
+  },
+  'Pro Pack': {
+    ru: 'Профи',
+    ar: 'باقة المحترفين',
+    es: 'Paquete Pro',
+  },
+  'VIP Whale Pack': {
+    ru: 'VIP Кит',
+    ar: 'باقة كبار الشخصيات',
+    es: 'Paquete Ballena VIP',
+  },
+  'Instant Telegram Invoice': {
+    ru: 'Мгновенный счёт Telegram',
+    ar: 'فاتورة تيليجرام فورية',
+    es: 'Factura Instantánea de Telegram',
+  },
+  'Available:': {
+    ru: 'Доступно:',
+    ar: 'المتاح:',
+    es: 'Disponible:',
+  },
+  'Destination TON Wallet Address (UQ... or EQ...):': {
+    ru: 'Адрес TON кошелька получателя (UQ... или EQ...):',
+    ar: 'عنوان محفظة TON المستلمة (UQ... أو EQ...):',
+    es: 'Dirección de Billetera TON de Destino (UQ... o EQ...):',
+  },
+  'Destination Telegram Handle (@username):': {
+    ru: 'Имя пользователя Telegram (@username):',
+    ar: 'معرف تيليجرام المستلم (@username):',
+    es: 'Usuario de Telegram de Destino (@username):',
+  },
+  '🚀 Submit & Settle On-Chain TON Withdrawal': {
+    ru: '🚀 Отправить запрос на мгновенный вывод в сети TON',
+    ar: '🚀 تأكيد وتسوية السحب الفوري عبر شبكة TON',
+    es: '🚀 Enviar y Liquidar Retiro en Red TON',
+  },
+  'Standard withdrawals are processed swiftly with cryptographic escrow verification.': {
+    ru: 'Стандартные выводы обрабатываются мгновенно с криптографической проверкой.',
+    ar: 'تتم معالجة عمليات السحب القياسية بسرعة مع التحقق التشفيري.',
+    es: 'Los retiros estándar se procesan rápidamente con verificación criptográfica.',
+  },
+  'Recent PAM Seamless Wallet Ledger': {
+    ru: 'Последние транзакции единого реестра PAM',
+    ar: 'أحدث معاملات سجل المحفظة الموحد PAM',
+    es: 'Transacciones Recientes del Libro PAM',
+  },
 };
 
 /**
@@ -819,8 +1356,8 @@ function translateDynamicPattern(enText: string, faText: string, locale: Support
   if (locale === 'fa') return faText;
   if (locale === 'en') return enText;
 
-  // Match: "My Tickets (N)"
-  const myTicketsMatch = enText.match(/^My Tickets \((\d+)\)$/i);
+  // Match: "My Tickets (N)" or "View My Tickets (N)"
+  const myTicketsMatch = enText.match(/^(?:View )?My Tickets \((\d+)\)$/i);
   if (myTicketsMatch) {
     const n = myTicketsMatch[1];
     if (locale === 'ru') return `Мои билеты (${n})`;
@@ -837,6 +1374,15 @@ function translateDynamicPattern(enText: string, faText: string, locale: Support
     if (locale === 'es') return `Mis Boletos en Esta Ronda (${n})`;
   }
 
+  // Match: "N Ticket(s)"
+  const ticketsCountMatch = enText.match(/^(\d+)\s+Tickets?$/i);
+  if (ticketsCountMatch) {
+    const n = ticketsCountMatch[1];
+    if (locale === 'ru') return `${n} билет${Number(n) === 1 ? '' : Number(n) < 5 ? 'а' : 'ов'}`;
+    if (locale === 'ar') return `${n} ${Number(n) === 1 ? 'تذكرة' : 'تذاكر'}`;
+    if (locale === 'es') return `${n} Boleto${Number(n) > 1 ? 's' : ''}`;
+  }
+
   // Match: "N Slip(s)"
   const slipsMatch = enText.match(/^(\d+)\s+Slips?$/i);
   if (slipsMatch) {
@@ -844,6 +1390,24 @@ function translateDynamicPattern(enText: string, faText: string, locale: Support
     if (locale === 'ru') return `${n} билет${Number(n) === 1 ? '' : Number(n) < 5 ? 'а' : 'ов'}`;
     if (locale === 'ar') return `${n} تذاكر`;
     if (locale === 'es') return `${n} Boleto${Number(n) > 1 ? 's' : ''}`;
+  }
+
+  // Match: "Day N / 7"
+  const dayStreakMatch = enText.match(/^Day (\d+)\s*\/\s*7$/i);
+  if (dayStreakMatch) {
+    const d = dayStreakMatch[1];
+    if (locale === 'ru') return `День ${d} / 7`;
+    if (locale === 'ar') return `اليوم ${d} من 7`;
+    if (locale === 'es') return `Día ${d} / 7`;
+  }
+
+  // Match: "Your Referral Code: CODE • Instant Revenue Share Settlement"
+  const refCodeFooterMatch = enText.match(/^Your Referral Code:\s*(.+?)\s*•/i);
+  if (refCodeFooterMatch) {
+    const code = refCodeFooterMatch[1];
+    if (locale === 'ru') return `Ваш реферальный код: ${code} • Мгновенные выплаты`;
+    if (locale === 'ar') return `رمز الإحالة الخاص بك: ${code} • تسوية فورية للأرباح`;
+    if (locale === 'es') return `Tu Código de Referido: ${code} • Liquidación Instantánea`;
   }
 
   // Match: "Latest Draw (CODE)"
@@ -909,7 +1473,7 @@ function translateDynamicPattern(enText: string, faText: string, locale: Support
     if (locale === 'es') return `Bola Dorada (★${n}):`;
   }
 
-  // Match: "🎉 N ticket(s) minted in round CODE!"
+  // Match: "N ticket(s) minted in round CODE!"
   const mintedMatch = enText.match(/(\d+)\s+ticket\(s\)\s+minted in round\s+([^\s!]+)/i);
   if (mintedMatch) {
     const [, qty, code] = mintedMatch;
@@ -979,7 +1543,7 @@ export function t5(
 }
 
 /**
- * Localizes dynamic server-generated Persian strings (round titles, quest names, tier labels, toast messages)
+ * Localizes dynamic server-generated Persian strings (round titles, quest names, user defaults, syndicate names, PAM notes)
  * into the active language so non-Persian users never see raw Persian strings.
  */
 export function localizeServerText(lang: Language | string | undefined, rawText: string): string {
@@ -987,8 +1551,29 @@ export function localizeServerText(lang: Language | string | undefined, rawText:
   const text = String(rawText || '').trim();
   if (!text || locale === 'fa') return text;
 
-  // Round titles
-  if (text.includes('جک‌پات بزرگ TON') || text.includes('استخر قرعه‌کشی TON')) {
+  // Default preview user name
+  if (text === 'کاربر' || text === 'کاربر VIP') {
+    if (locale === 'en') return 'VIP Member';
+    if (locale === 'ru') return 'VIP Игрок';
+    if (locale === 'ar') return 'عضو VIP';
+    if (locale === 'es') return 'Miembro VIP';
+  }
+
+  // Official Brand Title
+  if (text.includes('لاتاری و بازی‌های آنی اثبات‌پذیر بلاکچین TON') || text.includes('لاتاری بلاکچینی')) {
+    if (locale === 'en') return 'LuckyDrop Official • Provably Fair TON Blockchain Lottery & Games';
+    if (locale === 'ru') return 'LuckyDrop Official • Честная лотерея и игры в блокчейне TON';
+    if (locale === 'ar') return 'LuckyDrop Official • يانصيب وألعاب بلوكتشين TON العادلة';
+    if (locale === 'es') return 'LuckyDrop Official • Lotería y Juegos Provably Fair en TON';
+  }
+
+  // Round titles (covering both MULTI_LOTTERY_SPECS and server DB titles)
+  if (
+    text.includes('مگا جک‌پات هفتگی') ||
+    text.includes('جک‌پات بزرگ TON') ||
+    text.includes('استخر قرعه‌کشی TON') ||
+    text.includes('قرعه‌کشی ویژه TON')
+  ) {
     const codeMatch = text.match(/#[A-Z0-9-]+/);
     const code = codeMatch ? ` ${codeMatch[0]}` : '';
     if (locale === 'en') return `TON Mega Jackpot${code}`;
@@ -996,7 +1581,11 @@ export function localizeServerText(lang: Language | string | undefined, rawText:
     if (locale === 'ar') return `جاكبوت TON الكبير${code}`;
     if (locale === 'es') return `Mega Jackpot TON${code}`;
   }
-  if (text.includes('قرعه‌کشی روزانه بلیتز') || text.includes('BLZ')) {
+  if (
+    text.includes('قرعه‌کشی روزانه بلیتز') ||
+    text.includes('بلیتز روزانه TON') ||
+    text.includes('BLZ')
+  ) {
     if (locale === 'en') return 'Daily Blitz Draw';
     if (locale === 'ru') return 'Ежедневный Блиц-тираж';
     if (locale === 'ar') return 'السحب اليومي السريع';
@@ -1013,6 +1602,40 @@ export function localizeServerText(lang: Language | string | undefined, rawText:
     if (locale === 'ru') return 'Спец-пул Китов TON';
     if (locale === 'ar') return 'مجمع حيتان TON الخاص';
     if (locale === 'es') return 'Pozo Especial Ballenas TON';
+  }
+
+  // Syndicate Squad Names
+  if (text.includes('نهنگ‌های طلایی TON')) {
+    if (locale === 'en') return 'Golden TON Whales';
+    if (locale === 'ru') return 'Золотые Киты TON';
+    if (locale === 'ar') return 'حيتان TON الذهبية';
+    if (locale === 'es') return 'Ballenas Doradas TON';
+  }
+  if (text.includes('سندیکای الماس') || text.includes('اسکواد')) {
+    if (locale === 'en') return 'Diamond VIP Syndicate';
+    if (locale === 'ru') return 'Алмазный VIP Синдикат';
+    if (locale === 'ar') return 'نقابة الماس VIP';
+    if (locale === 'es') return 'Sindicato Diamante VIP';
+  }
+
+  // PAM Ledger notes
+  if (text.includes('پاداش خوش‌آمدگویی') || text.includes('موجودی اولیه')) {
+    if (locale === 'en') return 'Welcome Bonus & Initial TMA Balance';
+    if (locale === 'ru') return 'Приветственный бонус и начальный баланс TMA';
+    if (locale === 'ar') return 'مكافأة الترحيب والرصيد الابتدائي';
+    if (locale === 'es') return 'Bono de Bienvenida y Saldo Inicial TMA';
+  }
+  if (text.includes('خرید') && text.includes('بلیت')) {
+    if (locale === 'en') return 'Lottery Ticket Mint (85% Prize Pool)';
+    if (locale === 'ru') return 'Покупка лотерейного билета (85% в пул)';
+    if (locale === 'ar') return 'شراء تذكرة يانصيب (85% لمجمع الجوائز)';
+    if (locale === 'es') return 'Compra de Boleto de Lotería (85% al Pozo)';
+  }
+  if (text.includes('کش‌بک') || text.includes('ریک‌بک')) {
+    if (locale === 'en') return 'Instant VIP Cashback Vault Claim';
+    if (locale === 'ru') return 'Вывод мгновенного VIP кэшбэка';
+    if (locale === 'ar') return 'سحب الاسترداد النقدي الفوري VIP';
+    if (locale === 'es') return 'Retiro de Bóveda de Reembolso VIP';
   }
 
   // Growth Quests

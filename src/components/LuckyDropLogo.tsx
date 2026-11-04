@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 
-export const OFFICIAL_LUCKYDROP_LOGO_URL = '/luckydrop-logo.png';
+export const OFFICIAL_LUCKYDROP_LOGO_URL = '/assets/3d/luckydrop-3d-logo.png';
 
 interface LuckyDropLogoProps {
   size?: number;
@@ -17,6 +17,8 @@ export const LuckyDropLogo: React.FC<LuckyDropLogoProps> = ({
   animated = false,
   className = '',
 }) => {
+  const [imgFailed, setImgFailed] = useState(false);
+
   return (
     <div
       data-testid="luckydrop-bespoke-3d-emblem"
@@ -48,12 +50,33 @@ export const LuckyDropLogo: React.FC<LuckyDropLogoProps> = ({
         style={{ width: size, height: size }}
         className="relative flex items-center justify-center shrink-0 drop-shadow-[0_4px_14px_rgba(255,215,0,0.35)]"
       >
-        <img
-          src={OFFICIAL_LUCKYDROP_LOGO_URL}
-          alt="LuckyDrop Official 3D Emblem"
-          draggable={false}
-          className="w-full h-full object-contain select-none pointer-events-none"
-        />
+        {!imgFailed ? (
+          <img
+            src={OFFICIAL_LUCKYDROP_LOGO_URL}
+            alt="LuckyDrop Official 3D Emblem"
+            draggable={false}
+            onError={() => setImgFailed(true)}
+            className="w-full h-full object-contain select-none pointer-events-none"
+          />
+        ) : (
+          <svg
+            width={size}
+            height={size}
+            viewBox="0 0 64 64"
+            fill="none"
+            className="w-full h-full"
+          >
+            <circle cx="32" cy="32" r="29" fill="#0E0A1F" stroke="#FBBF24" strokeWidth="3" />
+            <circle cx="32" cy="32" r="23" fill="#131B38" stroke="#00F5D4" strokeWidth="1.5" />
+            <path
+              d="M32 13L47 26L32 51L17 26L32 13Z"
+              fill="#0098EA"
+              stroke="#FFE066"
+              strokeWidth="2"
+            />
+            <path d="M32 13L40 26L32 51L24 26L32 13Z" fill="#38BDF8" fillOpacity="0.65" />
+          </svg>
+        )}
       </motion.div>
 
       {showWordmark && (
@@ -77,7 +100,7 @@ export function downloadAssetFile(url: string, filename: string): void {
 }
 
 export async function downloadOfficialLuckyDropLogoPng(): Promise<void> {
-  downloadAssetFile('/luckydrop-logo.png', 'LuckyDrop-Official-Logo-Transparent.png');
+  downloadAssetFile('/assets/3d/luckydrop-3d-logo.png', 'LuckyDrop-Official-Logo-Transparent.png');
 }
 
 export function downloadOfficialLuckyDropSplash3dPng(): void {
@@ -89,5 +112,5 @@ export function downloadOfficialLuckyDropJackpot3dPng(): void {
 }
 
 export function downloadOfficialLuckyDropLogoSvg(): void {
-  downloadAssetFile('/luckydrop-logo.svg', 'LuckyDrop-Official-Vector-Logo.svg');
+  downloadAssetFile('/assets/3d/luckydrop-3d-logo.png', 'LuckyDrop-Official-Vector-Logo.png');
 }

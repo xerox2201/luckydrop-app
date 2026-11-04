@@ -7,13 +7,21 @@ import {
   isPlinkoBonusTicketSlot,
   MiniGameEvaluationResult,
 } from '../utils/provablyFair.ts';
-import { plinkoSoundEngine } from '../utils/plinkoSoundEngine.ts';
 import { tmaCurrencyToUsdt } from '../utils/telegramTma.ts';
+import { useSoundHaptics } from '../services/soundHaptics.ts';
+import { tr } from '../utils/i18n.ts';
+import { renderPlinkoEnergyOrbWithTrail } from './games/fx/PlinkoTrailFX.tsx';
 import {
+  LuxuryIconBadge,
   TonCrystalIcon,
   TelegramStarIcon,
   LuxuryPlinkoPyramidIcon,
   ProvablyFairShieldIcon,
+  RoyalJackpotCrownIcon,
+  LuxuryMineBombIcon,
+  LuxurySoundOnIcon,
+  LuxurySoundMuteIcon,
+  LuxuryLightningBoltIcon,
 } from './ui/LuxuryIcons.tsx';
 
 interface TrailPoint {
@@ -185,7 +193,10 @@ export const PlinkoGameArena: React.FC<{
     setDepositModalOpen,
     setWalletDrawerOpen,
     navigateTo,
+    lang,
   } = useLottery();
+
+  const { isMuted, toggleMute, soundHaptics } = useSoundHaptics();
 
   // Stake Left Control Sidebar State (betAmount is in activeTmaCurrency: TON or STARS)
   const [controlTab, setControlTab] = useState<'MANUAL' | 'AUTO'>('MANUAL');
@@ -204,7 +215,6 @@ export const PlinkoGameArena: React.FC<{
       return prev;
     });
   }, [activeTmaCurrency]);
-  const [isMuted, setIsMuted] = useState<boolean>(() => plinkoSoundEngine.isMuted());
   const [activeBallsCount, setActiveBallsCount] = useState<number>(0);
   const [landedHistory, setLandedHistory] = useState<LandedHistoryBadge[]>([]);
   const [bonusBanner, setBonusBanner] = useState<string | null>(null);
@@ -307,14 +317,21 @@ export const PlinkoGameArena: React.FC<{
     const availInCurrency = activeTmaCurrency === 'TON' ? tonBalance : starsBalance;
 
     if (availInCurrency < cleanBetCurrency || balanceUsdt < wagerUsdt) {
+      soundHaptics.notificationOccurred('error');
       setDepositModalOpen(true);
-      setErrorBanner('موجودی کیف پول کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید.');
+      setErrorBanner(
+        tr(
+          lang,
+          'موجودی کیف پول کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید.',
+          'Insufficient wallet balance. Please top up first.'
+        )
+      );
       setAutoRunning(false);
       return false;
     }
 
-    // Immediate pneumatic drop audio
-    plinkoSoundEngine.playDrop();
+    // Immediate pneumatic drop audio + medium haptic
+    soundHaptics.playCoinDrop();
 
     const currentRows = rowsRef.current;
     const currentRisk = riskRef.current;
@@ -329,7 +346,8 @@ export const PlinkoGameArena: React.FC<{
     });
 
     if (!res.ok || !res.evaluation) {
-      setErrorBanner(res.error || 'خطا در ثبت شرط Plinko');
+      soundHaptics.notificationOccurred('error');
+      setErrorBanner(res.error || tr(lang, 'خطا در ثبت شرط Plinko', 'Failed to place Plinko bet'));
       setAutoRunning(false);
       return false;
     }
@@ -380,6 +398,8 @@ export const PlinkoGameArena: React.FC<{
     balanceUsdt,
     playInstantMiniGame,
     setDepositModalOpen,
+    soundHaptics,
+    lang,
   ]);
 
   // Rapid multi-ball burst helper (drops 5 balls spaced by 110ms)
@@ -624,7 +644,7 @@ export const PlinkoGameArena: React.FC<{
           ctx.fillStyle = 'rgba(2, 6, 23, 0.65)';
           ctx.fill();
 
-          // b) 3D Polished Metallic/Pearl Cylinder Radial Gradient
+          // b) 3D Polished Golden & Pearl Cylinder Radial Gradient
           const pegGrad = ctx.createRadialGradient(
             x - rad * 0.36,
             y - rad * 0.36,
@@ -633,22 +653,29 @@ export const PlinkoGameArena: React.FC<{
             y,
             rad
           );
-          pegGrad.addColorStop(0, '#ffffff');
-          pegGrad.addColorStop(0.35, '#e2e8f0');
-          pegGrad.addColorStop(0.72, '#cbd5e1');
-          pegGrad.addColorStop(1, '#64748b');
+          if (currentScale > 1.04) {
+            pegGrad.addColorStop(0, '#ffffff');
+            pegGrad.addColorStop(0.35, '#fde047');
+            pegGrad.addColorStop(0.75, '#f59e0b');
+            pegGrad.addColorStop(1, '#b45309');
+          } else {
+            pegGrad.addColorStop(0, '#fffbeb');
+            pegGrad.addColorStop(0.35, '#fef08a');
+            pegGrad.addColorStop(0.72, '#d97706');
+            pegGrad.addColorStop(1, '#78350f');
+          }
 
           ctx.beginPath();
           ctx.arc(x, y, rad, 0, Math.PI * 2);
           ctx.fillStyle = pegGrad;
           ctx.fill();
 
-          // If peg is actively bouncing from impact, add a subtle luminous halo
+          // If peg is actively bouncing from impact, add a luminous emerald-gold halo
           if (currentScale > 1.06) {
             ctx.beginPath();
-            ctx.arc(x, y, rad * 1.25, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(56, 189, 248, ${Math.min(0.85, (currentScale - 1) * 2.2)})`;
-            ctx.lineWidth = 1.5;
+            ctx.arc(x, y, rad * 1.32, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(16, 185, 129, ${Math.min(0.9, (currentScale - 1) * 2.4)})`;
+            ctx.lineWidth = 1.6;
             ctx.stroke();
           }
         }
@@ -761,7 +788,7 @@ export const PlinkoGameArena: React.FC<{
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(
-            compactCrownOnly ? '👑' : '👑 VIP',
+            compactCrownOnly ? 'VIP' : '★ VIP',
             bxCenter,
             badgeY + badgeH / 2 + 0.5,
             badgeW - 1
@@ -831,7 +858,7 @@ export const PlinkoGameArena: React.FC<{
                   ? 'rgba(251, 191, 36, ALPHA)'
                   : 'rgba(244, 63, 94, ALPHA)',
             });
-            plinkoSoundEngine.playPegHit(0, activeRows);
+            soundHaptics.playPlinkoBounce(0, activeRows);
             ball.segmentIndex = 0;
           } else if (ball.segmentIndex < activeRows - 1) {
             // Ball finished moving from row = segmentIndex to nextRow = segmentIndex + 1
@@ -850,12 +877,12 @@ export const PlinkoGameArena: React.FC<{
               progress: 0,
               color:
                 hitRow > activeRows * 0.65
-                  ? 'rgba(0, 231, 1, ALPHA)'
+                  ? 'rgba(16, 185, 129, ALPHA)'
                   : ball.hueVariant === 'GOLD'
                   ? 'rgba(251, 191, 36, ALPHA)'
-                  : 'rgba(56, 189, 248, ALPHA)',
+                  : 'rgba(52, 211, 153, ALPHA)',
             });
-            plinkoSoundEngine.playPegHit(hitRow, activeRows);
+            soundHaptics.playPlinkoBounce(hitRow, activeRows);
             ball.segmentIndex += 1;
           } else {
             // Ball reached the final bucket!
@@ -873,8 +900,8 @@ export const PlinkoGameArena: React.FC<{
               flashAlpha: 1.0,
             });
 
-            // 2. Play procedural Web Audio bucket landing sound
-            plinkoSoundEngine.playBucketLand(ball.multiplier, ball.bonusTicket);
+            // 2. Play procedural Web Audio bucket landing sound + Telegram Haptic
+            soundHaptics.playPlinkoBucket(ball.multiplier, ball.bonusTicket);
 
             // 3. Float +WinAmount popup upward
             popupsRef.current.push({
@@ -883,7 +910,7 @@ export const PlinkoGameArena: React.FC<{
               y: bucketTopY - 8,
               vy: -58,
               text: `+${formatActiveTmaAmountRef.current(ball.payoutUsdt)}`,
-              subText: ball.bonusTicket ? '👑 +1 VIP LOTTERY TICKET!' : `${ball.multiplier}x`,
+              subText: ball.bonusTicket ? '★ +1 VIP LOTTERY TICKET!' : `${ball.multiplier}x`,
               color:
                 ball.multiplier >= 10 || ball.bonusTicket
                   ? '#fbbf24'
@@ -919,9 +946,9 @@ export const PlinkoGameArena: React.FC<{
 
             if (ball.bonusTicket) {
               setBonusBanner(
-                `👑 تبریک! توپ شما وارد اسلات ویژه LOTTERY TICKET شد و علاوه بر برد ${formatActiveTmaAmountRef.current(
+                `VIP LOTTERY TICKET UNLOCKED! +${formatActiveTmaAmountRef.current(
                   ball.payoutUsdt
-                )}، یک بلیت رایگان VIP لاتاری برای شما صادر گردید!`
+                )} (+1 Free VIP Ticket)`
               );
             }
 
@@ -976,79 +1003,22 @@ export const PlinkoGameArena: React.FC<{
         ball.x = bx;
         ball.y = by;
 
-        // Maintain 10-frame motion trail
+        // Maintain 14-frame soft trailing light wake
         ball.trail.unshift({ x: bx, y: by });
-        if (ball.trail.length > 10) {
+        if (ball.trail.length > 14) {
           ball.trail.pop();
         }
 
-        // Render 10-frame glowing quadraticCurveTo motion ribbon behind the ball
-        if (ball.trail.length >= 2) {
-          ctx.save();
-          for (let t = 0; t < ball.trail.length - 1; t++) {
-            const p0 = ball.trail[t];
-            const p1 = ball.trail[t + 1];
-            const ratio = 1 - t / ball.trail.length;
-            ctx.beginPath();
-            ctx.moveTo(p0.x, p0.y);
-            const midX = (p0.x + p1.x) / 2;
-            const midY = (p0.y + p1.y) / 2;
-            ctx.quadraticCurveTo(p0.x, p0.y, midX, midY);
-            ctx.strokeStyle =
-              ball.hueVariant === 'GOLD'
-                ? `rgba(251, 191, 36, ${(ratio * 0.52).toFixed(3)})`
-                : `rgba(244, 63, 94, ${(ratio * 0.52).toFixed(3)})`;
-            ctx.lineWidth = Math.max(1.2, ballRadius * 1.35 * ratio);
-            ctx.lineCap = 'round';
-            ctx.stroke();
-          }
-          ctx.restore();
-        }
-
-        // Render 3D Glowing Sphere with shadowBlur: 18 bloom & specular highlight dot
-        ctx.save();
-        ctx.shadowColor =
-          ball.hueVariant === 'GOLD' ? 'rgba(251, 191, 36, 0.95)' : 'rgba(244, 63, 94, 0.95)';
-        ctx.shadowBlur = 18;
-
-        const sphereGrad = ctx.createRadialGradient(
-          bx - ballRadius * 0.35,
-          by - ballRadius * 0.35,
-          ballRadius * 0.1,
+        // Render cascading energy orb with multi-layered soft trailing light FX
+        renderPlinkoEnergyOrbWithTrail(
+          ctx,
           bx,
           by,
-          ballRadius
+          ballRadius,
+          ball.trail,
+          ball.hueVariant,
+          now
         );
-        if (ball.hueVariant === 'GOLD') {
-          sphereGrad.addColorStop(0, '#ffffff');
-          sphereGrad.addColorStop(0.28, '#fde047');
-          sphereGrad.addColorStop(0.7, '#f59e0b');
-          sphereGrad.addColorStop(1, '#b45309');
-        } else {
-          sphereGrad.addColorStop(0, '#ffffff');
-          sphereGrad.addColorStop(0.28, '#fda4af');
-          sphereGrad.addColorStop(0.7, '#f43f5e');
-          sphereGrad.addColorStop(1, '#9f1239');
-        }
-
-        ctx.beginPath();
-        ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
-        ctx.fillStyle = sphereGrad;
-        ctx.fill();
-
-        // Crisp specular dot
-        ctx.shadowBlur = 0;
-        ctx.beginPath();
-        ctx.arc(
-          bx - ballRadius * 0.32,
-          by - ballRadius * 0.32,
-          ballRadius * 0.24,
-          0,
-          Math.PI * 2
-        );
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-        ctx.fill();
-        ctx.restore();
       }
 
       // 8. RENDER 3D CONFETTI & SPARK PARTICLE BURSTS
@@ -1146,8 +1116,7 @@ export const PlinkoGameArena: React.FC<{
   };
 
   const handleToggleMute = () => {
-    const nextMuted = plinkoSoundEngine.toggleMute();
-    setIsMuted(nextMuted);
+    toggleMute();
   };
 
   return (
@@ -1155,51 +1124,53 @@ export const PlinkoGameArena: React.FC<{
       {bonusBanner && (
         <div
           data-testid="plinko-bonus-ticket-banner"
-          className="p-3 rounded-2xl bg-[#130d24]/90 border border-[#fbbf24]/50 text-[#fbbf24] text-xs font-semibold flex items-center justify-between gap-2"
-          dir="rtl"
+          className="p-3 rounded-2xl bg-[#130d24]/95 backdrop-blur-xl border border-[#fbbf24]/50 text-[#fbbf24] text-xs font-semibold flex items-center justify-between gap-2"
         >
-          <span>{bonusBanner}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <RoyalJackpotCrownIcon size={16} />
+            <span>{bonusBanner}</span>
+          </span>
           <button
             type="button"
             onClick={() => navigateTo('my-tickets')}
             className="px-2.5 py-1 rounded-lg bg-[#fbbf24] text-slate-950 font-bold text-[11px] cursor-pointer shrink-0"
           >
-            مشاهده ↗
+            {tr(lang, 'مشاهده', 'View')}
           </button>
         </div>
       )}
 
       {errorBanner && (
         <div
-          className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center justify-between"
-          dir="rtl"
+          className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center justify-between gap-2"
         >
-          <span>⚠️ {errorBanner}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <LuxuryMineBombIcon size={15} />
+            <span>{errorBanner}</span>
+          </span>
           <button
             type="button"
             onClick={() => setErrorBanner(null)}
             className="text-[11px] underline cursor-pointer"
           >
-            بستن
+            {tr(lang, 'بستن', 'Close')}
           </button>
         </div>
       )}
 
       {/* =====================================================================
-          TOP: GAME CANVAS CONTAINER
-          w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716]
-          border border-purple-500/25 overflow-hidden relative
+          TOP: IMMERSIVE OBSIDIAN & GOLD GLASSMORPHIC GAME CANVAS CONTAINER
           ===================================================================== */}
-      <div className="w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716] border border-purple-500/25 overflow-hidden relative">
+      <div className="w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716] border border-amber-500/30 ring-1 ring-emerald-500/15 shadow-[inset_0_2px_28px_rgba(0,0,0,0.88),0_16px_40px_rgba(0,0,0,0.65)] overflow-hidden relative">
         {/* Top-Left: Minimal Floating Translucent Pill for Recent Multipliers */}
         <div
           data-testid="plinko-live-history-strip"
-          className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 max-w-[72%] overflow-x-auto no-scrollbar"
+          className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/85 backdrop-blur-xl border border-amber-500/30 max-w-[72%] overflow-x-auto no-scrollbar"
         >
           {landedHistory.length === 0 ? (
-            <span className="text-[11px] font-medium text-purple-300/60 tabular-nums">
+            <span className="text-[11px] font-medium text-amber-200/80 tabular-nums">
               {rows}R • {risk}
-              {activeBallsCount > 0 ? ` • ${activeBallsCount}●` : ''}
+              {activeBallsCount > 0 ? ` • ${activeBallsCount} ORB` : ''}
             </span>
           ) : (
             landedHistory.slice(0, 5).map((item, idx) => (
@@ -1226,18 +1197,17 @@ export const PlinkoGameArena: React.FC<{
             type="button"
             data-testid="plinko-audio-mute-btn"
             onClick={handleToggleMute}
-            aria-label={isMuted ? 'Unmute Plinko Audio' : 'Mute Plinko Audio'}
-            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-purple-200/90 hover:text-white flex items-center justify-center cursor-pointer"
+            aria-label={isMuted ? tr(lang, 'وصل صدا', 'Unmute Audio') : tr(lang, 'قطع صدا', 'Mute Audio')}
+            title={isMuted ? tr(lang, 'وصل صدا', 'Unmute Audio') : tr(lang, 'قطع صدا', 'Mute Audio')}
+            className="h-7 px-2 rounded-full bg-[#070510]/85 backdrop-blur-xl border border-amber-500/30 hover:border-amber-400/60 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
           >
-            <span className="material-symbols-outlined text-sm">
-              {isMuted ? 'volume_off' : 'volume_up'}
-            </span>
+            {isMuted ? <LuxurySoundMuteIcon size={14} /> : <LuxurySoundOnIcon size={14} />}
           </button>
           <button
             type="button"
             onClick={() => navigateTo('transparency')}
             aria-label="Provably Fair Verifier"
-            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
+            className="h-7 px-2.5 rounded-full bg-[#070510]/85 backdrop-blur-xl border border-amber-500/30 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
           >
             <ProvablyFairShieldIcon size={14} />
             <span>#{provablyFairSeeds.nonce}</span>
@@ -1253,23 +1223,24 @@ export const PlinkoGameArena: React.FC<{
       </div>
 
       {/* =====================================================================
-          BOTTOM CONTROL DECK
-          rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3
+          BOTTOM CONTROL DECK (Obsidian & Gold Glassmorphic Hardware Deck)
           ===================================================================== */}
-      <div className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3">
+      <div className="rounded-2xl bg-[#130d24]/95 backdrop-blur-xl p-3.5 border border-amber-500/30 shadow-[inset_0_1px_2px_rgba(255,255,255,0.18),0_12px_32px_rgba(0,0,0,0.6)] space-y-3">
         {/* ROW 1: Bet Amount Input (0.01 TON to ∞ Balance) with 1/2, 2x, MAX */}
-        <div className="h-11 rounded-xl bg-[#090612] px-3 border border-purple-500/20 flex items-center justify-between gap-2">
+        <div className="h-11 rounded-xl bg-[#090612]/95 px-3 border border-amber-500/25 shadow-inner flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
               data-testid="plinko-sidebar-balance"
               className="text-sm shrink-0 inline-flex items-center"
               title={formatActiveTmaAmount(balanceUsdt)}
             >
-              {activeTmaCurrency === 'TON' ? (
-                <TonCrystalIcon size={16} />
-              ) : (
-                <TelegramStarIcon size={16} />
-              )}
+              <LuxuryIconBadge variant={activeTmaCurrency === 'TON' ? 'cyan' : 'gold'} size="xs">
+                {activeTmaCurrency === 'TON' ? (
+                  <TonCrystalIcon size={14} />
+                ) : (
+                  <TelegramStarIcon size={14} />
+                )}
+              </LuxuryIconBadge>
             </span>
             <input
               id="plinko-bet-input"
@@ -1293,34 +1264,44 @@ export const PlinkoGameArena: React.FC<{
               type="button"
               data-testid="plinko-bet-half"
               onClick={() => {
+                soundHaptics.selectionChanged();
                 const minB = activeTmaCurrency === 'TON' ? 0.01 : 1;
                 setBetAmount(minB);
               }}
-              className="h-7 px-2 text-[10px] font-mono font-bold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-emerald-300 transition-colors cursor-pointer"
+              className="h-7 px-2 text-[10px] font-mono font-bold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/25 text-emerald-300 transition-colors cursor-pointer"
               title="Minimum Bet (0.01 TON)"
             >
               MIN
             </button>
             <button
               type="button"
-              onClick={handleHalfBet}
-              className="h-7 px-2 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
+              onClick={() => {
+                soundHaptics.selectionChanged();
+                handleHalfBet();
+              }}
+              className="h-7 px-2 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/25 text-purple-200 transition-colors cursor-pointer"
             >
               1/2
             </button>
             <button
               type="button"
               data-testid="plinko-bet-double"
-              onClick={handleDoubleBet}
-              className="h-7 px-2 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
+              onClick={() => {
+                soundHaptics.selectionChanged();
+                handleDoubleBet();
+              }}
+              className="h-7 px-2 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/25 text-purple-200 transition-colors cursor-pointer"
             >
               2x
             </button>
             <button
               type="button"
               data-testid="plinko-bet-max"
-              onClick={handleMaxBet}
-              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-[#fbbf24] transition-colors cursor-pointer"
+              onClick={() => {
+                soundHaptics.selectionChanged();
+                handleMaxBet();
+              }}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 border border-amber-500/30 text-[#fbbf24] transition-colors cursor-pointer"
               title="Bet Full Balance (∞)"
             >
               MAX
@@ -1331,7 +1312,7 @@ export const PlinkoGameArena: React.FC<{
         {/* ROW 2: Game-Specific Secondary Controls (Risk & Rows in uniform h-10 rounded-xl segmented selectors) */}
         <div className="grid grid-cols-2 gap-2">
           {/* Risk Segmented Selector */}
-          <div className="h-10 rounded-xl bg-[#090612] p-1 border border-purple-500/20 grid grid-cols-3 gap-1">
+          <div className="h-10 rounded-xl bg-[#090612]/95 p-1 border border-amber-500/25 grid grid-cols-3 gap-1">
             {(['LOW', 'MEDIUM', 'HIGH'] as PlinkoRiskLevel[]).map((level) => {
               const active = risk === level;
               return (
@@ -1339,10 +1320,13 @@ export const PlinkoGameArena: React.FC<{
                   key={level}
                   type="button"
                   data-testid={`plinko-risk-${level}`}
-                  onClick={() => setRisk(level)}
+                  onClick={() => {
+                    soundHaptics.selectionChanged();
+                    setRisk(level);
+                  }}
                   className={`rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
                     active
-                      ? 'bg-purple-600/40 text-white border border-purple-400/40'
+                      ? 'bg-gradient-to-b from-amber-500/35 to-purple-700/45 text-white border border-amber-400/50'
                       : 'text-purple-300/60 hover:text-white'
                   }`}
                 >
@@ -1353,7 +1337,7 @@ export const PlinkoGameArena: React.FC<{
           </div>
 
           {/* Rows Segmented Selector */}
-          <div className="h-10 rounded-xl bg-[#090612] p-1 border border-purple-500/20 grid grid-cols-3 gap-1">
+          <div className="h-10 rounded-xl bg-[#090612]/95 p-1 border border-amber-500/25 grid grid-cols-3 gap-1">
             {([8, 12, 16] as PlinkoRowCount[]).map((rCount) => {
               const active = rows === rCount;
               return (
@@ -1361,10 +1345,13 @@ export const PlinkoGameArena: React.FC<{
                   key={rCount}
                   type="button"
                   data-testid={`plinko-rows-${rCount}`}
-                  onClick={() => setRows(rCount)}
+                  onClick={() => {
+                    soundHaptics.selectionChanged();
+                    setRows(rCount);
+                  }}
                   className={`rounded-lg text-[11px] font-mono font-semibold transition-all cursor-pointer tabular-nums ${
                     active
-                      ? 'bg-purple-600/40 text-[#fbbf24] border border-purple-400/40'
+                      ? 'bg-gradient-to-b from-amber-500/35 to-purple-700/45 text-[#fbbf24] border border-amber-400/50'
                       : 'text-purple-300/60 hover:text-white'
                   }`}
                 >
@@ -1381,10 +1368,10 @@ export const PlinkoGameArena: React.FC<{
             type="button"
             data-testid="plinko-drop-ball-btn"
             onClick={handleDropSingleBall}
-            className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] via-[#7e22ce] to-[#6b21a8] border border-amber-400/40 shadow-[0_4px_0_#4c1d95,0_8px_24px_rgba(147,51,234,0.35)] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <LuxuryPlinkoPyramidIcon size={17} />
-            <span>Drop Ball</span>
+            <span>{tr(lang, 'پرتاب توپ', 'Drop Ball')}</span>
             <span className="px-2 py-0.5 rounded-lg bg-black/25 text-xs font-mono tabular-nums">
               {formatCurrency(betAmount)}
             </span>
@@ -1395,9 +1382,10 @@ export const PlinkoGameArena: React.FC<{
             data-testid="plinko-burst-5-btn"
             onClick={handleDropBurst5}
             title="Multi-Ball Burst (5x)"
-            className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer"
+            className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-amber-500/35 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer inline-flex items-center gap-1 active:scale-95 transition-transform"
           >
-            ⚡5x
+            <LuxuryLightningBoltIcon size={14} />
+            <span>5x</span>
           </button>
         </div>
       </div>

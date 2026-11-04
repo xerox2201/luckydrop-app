@@ -2,7 +2,7 @@ import React from 'react';
 
 export const LUXURY_IMAGES = {
   // Custom Rendered 3D LuckyDrop Brand & Background Suite
-  logo3d: '/luckydrop-logo.png',
+  logo3d: '/assets/3d/luckydrop-3d-logo.png',
   splashBg3d: '/assets/3d/luckydrop-3d-splash-bg.png',
   jackpotHero3d: '/assets/3d/luckydrop-3d-jackpot-hero.png',
   gamesBanner3d: '/assets/3d/luckydrop-3d-games-banner.png',
@@ -27,7 +27,7 @@ export const LUXURY_IMAGES = {
   cockpitCommandVault: '/assets/aistudio/Gemini_Generated_Image___12__7f974f44.jpg',
   telegramBot: '/assets/aistudio/Gemini_Generated_Image___13__cf879f0e.jpg',
   // 15-20. 3D Square Icons & Emblems
-  brandCrownLogo: '/luckydrop-logo.png',
+  brandCrownLogo: '/assets/3d/luckydrop-3d-logo.png',
   vipAvatar: '/assets/aistudio/Gemini_Generated_Image___15__f5bd1004.jpg',
   trophyIcon3d: '/assets/aistudio/Gemini_Generated_Image___16__d7467a9f.jpg',
   ticketIcon3d: '/assets/aistudio/Gemini_Generated_Image___17__711d1459.jpg',

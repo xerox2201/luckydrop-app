@@ -76,12 +76,22 @@
     overflow-x: hidden;
     overflow-y: auto;
     scroll-behavior: smooth;
-    background-color: #05030b;
+    background-color: #07090E;
     color: #f8fafc;
-    font-family: "Vazirmatn", "Plus Jakarta Sans", "Noto Sans SC", sans-serif;
+    font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
     font-variant-numeric: tabular-nums;
     -webkit-overflow-scrolling: touch;
     user-select: none;
+  }
+
+  html[dir="rtl"],
+  html[dir="rtl"] body {
+    font-family: "Vazirmatn", "Plus Jakarta Sans", sans-serif;
+  }
+
+  html[dir="ltr"],
+  html[dir="ltr"] body {
+    font-family: "Plus Jakarta Sans", "Vazirmatn", sans-serif;
   }
 
   body {
@@ -91,9 +101,11 @@
     min-height: 100dvh;
     overflow-x: hidden;
     overflow-y: visible;
-    background: radial-gradient(circle at 50% 0%, #170d33 0%, #070510 55%, #04020a 100%);
+    background-color: #07090E;
+    background-image:
+      radial-gradient(circle at 50% 0%, rgba(212, 175, 55, 0.08) 0%, rgba(11, 14, 20, 0.92) 48%, #07090E 100%),
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.028'/%3E%3C/svg%3E");
     color: #f8fafc;
-    font-family: "Vazirmatn", "Plus Jakarta Sans", "Noto Sans SC", sans-serif;
     font-variant-numeric: tabular-nums;
     touch-action: pan-y pinch-zoom;
     user-select: none;
@@ -105,8 +117,8 @@
     overflow-y: visible;
   }
 
-  code, pre, .font-mono, input[type="number"], input[type="text"] {
-    font-family: "JetBrains Mono", "Vazirmatn", monospace;
+  code, pre, .font-mono, .tabular-nums, input[type="number"], input[type="text"] {
+    font-family: "JetBrains Mono", "Plus Jakarta Sans", "Vazirmatn", monospace;
     font-variant-numeric: tabular-nums;
     user-select: text;
   }
@@ -408,40 +420,54 @@ button[data-tc-wallet-item="telegram-wallet"] {
 }
 
 /* ============================================================================
-   BESPOKE LUXURY SIGNATURE BRAND AESTHETICS (CLAYMORPHIC OBSIDIAN & GOLD/EMERALD)
+   BESPOKE LUXURY SIGNATURE BRAND AESTHETICS (BRUSHED METAL, CARBON OBSIDIAN & GOLD)
    ============================================================================ */
 
-.luckydrop-obsidian-glass {
-  background: linear-gradient(145deg, rgba(22, 15, 42, 0.94) 0%, rgba(11, 7, 22, 0.96) 100%);
+.luckydrop-obsidian-glass,
+.luckydrop-brushed-card {
+  background-color: #0B0E14;
+  background-image:
+    radial-gradient(120% 100% at 50% 0%, rgba(255, 255, 255, 0.045) 0%, rgba(11, 14, 20, 0.98) 65%),
+    linear-gradient(180deg, rgba(19, 24, 34, 0.94) 0%, rgba(11, 14, 20, 0.98) 100%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.032'/%3E%3C/svg%3E");
+  border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   box-shadow:
-    inset 0 2px 4px rgba(255, 255, 255, 0.18),
-    inset 0 -4px 8px rgba(0, 0, 0, 0.6),
-    0 14px 28px rgba(0, 0, 0, 0.65);
+    inset 0 1px 1px rgba(255, 255, 255, 0.14),
+    0 16px 36px rgba(0, 0, 0, 0.75);
 }
 
 .luckydrop-specular-gold {
-  border: 1px solid rgba(255, 215, 0, 0.36);
+  border: 1px solid rgba(212, 175, 55, 0.34);
   box-shadow:
-    inset 0 2px 4px rgba(255, 240, 150, 0.25),
-    inset 0 -4px 8px rgba(0, 0, 0, 0.6),
-    0 12px 26px rgba(0, 0, 0, 0.6);
+    inset 0 1px 1px rgba(245, 208, 97, 0.24),
+    0 16px 36px rgba(0, 0, 0, 0.78);
 }
 
 .luckydrop-specular-purple {
-  border: 1px solid rgba(168, 85, 247, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
-    inset 0 2px 4px rgba(216, 180, 254, 0.22),
-    inset 0 -4px 8px rgba(0, 0, 0, 0.58),
-    0 12px 24px rgba(0, 0, 0, 0.58);
+    inset 0 1px 1px rgba(255, 255, 255, 0.14),
+    0 16px 36px rgba(0, 0, 0, 0.75);
+}
+
+.luckydrop-brushed-gold {
+  background-image: linear-gradient(180deg, #F5D061 0%, #D4AF37 52%, #9A7418 100%);
+  color: #090B10;
+  border: 1px solid rgba(255, 238, 170, 0.55);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.65),
+    inset 0 -1px 2px rgba(66, 44, 4, 0.65),
+    0 8px 20px rgba(212, 175, 55, 0.25);
 }
 
 .luckydrop-microgrid-watermark {
-  background-image: radial-gradient(rgba(255, 215, 0, 0.1) 1px, transparent 1px),
-    linear-gradient(to right, rgba(0, 245, 212, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(168, 85, 247, 0.04) 1px, transparent 1px);
-  background-size: 18px 18px, 18px 18px, 18px 18px;
+  background-image:
+    radial-gradient(120% 90% at 50% 0%, rgba(212, 175, 55, 0.07) 0%, transparent 65%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 100% 100%, 24px 24px, 24px 24px;
 }
 
 @keyframes luckydropHoloSweep {
@@ -470,10 +496,9 @@ button[data-tc-wallet-item="telegram-wallet"] {
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0) 0%,
-    rgba(0, 245, 212, 0.09) 35%,
-    rgba(255, 224, 102, 0.16) 55%,
+    rgba(245, 208, 97, 0.06) 50%,
     rgba(255, 255, 255, 0) 100%
   );
-  animation: luckydropHoloSweep 5.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: luckydropHoloSweep 6.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 

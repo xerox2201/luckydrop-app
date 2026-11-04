@@ -132,9 +132,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ state, onRetry }) =>
             <div className="flex items-center justify-between text-[11px] font-bold px-1">
               <span className="text-slate-200 flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#00F5D4]" />
-                {lang === 'EN' ? stepSubtitleEn : stepTitleFa}
+                {tr(lang, stepTitleFa, stepSubtitleEn)}
               </span>
-              <span className="font-mono text-[#00F5D4]">{progress}%</span>
+              <span className="font-mono text-[#00F5D4] tabular-nums" dir="ltr">
+                {progress}%
+              </span>
             </div>
 
             <div className="w-full h-2.5 rounded-full bg-white/[0.06] border border-white/10 overflow-hidden p-0.5">

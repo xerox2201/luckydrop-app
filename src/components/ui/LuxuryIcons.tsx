@@ -1350,3 +1350,153 @@ export const LuxuryFlagIcon: React.FC<LuxuryFlagIconProps> = ({
   );
 };
 
+/**
+ * 20. `LuxurySoundOnIcon`
+ * Bespoke 3D obsidian-and-gold acoustic speaker cone with glowing emerald harmonic soundwaves.
+ */
+export const LuxurySoundOnIcon: React.FC<LuxuryIconProps> = ({
+  size = 18,
+  className = '',
+}) => {
+  const uid = useId().replace(/:/g, '');
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`shrink-0 ${className}`}
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={`sndGold_${uid}`} x1="3" y1="5" x2="15" y2="19" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FEF08A" />
+          <stop offset="55%" stopColor="#F59E0B" />
+          <stop offset="100%" stopColor="#B45309" />
+        </linearGradient>
+        <linearGradient id={`sndWave_${uid}`} x1="15" y1="5" x2="21" y2="19" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#6EE7B7" />
+          <stop offset="50%" stopColor="#10B981" />
+          <stop offset="100%" stopColor="#FDE047" />
+        </linearGradient>
+        <filter id={`sndGlow_${uid}`} x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1.2" stdDeviation="1.1" floodColor="#10B981" floodOpacity="0.45" />
+        </filter>
+      </defs>
+      <g filter={`url(#sndGlow_${uid})`}>
+        <path
+          d="M11.2 4.8L6.8 8.6H3.8C3.1 8.6 2.5 9.2 2.5 9.9V14.1C2.5 14.8 3.1 15.4 3.8 15.4H6.8L11.2 19.2C12 19.9 13.2 19.3 13.2 18.2V5.8C13.2 4.7 12 4.1 11.2 4.8Z"
+          fill={`url(#sndGold_${uid})`}
+          stroke="#FEF9C3"
+          strokeWidth="1.15"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M16.2 8.8C17.3 9.7 17.9 10.8 17.9 12C17.9 13.2 17.3 14.3 16.2 15.2"
+          stroke={`url(#sndWave_${uid})`}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <path
+          d="M18.8 6.2C20.6 7.7 21.5 9.7 21.5 12C21.5 14.3 20.6 16.3 18.8 17.8"
+          stroke={`url(#sndWave_${uid})`}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </g>
+    </svg>
+  );
+};
+
+/**
+ * 21. `LuxurySoundMuteIcon`
+ * Bespoke 3D obsidian-and-gold acoustic speaker with a glowing ruby/crimson mute slash.
+ */
+export const LuxurySoundMuteIcon: React.FC<LuxuryIconProps> = ({
+  size = 18,
+  className = '',
+}) => {
+  const uid = useId().replace(/:/g, '');
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`shrink-0 ${className}`}
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={`mutBody_${uid}`} x1="3" y1="5" x2="15" y2="19" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#94A3B8" />
+          <stop offset="55%" stopColor="#475569" />
+          <stop offset="100%" stopColor="#1E293B" />
+        </linearGradient>
+        <filter id={`mutGlow_${uid}`} x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1.2" stdDeviation="1.1" floodColor="#F43F5E" floodOpacity="0.45" />
+        </filter>
+      </defs>
+      <g filter={`url(#mutGlow_${uid})`}>
+        <path
+          d="M11.2 4.8L6.8 8.6H3.8C3.1 8.6 2.5 9.2 2.5 9.9V14.1C2.5 14.8 3.1 15.4 3.8 15.4H6.8L11.2 19.2C12 19.9 13.2 19.3 13.2 18.2V5.8C13.2 4.7 12 4.1 11.2 4.8Z"
+          fill={`url(#mutBody_${uid})`}
+          stroke="#CBD5E1"
+          strokeWidth="1.15"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M16.2 9.5L21.2 14.5M21.2 9.5L16.2 14.5"
+          stroke="#F43F5E"
+          strokeWidth="2.1"
+          strokeLinecap="round"
+        />
+      </g>
+    </svg>
+  );
+};
+
+/**
+ * 22. `LuxuryLightningBoltIcon`
+ * Bespoke 3D golden-emerald high-voltage lightning bolt emblem (replaces ⚡).
+ */
+export const LuxuryLightningBoltIcon: React.FC<LuxuryIconProps> = ({
+  size = 18,
+  className = '',
+}) => {
+  const uid = useId().replace(/:/g, '');
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`shrink-0 ${className}`}
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={`boltGold_${uid}`} x1="5" y1="2" x2="19" y2="22" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FFFBEB" />
+          <stop offset="45%" stopColor="#FDE047" />
+          <stop offset="100%" stopColor="#F59E0B" />
+        </linearGradient>
+        <filter id={`boltGlow_${uid}`} x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1.4" stdDeviation="1.2" floodColor="#F59E0B" floodOpacity="0.5" />
+        </filter>
+      </defs>
+      <g filter={`url(#boltGlow_${uid})`}>
+        <path
+          d="M13.5 2.2L5.2 13.2H11.6L10.5 21.8L18.8 10.8H12.4L13.5 2.2Z"
+          fill={`url(#boltGold_${uid})`}
+          stroke="#FEF9C3"
+          strokeWidth="1.15"
+          strokeLinejoin="round"
+        />
+      </g>
+    </svg>
+  );
+};
+
+

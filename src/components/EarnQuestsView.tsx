@@ -157,9 +157,9 @@ export const EarnQuestsView: React.FC = () => {
       {/* 1. HERO BONUS & TURNOVER-LOCKED REWARDS SUMMARY */}
       <section className="relative overflow-hidden rounded-3xl p-4 bg-gradient-to-br from-[#16102C] via-[#0F0A20] to-[#080512] border border-[#FFD700]/30 shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_12px_26px_rgba(0,0,0,0.55)]">
         <img
-          src="/assets/3d/ton-chest-3d.png"
+          src="/assets/3d/luckydrop-3d-jackpot-hero.png"
           alt="TON Bonus Chest 3D"
-          className="absolute -left-4 -bottom-4 w-28 h-28 object-cover opacity-20 pointer-events-none"
+          className="absolute -left-4 -bottom-4 w-32 h-32 object-cover opacity-25 pointer-events-none rounded-2xl"
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).style.display = 'none';
           }}
@@ -309,31 +309,34 @@ export const EarnQuestsView: React.FC = () => {
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-black text-white">
-                    {lang === 'EN' ? quest.titleEn : quest.titleFa}
+                    {tr(lang, quest.titleFa, quest.titleEn)}
                   </div>
                   <div className="text-[10px] text-slate-400 mt-0.5">
-                    {lang === 'EN'
-                      ? quest.id === 'CONNECT_TON_WALLET'
+                    {tr(
+                      lang,
+                      quest.subtitleFa,
+                      quest.id === 'CONNECT_TON_WALLET'
                         ? 'Connect Tonkeeper, MyTonWallet, Tonhub, or Bitget Wallet'
                         : quest.id === 'JOIN_TELEGRAM_CHANNEL'
                         ? 'Join the official community channel for draw alerts'
                         : quest.id === 'DAILY_STREAK_7'
                         ? 'Check in daily to receive a free Scratch Card & XP'
                         : 'Play 10 rounds across any Instant Mini-Game'
-                      : quest.subtitleFa}
+                    )}
                   </div>
                   <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-xl bg-[#FFD700]/12 border border-[#FFD700]/30 text-[10px] font-black text-[#FFE066]">
                     <span>
-                      🎁{' '}
-                      {lang === 'EN'
-                        ? quest.id === 'CONNECT_TON_WALLET'
+                      {tr(
+                        lang,
+                        quest.rewardLabelFa,
+                        quest.id === 'CONNECT_TON_WALLET'
                           ? '+2 Free Plinko Drops + 50 XP'
                           : quest.id === 'JOIN_TELEGRAM_CHANNEL'
                           ? '+1 Free Lottery Ticket + 40 XP'
                           : quest.id === 'DAILY_STREAK_7'
                           ? '+1 Free Scratch Card + 35 XP'
                           : '+3 Free Plinko Drops + 80 XP'
-                        : quest.rewardLabelFa}
+                      )}
                     </span>
                   </div>
                 </div>

@@ -8,8 +8,14 @@ import {
   sha256Hex,
 } from '../utils/provablyFair.ts';
 import { crashSoundEngine } from '../utils/crashSoundEngine.ts';
+import { useSoundHaptics } from '../services/soundHaptics.ts';
 import { generateDeterministicUuid } from '../services/pamWalletEngine.ts';
 import { tmaCurrencyToUsdt } from '../utils/telegramTma.ts';
+import { tr } from '../utils/i18n.ts';
+import {
+  renderCrashNeonEmeraldParabolicTrail,
+  renderGoldenRocketShip3D,
+} from './games/fx/CrashTrailFX.tsx';
 import {
   TonCrystalIcon,
   TelegramStarIcon,
@@ -17,6 +23,10 @@ import {
   LuxuryMineBombIcon,
   MinesEmeraldGemIcon,
   ProvablyFairShieldIcon,
+  LuxurySoundOnIcon,
+  LuxurySoundMuteIcon,
+  VipTicketIcon,
+  RoyalJackpotCrownIcon,
 } from './ui/LuxuryIcons.tsx';
 
 export type CrashPhase = 'COUNTDOWN' | 'IN_PROGRESS' | 'CRASHED';
@@ -176,7 +186,9 @@ export const CrashGameArena: React.FC<{
     setDepositModalOpen,
     setWalletDrawerOpen,
     navigateTo,
+    lang,
   } = useLottery();
+  const { isMuted, toggleMute, haptics } = useSoundHaptics();
 
   // Left Control Sidebar State (betAmount is in activeTmaCurrency: TON or STARS)
   const [controlTab, setControlTab] = useState<'MANUAL' | 'AUTO'>('MANUAL');
@@ -186,7 +198,6 @@ export const CrashGameArena: React.FC<{
   const [autoCashoutX, setAutoCashoutX] = useState<number>(2.0);
   const [autoBetCount, setAutoBetCount] = useState<number>(10);
   const [autoRunning, setAutoRunning] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(() => crashSoundEngine.isMuted());
 
   useEffect(() => {
     setBetAmount((prev) => {
@@ -389,8 +400,9 @@ export const CrashGameArena: React.FC<{
       setPlayerWinAmountUsdt(finalPayoutUsdt);
       setPlayerWonLuckyAirdrop(isLuckyAirdrop);
 
-      // Play emerald cashout synth chord
+      // Play emerald cashout synth chord + Telegram haptic feedback
       crashSoundEngine.playCashout();
+      haptics.playCrashCashout(clampedMult >= 5);
 
       // Credit PAM Seamless Wallet linked to activeDebitUuidRef with strict 1:1 native currency
       const creditUuid = generateDeterministicUuid('crash_credit');
@@ -423,7 +435,7 @@ export const CrashGameArena: React.FC<{
         outcomeNumeric: crashPointRef.current,
         outcomeLabel: `Cashed Out @ ${clampedMult.toFixed(2)}x (Crash @ ${crashPointRef.current.toFixed(
           2
-        )}x)${isLuckyAirdrop ? ' + 🪂 LUCKY AIRDROP TICKET' : ''}`,
+        )}x)${isLuckyAirdrop ? ' + LUCKY AIRDROP TICKET' : ''}`,
         won: true,
         multiplier: clampedMult,
         payoutUsdt: finalPayoutUsdt,
@@ -435,7 +447,7 @@ export const CrashGameArena: React.FC<{
 
       onRoundSettledRef.current?.(evaluation, activeDebitUuidRef.current || '');
     },
-    [pamCredit]
+    [pamCredit, haptics]
   );
 
   // Lock in Player Bet during COUNTDOWN (Debits PAM Seamless Wallet immediately)
@@ -706,6 +718,7 @@ export const CrashGameArena: React.FC<{
           setPhase('IN_PROGRESS');
           setLiveMultiplier(1.0);
           crashSoundEngine.startFlightSound();
+          haptics.playRocketLaunch();
         }
       } else if (phaseRef.current === 'IN_PROGRESS') {
         const elapsedSec = (now - phaseStartTimeRef.current) / 1000;
@@ -756,6 +769,7 @@ export const CrashGameArena: React.FC<{
           setPhase('CRASHED');
           setLiveMultiplier(targetCrash);
           crashSoundEngine.playCrashExplosion();
+          haptics.playCrashExplosion();
 
           // Push to Top 12 Crash Outcomes Ribbon
           setCrashHistory12((prev) => [
@@ -799,6 +813,7 @@ export const CrashGameArena: React.FC<{
           crashSoundEngine.updateFlightPitch(rawMult);
           if (now - lastUiSyncTime > 45) {
             setLiveMultiplier(rawMult);
+            haptics.updateRocketThruster(rawMult);
             lastUiSyncTime = now;
           }
         }
@@ -953,7 +968,7 @@ export const CrashGameArena: React.FC<{
           ctx.fillStyle = '#fbbf24';
           ctx.font = '800 10px "Plus Jakarta Sans", sans-serif';
           ctx.textAlign = 'left';
-          ctx.fillText('🪂 5.00x LUCKY TICKET AIRDROP ZONE', padLeft + 10, airdropY - 6);
+          ctx.fillText('★ 5.00x LUCKY TICKET AIRDROP ZONE', padLeft + 10, airdropY - 6);
           ctx.restore();
         }
       }
@@ -982,44 +997,15 @@ export const CrashGameArena: React.FC<{
         };
         const tangentAngle = Math.atan2(tipPt.y - prevPt.y, tipPt.x - prevPt.x);
 
-        // a) Translucent Vertical Gradient Fill underneath the curve
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, padTop + plotH);
-        ctx.lineTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length; i++) {
-          const midX = (pts[i - 1].x + pts[i].x) / 2;
-          const midY = (pts[i - 1].y + pts[i].y) / 2;
-          ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, midX, midY);
-        }
-        ctx.lineTo(tipPt.x, tipPt.y);
-        ctx.lineTo(tipPt.x, padTop + plotH);
-        ctx.closePath();
-
-        const areaGrad = ctx.createLinearGradient(0, tipPt.y, 0, padTop + plotH);
-        areaGrad.addColorStop(0, palette.fillTop);
-        areaGrad.addColorStop(1, palette.fillBottom);
-        ctx.fillStyle = areaGrad;
-        ctx.fill();
-        ctx.restore();
-
-        // b) Thick Glowing Quadratic Flight Curve (lineWidth: 5, shadowBlur: 20)
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length; i++) {
-          const midX = (pts[i - 1].x + pts[i].x) / 2;
-          const midY = (pts[i - 1].y + pts[i].y) / 2;
-          ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, midX, midY);
-        }
-        ctx.lineTo(tipPt.x, tipPt.y);
-        ctx.strokeStyle = palette.stroke;
-        ctx.lineWidth = 5;
-        ctx.lineCap = 'round';
-        ctx.shadowColor = palette.glow;
-        ctx.shadowBlur = 20;
-        ctx.stroke();
-        ctx.restore();
+        // a & b) Glowing Neon-Emerald & Gold Parabolic Trail with Plasma Core & Area Underfill
+        renderCrashNeonEmeraldParabolicTrail(
+          ctx,
+          pts,
+          padTop + plotH,
+          curM,
+          isCrashed,
+          now
+        );
 
         // c) Pinned Green Cash-Out Marker & Lucky Airdrop Parachute on Curve
         if (cashedOutMarkerRef.current) {
@@ -1061,7 +1047,7 @@ export const CrashGameArena: React.FC<{
             ctx.fillStyle = '#fde047';
             ctx.font = '900 10px "Plus Jakarta Sans", sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('🪂 +1 VIP TICKET AIRDROP!', mx, my - 52);
+            ctx.fillText('★ +1 VIP TICKET AIRDROP!', mx, my - 52);
           }
 
           // Pinned Callout Pill ("You Cashed Out @ X.XXx")
@@ -1087,28 +1073,28 @@ export const CrashGameArena: React.FC<{
           ctx.restore();
         }
 
-        // d) Emit continuous 40+ physics-driven thruster flame & smoke particles while flying
+        // d) Emit continuous 40+ physics-driven neon-emerald & golden thruster flame particles while flying
         if (!isCrashed) {
           const exhaustX = tipPt.x - Math.cos(tangentAngle) * 18;
           const exhaustY = tipPt.y - Math.sin(tangentAngle) * 18;
-          const flamePalette = ['#ffffff', '#fde047', '#f97316', '#ef4444'];
+          const flamePalette = ['#ffffff', '#fde047', '#f59e0b', '#34d399', '#10b981'];
 
           for (let p = 0; p < 3; p++) {
             const spread = (Math.random() - 0.5) * 0.65;
             const ejectAngle = tangentAngle + Math.PI + spread;
-            const speed = 90 + Math.random() * 140;
-            const isSmoke = Math.random() < 0.28;
+            const speed = 90 + Math.random() * 145;
+            const isSmoke = Math.random() < 0.24;
             particlesRef.current.push({
               x: exhaustX + (Math.random() - 0.5) * 4,
               y: exhaustY + (Math.random() - 0.5) * 4,
               vx: Math.cos(ejectAngle) * speed,
               vy: Math.sin(ejectAngle) * speed,
-              size: isSmoke ? 5 + Math.random() * 6 : 3.5 + Math.random() * 4.5,
+              size: isSmoke ? 5 + Math.random() * 5.5 : 3.6 + Math.random() * 4.5,
               life: 0,
-              maxLife: isSmoke ? 0.38 + Math.random() * 0.25 : 0.18 + Math.random() * 0.16,
+              maxLife: isSmoke ? 0.36 + Math.random() * 0.22 : 0.2 + Math.random() * 0.16,
               kind: isSmoke ? 'SMOKE' : 'FLAME',
               color: isSmoke
-                ? 'rgba(148, 163, 184, 0.35)'
+                ? 'rgba(16, 185, 129, 0.28)'
                 : flamePalette[Math.floor(Math.random() * flamePalette.length)],
               rotation: 0,
               vRot: 0,
@@ -1123,75 +1109,9 @@ export const CrashGameArena: React.FC<{
           }
         }
 
-        // e) 3D-Shaded Metallic Rocket / Thruster Capsule tilted along Math.atan2
+        // e) 3D Golden Rocket Ship with Twin Pulsing Thrusters tilted along Math.atan2
         if (!isCrashed) {
-          ctx.save();
-          ctx.translate(tipPt.x, tipPt.y);
-          ctx.rotate(tangentAngle);
-
-          // Outer thruster bloom
-          ctx.shadowColor = palette.glow;
-          ctx.shadowBlur = 18;
-
-          // Afterburner core cone behind rocket nozzle
-          const flameLen = 16 + Math.random() * 10;
-          const coneGrad = ctx.createLinearGradient(-14, 0, -14 - flameLen, 0);
-          coneGrad.addColorStop(0, '#ffffff');
-          coneGrad.addColorStop(0.35, '#fde047');
-          coneGrad.addColorStop(0.75, '#f97316');
-          coneGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-          ctx.beginPath();
-          ctx.moveTo(-12, -4.5);
-          ctx.lineTo(-14 - flameLen, 0);
-          ctx.lineTo(-12, 4.5);
-          ctx.closePath();
-          ctx.fillStyle = coneGrad;
-          ctx.fill();
-
-          // Delta swept fins
-          ctx.fillStyle = palette.stroke;
-          ctx.beginPath();
-          ctx.moveTo(-6, -5);
-          ctx.lineTo(-15, -13);
-          ctx.lineTo(-12, -4);
-          ctx.closePath();
-          ctx.fill();
-
-          ctx.beginPath();
-          ctx.moveTo(-6, 5);
-          ctx.lineTo(-15, 13);
-          ctx.lineTo(-12, 4);
-          ctx.closePath();
-          ctx.fill();
-
-          // 3D Cylindrical Metallic Fuselage
-          const bodyGrad = ctx.createLinearGradient(0, -7, 0, 7);
-          bodyGrad.addColorStop(0, '#ffffff');
-          bodyGrad.addColorStop(0.45, '#e2e8f0');
-          bodyGrad.addColorStop(0.8, '#94a3b8');
-          bodyGrad.addColorStop(1, '#475569');
-
-          ctx.beginPath();
-          ctx.moveTo(18, 0);
-          ctx.quadraticCurveTo(10, -7.5, -12, -6);
-          ctx.lineTo(-12, 6);
-          ctx.quadraticCurveTo(10, 7.5, 18, 0);
-          ctx.closePath();
-          ctx.fillStyle = bodyGrad;
-          ctx.fill();
-
-          //Glowing cyan cockpit canopy window
-          ctx.shadowBlur = 0;
-          ctx.fillStyle = '#0284c7';
-          ctx.beginPath();
-          ctx.ellipse(3, -1, 5.2, 2.7, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#e0f2fe';
-          ctx.beginPath();
-          ctx.ellipse(4.2, -1.8, 2.1, 1.0, 0, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.restore();
+          renderGoldenRocketShip3D(ctx, tipPt.x, tipPt.y, tangentAngle, now);
         }
       }
 
@@ -1277,8 +1197,7 @@ export const CrashGameArena: React.FC<{
   };
 
   const handleToggleMute = () => {
-    const nextMuted = crashSoundEngine.toggleMute();
-    setIsMuted(nextMuted);
+    toggleMute();
   };
 
   const curveColors = getFlightCurveColors(liveMultiplier, phase === 'CRASHED');
@@ -1300,27 +1219,28 @@ export const CrashGameArena: React.FC<{
           className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center justify-between"
           dir="rtl"
         >
-          <span>⚠️ {errorBanner}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <LuxuryMineBombIcon size={14} />
+            <span>{errorBanner}</span>
+          </span>
           <button
             type="button"
             onClick={() => setErrorBanner(null)}
             className="text-[11px] underline cursor-pointer"
           >
-            بستن
+            {tr(lang, 'بستن', 'Dismiss')}
           </button>
         </div>
       )}
 
       {/* =====================================================================
-          TOP: GAME CANVAS CONTAINER
-          w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716]
-          border border-purple-500/25 overflow-hidden relative
+          TOP: IMMERSIVE OBSIDIAN & GOLD GLASSMORPHIC GAME CANVAS CONTAINER
           ===================================================================== */}
-      <div className="w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716] border border-purple-500/25 overflow-hidden relative">
+      <div className="w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#070510]/95 backdrop-blur-xl border border-amber-500/30 shadow-[inset_0_2px_28px_rgba(0,0,0,0.88),0_16px_40px_rgba(0,0,0,0.65)] overflow-hidden relative">
         {/* Top-Left: Minimal Floating Translucent Pill for Recent Multipliers */}
         <div
           data-testid="crash-history-ribbon"
-          className="absolute top-2.5 left-2.5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 max-w-[70%] overflow-x-auto no-scrollbar"
+          className="absolute top-2.5 left-2.5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/85 backdrop-blur-md border border-amber-500/25 max-w-[66%] overflow-x-auto no-scrollbar"
         >
           {crashHistory12.slice(0, 5).map((h, idx) => {
             const isGold = h.crashPoint >= 10;
@@ -1349,18 +1269,20 @@ export const CrashGameArena: React.FC<{
             type="button"
             data-testid="crash-audio-mute-btn"
             onClick={handleToggleMute}
-            aria-label={isMuted ? 'Unmute Crash Audio' : 'Mute Crash Audio'}
-            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-purple-200/90 hover:text-white flex items-center justify-center cursor-pointer"
+            aria-label={isMuted ? tr(lang, 'وصل صدا', 'Sound On') : tr(lang, 'قطع صدا', 'Muted')}
+            title={isMuted ? tr(lang, 'وصل صدا', 'Sound On') : tr(lang, 'قطع صدا', 'Muted')}
+            className="h-7 px-2.5 rounded-full bg-[#070510]/85 backdrop-blur-md border border-amber-500/30 text-amber-200/90 hover:text-white flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-transform"
           >
-            <span className="material-symbols-outlined text-sm">
-              {isMuted ? 'volume_off' : 'volume_up'}
+            {isMuted ? <LuxurySoundMuteIcon size={14} /> : <LuxurySoundOnIcon size={14} />}
+            <span className="text-[10px] font-bold hidden sm:inline">
+              {isMuted ? tr(lang, 'قطع صدا', 'Muted') : tr(lang, 'صدا فعال', 'Sound On')}
             </span>
           </button>
           <button
             type="button"
             onClick={() => navigateTo('transparency')}
             aria-label="Provably Fair Verifier"
-            className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
+            className="h-7 px-2.5 rounded-full bg-[#070510]/85 backdrop-blur-md border border-emerald-500/30 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
           >
             <ProvablyFairShieldIcon size={14} />
             <span>#{roundNonceRef.current}</span>
@@ -1451,12 +1373,11 @@ export const CrashGameArena: React.FC<{
       </div>
 
       {/* =====================================================================
-          BOTTOM CONTROL DECK
-          rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3
+          BOTTOM CONTROL DECK (Obsidian & Gold Glassmorphic Hardware Deck)
           ===================================================================== */}
-      <div className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3">
+      <div className="rounded-2xl bg-[#110b22]/95 backdrop-blur-xl p-3.5 border border-amber-500/30 shadow-[inset_0_2px_22px_rgba(0,0,0,0.75),0_12px_32px_rgba(0,0,0,0.55)] space-y-3">
         {/* ROW 1: Bet Amount Input (h-11 rounded-xl bg-[#090612] px-3) with 1/2, 2x, MAX */}
-        <div className="h-11 rounded-xl bg-[#090612] px-3 border border-purple-500/20 flex items-center justify-between gap-2">
+        <div className="h-11 rounded-xl bg-[#090612] px-3 border border-amber-500/20 flex items-center justify-between gap-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.85)]">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
               data-testid="crash-sidebar-balance"
@@ -1515,10 +1436,10 @@ export const CrashGameArena: React.FC<{
         </div>
 
         {/* ROW 2: Auto-Cashout Multiplier Input & Presets in uniform h-10 rounded-xl selector */}
-        <div className="h-10 rounded-xl bg-[#090612] px-2.5 border border-purple-500/20 flex items-center justify-between gap-2">
+        <div className="h-10 rounded-xl bg-[#090612] px-2.5 border border-amber-500/20 flex items-center justify-between gap-2 shadow-[inset_0_2px_10px_rgba(0,0,0,0.85)]">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[11px] font-medium text-purple-300/60 whitespace-nowrap">
-              Auto Cashout:
+              {tr(lang, 'برداشت خودکار:', 'Auto Cashout:')}
             </span>
             <input
               id="crash-autocashout-input"
@@ -1541,10 +1462,13 @@ export const CrashGameArena: React.FC<{
                   key={preset}
                   type="button"
                   data-testid={`crash-preset-${preset}x`}
-                  onClick={() => setAutoCashoutX(preset)}
+                  onClick={() => {
+                    haptics.selectionChanged();
+                    setAutoCashoutX(preset);
+                  }}
                   className={`h-7 px-2 rounded-lg font-mono text-[11px] font-semibold transition-all cursor-pointer tabular-nums ${
                     active
-                      ? 'bg-purple-600/40 text-white border border-purple-400/40'
+                      ? 'bg-purple-600/40 text-white border border-amber-400/40'
                       : 'bg-purple-950/60 text-purple-300/70 hover:text-white'
                   }`}
                 >
@@ -1580,11 +1504,11 @@ export const CrashGameArena: React.FC<{
               <span>
                 {phase === 'COUNTDOWN'
                   ? betPlacedForCurrentRound
-                    ? 'Cancel Bet'
-                    : 'Place Bet'
+                    ? tr(lang, 'لغو شرط', 'Cancel Bet')
+                    : tr(lang, 'ثبت شرط', 'Place Bet')
                   : betQueuedForNextRound
-                  ? 'Cancel Queued Bet'
-                  : 'Bet (Next Flight)'}
+                  ? tr(lang, 'لغو نوبت بعدی', 'Cancel Queued Bet')
+                  : tr(lang, 'شرط (پرواز بعدی)', 'Bet (Next Flight)')}
               </span>
               <span className="px-2 py-0.5 rounded-lg bg-black/25 text-xs font-mono tabular-nums">
                 {formatCurrency(betAmount)}
@@ -1598,10 +1522,10 @@ export const CrashGameArena: React.FC<{
               data-testid="crash-launch-now-btn"
               onClick={handleSkipCountdownAndLaunchNow}
               title="Launch Flight Now"
-              className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer inline-flex items-center gap-1 active:scale-95 transition-transform duration-200"
+              className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-amber-500/30 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer inline-flex items-center gap-1 active:scale-95 transition-transform duration-200"
             >
               <LuxuryCrashMultiplierIcon size={15} />
-              <span>Now</span>
+              <span>{tr(lang, 'پرواز آنی', 'Now')}</span>
             </button>
           )}
         </div>
@@ -1612,12 +1536,19 @@ export const CrashGameArena: React.FC<{
           ===================================================================== */}
       <div
         data-testid="crash-live-players-board"
-        className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-2.5"
+        className="rounded-2xl bg-[#110b22]/95 backdrop-blur-xl p-3.5 border border-amber-500/25 shadow-[inset_0_2px_20px_rgba(0,0,0,0.75)] space-y-2.5"
       >
         <div className="flex items-center justify-between text-xs border-b border-purple-500/15 pb-2" dir="rtl">
           <div className="flex items-center gap-1.5 font-bold text-white">
             <span className="w-2 h-2 rounded-full bg-[#00f59b] animate-pulse" />
-            <span>شرط‌ها و برداشت‌های زنده بازیکنان ({peerBets.length + (betPlacedForCurrentRound ? 1 : 0)})</span>
+            <span>
+              {tr(
+                lang,
+                'شرط‌ها و برداشت‌های زنده بازیکنان',
+                'Live Players Bets & Cashouts'
+              )}{' '}
+              ({peerBets.length + (betPlacedForCurrentRound ? 1 : 0)})
+            </span>
           </div>
           <span className="font-mono text-[11px] font-bold text-[#fbbf24] tabular-nums" dir="ltr">
             Pool: {formatActiveTmaAmount(totalRoundPoolUsdt)}
@@ -1647,7 +1578,7 @@ export const CrashGameArena: React.FC<{
               }`}
             >
               <div className="col-span-4 flex items-center gap-1.5 truncate font-sans font-bold text-[#fbbf24]">
-                <span>👤</span>
+                <RoyalJackpotCrownIcon size={13} />
                 <span className="truncate">{displayName || 'You'}</span>
               </div>
               <div className="col-span-3 text-right font-bold text-white">

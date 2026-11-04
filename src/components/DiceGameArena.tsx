@@ -12,13 +12,22 @@ import {
   flipDiceRollMode,
   MiniGameEvaluationResult,
 } from '../utils/provablyFair.ts';
-import { diceSoundEngine } from '../utils/diceSoundEngine.ts';
 import { tmaCurrencyToUsdt } from '../utils/telegramTma.ts';
+import { useSoundHaptics } from '../services/soundHaptics.ts';
+import { tr } from '../utils/i18n.ts';
 import {
+  renderDiceMetallicGlintCanvasFX,
+  Dice3DMotionBadge,
+} from './games/fx/DiceMotionFX.tsx';
+import {
+  LuxuryIconBadge,
   TonCrystalIcon,
   TelegramStarIcon,
   LuxuryDiceCubeIcon,
+  LuxuryMineBombIcon,
   ProvablyFairShieldIcon,
+  LuxurySoundOnIcon,
+  LuxurySoundMuteIcon,
 } from './ui/LuxuryIcons.tsx';
 
 interface DiceRollHistoryBadge {
@@ -71,7 +80,10 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
     pamBonus,
     setWalletDrawerOpen,
     navigateTo,
+    lang,
   } = useLottery();
+
+  const { isMuted, toggleMute, soundHaptics } = useSoundHaptics();
 
   // Sidebar Mode: Manual vs Auto (betAmount is in activeTmaCurrency: TON or STARS)
   const [controlTab, setControlTab] = useState<'MANUAL' | 'AUTO'>('MANUAL');
@@ -115,7 +127,6 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
   const [lastRollWon, setLastRollWon] = useState<boolean>(true);
   const [markerBounceActive, setMarkerBounceActive] = useState<boolean>(false);
   const [rollingNow, setRollingNow] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(diceSoundEngine.isMuted());
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [lucky7777Banner, setLucky7777Banner] = useState<{
     rollResult: number;
@@ -143,6 +154,12 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
   const autoTimerRef = useRef<number | null>(null);
   const betAmountRef = useRef<number>(betAmount);
   betAmountRef.current = betAmount;
+  const lastRollResultRef = useRef<number | null>(lastRollResult);
+  lastRollResultRef.current = lastRollResult;
+  const lastRollWonRef = useRef<boolean>(lastRollWon);
+  lastRollWonRef.current = lastRollWon;
+  const rollingNowRef = useRef<boolean>(rollingNow);
+  rollingNowRef.current = rollingNow;
 
   // Apply synchronized Dice parameters across state + input boxes
   const applySyncedParams = useCallback(
@@ -177,7 +194,7 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
   const handleFlipRollMode = () => {
     const synced = flipDiceRollMode(targetValue, diceMode);
     applySyncedParams(synced);
-    diceSoundEngine.playSliderTick(synced.winChance);
+    soundHaptics.playDiceSliderTick(synced.winChance);
   };
 
   // Dragging the 3D Beveled Slider Handle
@@ -191,9 +208,9 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       const rawPct = Math.max(2, Math.min(98, Number((ratio * 100).toFixed(2))));
       const synced = syncDiceFromTarget(rawPct, diceMode);
       applySyncedParams(synced);
-      diceSoundEngine.playSliderTick(synced.winChance);
+      soundHaptics.playDiceSliderTick(synced.winChance);
     },
-    [applySyncedParams, diceMode]
+    [applySyncedParams, diceMode, soundHaptics]
   );
 
   useEffect(() => {
@@ -317,6 +334,17 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, W, H);
 
+      // 3D Motion-Blur & Metallic Glint Shader FX
+      renderDiceMetallicGlintCanvasFX(
+        ctx,
+        W,
+        H,
+        lastRollResultRef.current,
+        lastRollWonRef.current,
+        rollingNowRef.current,
+        now
+      );
+
       const padX = 44;
       const trackW = Math.max(200, W - padX * 2);
       const centerY = H * 0.52;
@@ -393,7 +421,7 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       );
       setErrorBanner(null);
       setRollingNow(true);
-      diceSoundEngine.playRollSlide();
+      soundHaptics.playDiceRoll();
 
       const res = await playInstantMiniGame({
         gameId: 'DICE_52',
@@ -408,7 +436,10 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       setRollingNow(false);
 
       if (!res.ok || !res.evaluation) {
-        setErrorBanner(res.error || 'خطا در اجرای رول ۵۲ بیتی در کیف پول PAM');
+        soundHaptics.notificationOccurred('error');
+        setErrorBanner(
+          res.error || tr(lang, 'خطا در اجرای رول ۵۲ بیتی در کیف پول PAM', 'Failed to execute 52-Bit roll')
+        );
         setAutoRunning(false);
         return { ok: false, won: false, nextBetAmount: currentBet };
       }
@@ -424,11 +455,10 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       if (won) {
         setMarkerBounceActive(true);
         window.setTimeout(() => setMarkerBounceActive(false), 320);
-        diceSoundEngine.playWin(ev.multiplier);
       } else {
         setMarkerBounceActive(false);
-        diceSoundEngine.playLoss();
       }
+      soundHaptics.playDiceOutcome(won, ev.multiplier, isLucky7777);
 
       if (isLucky7777) {
         setLucky7777Banner({
@@ -491,6 +521,8 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       playInstantMiniGame,
       targetValue,
       triggerCanvasRollBurst,
+      soundHaptics,
+      lang,
     ]
   );
 
@@ -554,12 +586,12 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
 
   // Trigger a verifiable Lucky 77.77 Jackpot Synergy celebration + Free Lottery Ticket reward
   const handleSimulateLucky7777Roll = async () => {
-    diceSoundEngine.playRollSlide();
+    soundHaptics.playDiceRoll();
     setLastRollResult(77.77);
     setLastRollWon(true);
     setMarkerBounceActive(true);
     window.setTimeout(() => setMarkerBounceActive(false), 360);
-    diceSoundEngine.playWin(10);
+    soundHaptics.playDiceOutcome(true, 10, true);
     triggerCanvasRollBurst(77.77, true, true);
 
     await pamBonus({
@@ -616,8 +648,7 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
   };
 
   const handleToggleMute = () => {
-    const nextMuted = diceSoundEngine.toggleMute();
-    setIsMuted(nextMuted);
+    toggleMute();
   };
 
   const rawProfitOnWinCurrency =
@@ -633,16 +664,18 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
     <div className="space-y-3" dir="ltr" data-testid="stake-dice-studio">
       {errorBanner && (
         <div
-          className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center justify-between"
-          dir="rtl"
+          className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-semibold flex items-center justify-between gap-2"
         >
-          <span>⚠️ {errorBanner}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <LuxuryMineBombIcon size={15} />
+            <span>{errorBanner}</span>
+          </span>
           <button
             type="button"
             onClick={() => setErrorBanner(null)}
             className="text-[11px] underline cursor-pointer"
           >
-            بستن
+            {tr(lang, 'بستن', 'Close')}
           </button>
         </div>
       )}
@@ -650,13 +683,16 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       {lucky7777Banner && (
         <div
           data-testid="dice-lucky-7777-banner"
-          className="p-3 rounded-2xl bg-[#130d24]/90 border border-[#fbbf24]/50 text-[#fbbf24] text-xs font-semibold flex items-center justify-between gap-2"
-          dir="rtl"
+          className="p-3 rounded-2xl bg-[#130d24]/95 backdrop-blur-xl border border-[#fbbf24]/50 text-[#fbbf24] text-xs font-semibold flex items-center justify-between gap-2"
         >
           <span className="inline-flex items-center gap-1.5">
             <LuxuryDiceCubeIcon size={16} />
             <span>
-              جک‌پات LUCKY {lucky7777Banner.rollResult.toFixed(2)} فعال شد! (+۱ بلیت رایگان لاتاری)
+              {tr(
+                lang,
+                `جک‌پات LUCKY ${lucky7777Banner.rollResult.toFixed(2)} فعال شد! (+۱ بلیت رایگان لاتاری)`,
+                `LUCKY ${lucky7777Banner.rollResult.toFixed(2)} Jackpot Triggered! (+1 Free Lottery Ticket)`
+              )}
             </span>
           </span>
           <button
@@ -664,28 +700,26 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
             onClick={() => navigateTo('my-tickets')}
             className="px-2.5 py-1 rounded-lg bg-[#fbbf24] text-slate-950 font-bold text-[11px] cursor-pointer shrink-0"
           >
-            مشاهده ↗
+            {tr(lang, 'مشاهده', 'View')}
           </button>
         </div>
       )}
 
       {/* =====================================================================
-          TOP: GAME CANVAS CONTAINER
-          w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716]
-          border border-purple-500/25 overflow-hidden relative
+          TOP: IMMERSIVE OBSIDIAN & GOLD GLASSMORPHIC GAME CANVAS CONTAINER
           ===================================================================== */}
-      <div className="w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-[#0b0716] border border-purple-500/25 overflow-hidden relative flex flex-col justify-between">
+      <div className="w-full aspect-[4/3] sm:aspect-square rounded-2xl bg-gradient-to-b from-[#110a22]/95 via-[#0b0716]/98 to-[#07040e] border border-amber-500/30 ring-1 ring-emerald-500/15 shadow-[inset_0_2px_28px_rgba(0,0,0,0.88),0_16px_40px_rgba(0,0,0,0.65)] backdrop-blur-xl overflow-hidden relative flex flex-col justify-between">
         {/* 60FPS Background Canvas for Shockwaves & Particle Bursts */}
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full pointer-events-none z-0"
         />
 
-        {/* Top Bar: Floating Translucent Pills (Left: Recent Multipliers/Rolls, Right: Sound/Fairness) */}
+        {/* Top Bar: Floating Translucent Pills (Left: Recent Multipliers/Rolls, Right: 3D Motion Badge, Sound/Fairness) */}
         <div className="relative z-10 p-2.5 flex items-center justify-between gap-2">
           <div
             data-testid="dice-history-ribbon"
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 max-w-[70%] overflow-x-auto no-scrollbar"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#070510]/85 backdrop-blur-xl border border-amber-500/30 max-w-[54%] overflow-x-auto no-scrollbar"
           >
             {rollHistory.slice(0, 5).map((item, idx) => (
               <span
@@ -705,22 +739,26 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <Dice3DMotionBadge
+              rollingNow={rollingNow}
+              lastRollWon={lastRollWon}
+              lastRollResult={lastRollResult}
+            />
             <button
               type="button"
               data-testid="dice-audio-mute-btn"
               onClick={handleToggleMute}
-              aria-label={isMuted ? 'Unmute Dice Audio' : 'Mute Dice Audio'}
-              className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-purple-200/90 hover:text-white flex items-center justify-center cursor-pointer"
+              aria-label={isMuted ? tr(lang, 'وصل صدا', 'Unmute Audio') : tr(lang, 'قطع صدا', 'Mute Audio')}
+              title={isMuted ? tr(lang, 'وصل صدا', 'Unmute Audio') : tr(lang, 'قطع صدا', 'Mute Audio')}
+              className="h-7 px-2 rounded-full bg-[#070510]/85 backdrop-blur-xl border border-amber-500/30 hover:border-amber-400/60 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
             >
-              <span className="material-symbols-outlined text-sm">
-                {isMuted ? 'volume_off' : 'volume_up'}
-              </span>
+              {isMuted ? <LuxurySoundMuteIcon size={14} /> : <LuxurySoundOnIcon size={14} />}
             </button>
             <button
               type="button"
               onClick={() => navigateTo('transparency')}
               aria-label="Provably Fair Verifier"
-              className="h-7 px-2.5 rounded-full bg-[#070510]/80 backdrop-blur-md border border-purple-500/25 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
+              className="h-7 px-2.5 rounded-full bg-[#070510]/85 backdrop-blur-xl border border-amber-500/30 text-[11px] font-mono text-[#00f59b] flex items-center gap-1 cursor-pointer active:scale-95 transition-transform duration-200"
             >
               <ProvablyFairShieldIcon size={14} />
               <span>#{provablyFairSeeds.nonce}</span>
@@ -841,8 +879,10 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
           data-testid="dice-bottom-synced-bar"
           className="relative z-10 px-3 pb-3 grid grid-cols-3 gap-2"
         >
-          <div className="rounded-xl bg-[#070510]/90 border border-purple-500/20 px-2.5 py-1.5">
-            <span className="text-[10px] font-medium text-purple-300/60 block">Multiplier</span>
+          <div className="rounded-xl bg-[#070510]/90 backdrop-blur-md border border-amber-500/25 px-2.5 py-1.5 shadow-inner">
+            <span className="text-[10px] font-medium text-purple-200/75 block">
+              {tr(lang, 'ضریب برد', 'Multiplier')}
+            </span>
             <input
               id="dice-multiplier-input"
               type="number"
@@ -865,14 +905,16 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
                 }
               }}
               onBlur={() => setMultiplierInputStr(multiplier.toFixed(4))}
-              className="w-full bg-transparent text-xs font-mono font-bold text-white focus:outline-none tabular-nums"
+              className="w-full bg-transparent text-xs font-mono font-bold text-[#fde047] focus:outline-none tabular-nums"
             />
           </div>
 
-          <div className="rounded-xl bg-[#070510]/90 border border-purple-500/20 px-2.5 py-1.5">
+          <div className="rounded-xl bg-[#070510]/90 backdrop-blur-md border border-amber-500/25 px-2.5 py-1.5 shadow-inner">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium text-purple-300/60">
-                {diceMode === 'OVER' ? 'Roll Over' : 'Roll Under'}
+              <span className="text-[10px] font-medium text-purple-200/75">
+                {diceMode === 'OVER'
+                  ? tr(lang, 'بالاتر از', 'Roll Over')
+                  : tr(lang, 'پایین‌تر از', 'Roll Under')}
               </span>
               <button
                 type="button"
@@ -909,8 +951,10 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
             />
           </div>
 
-          <div className="rounded-xl bg-[#070510]/90 border border-purple-500/20 px-2.5 py-1.5">
-            <span className="text-[10px] font-medium text-purple-300/60 block">Win Chance %</span>
+          <div className="rounded-xl bg-[#070510]/90 backdrop-blur-md border border-amber-500/25 px-2.5 py-1.5 shadow-inner">
+            <span className="text-[10px] font-medium text-purple-200/75 block">
+              {tr(lang, 'شانس برد %', 'Win Chance %')}
+            </span>
             <input
               id="dice-winchance-input"
               type="number"
@@ -944,23 +988,24 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
       </div>
 
       {/* =====================================================================
-          BOTTOM CONTROL DECK
-          rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3
+          BOTTOM CONTROL DECK (Obsidian & Gold Glassmorphic Hardware Deck)
           ===================================================================== */}
-      <div className="rounded-2xl bg-[#130d24] p-3.5 border border-purple-500/20 space-y-3">
+      <div className="rounded-2xl bg-[#130d24]/95 backdrop-blur-xl p-3.5 border border-amber-500/30 shadow-[inset_0_1px_2px_rgba(255,255,255,0.18),0_12px_32px_rgba(0,0,0,0.6)] space-y-3">
         {/* ROW 1: Bet Amount Input (h-11 rounded-xl bg-[#090612] px-3) with 1/2, 2x, MAX */}
-        <div className="h-11 rounded-xl bg-[#090612] px-3 border border-purple-500/20 flex items-center justify-between gap-2">
+        <div className="h-11 rounded-xl bg-[#090612]/95 px-3 border border-amber-500/25 shadow-inner flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
               data-testid="dice-sidebar-balance"
               className="text-sm shrink-0 inline-flex items-center"
               title={formatActiveTmaAmount(balanceUsdt)}
             >
-              {activeTmaCurrency === 'TON' ? (
-                <TonCrystalIcon size={16} />
-              ) : (
-                <TelegramStarIcon size={16} />
-              )}
+              <LuxuryIconBadge variant={activeTmaCurrency === 'TON' ? 'cyan' : 'gold'} size="xs">
+                {activeTmaCurrency === 'TON' ? (
+                  <TonCrystalIcon size={14} />
+                ) : (
+                  <TelegramStarIcon size={14} />
+                )}
+              </LuxuryIconBadge>
             </span>
             <input
               id="dice-bet-input"
@@ -983,24 +1028,33 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
             <button
               type="button"
               data-testid="dice-bet-half"
-              onClick={handleHalfBet}
-              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
+              onClick={() => {
+                soundHaptics.selectionChanged();
+                handleHalfBet();
+              }}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/25 text-purple-200 transition-colors cursor-pointer"
             >
               1/2
             </button>
             <button
               type="button"
               data-testid="dice-bet-double"
-              onClick={handleDoubleBet}
-              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-purple-200 transition-colors cursor-pointer"
+              onClick={() => {
+                soundHaptics.selectionChanged();
+                handleDoubleBet();
+              }}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 border border-purple-500/25 text-purple-200 transition-colors cursor-pointer"
             >
               2x
             </button>
             <button
               type="button"
               data-testid="dice-bet-max"
-              onClick={handleMaxBet}
-              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 text-[#fbbf24] transition-colors cursor-pointer"
+              onClick={() => {
+                soundHaptics.selectionChanged();
+                handleMaxBet();
+              }}
+              className="h-7 px-2.5 text-[11px] font-semibold rounded-lg bg-purple-950/80 hover:bg-purple-900/80 border border-amber-500/30 text-[#fbbf24] transition-colors cursor-pointer"
             >
               MAX
             </button>
@@ -1008,12 +1062,12 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
         </div>
 
         {/* ROW 2: Roll Mode & Quick Win-Chance Presets in uniform h-10 rounded-xl selector */}
-        <div className="h-10 rounded-xl bg-[#090612] px-2.5 border border-purple-500/20 flex items-center justify-between gap-2">
+        <div className="h-10 rounded-xl bg-[#090612]/95 px-2.5 border border-amber-500/25 flex items-center justify-between gap-2">
           <button
             type="button"
             data-testid="dice-target-flip-icon-btn"
             onClick={handleFlipRollMode}
-            className="h-7 px-2.5 rounded-lg bg-purple-600/35 border border-purple-400/40 text-xs font-semibold text-white flex items-center gap-1 cursor-pointer shrink-0"
+            className="h-7 px-2.5 rounded-lg bg-purple-600/35 border border-amber-400/40 text-xs font-semibold text-white flex items-center gap-1 cursor-pointer shrink-0"
           >
             <span>↻ {diceMode === 'OVER' ? 'Over' : 'Under'} {targetValue.toFixed(0)}</span>
           </button>
@@ -1023,10 +1077,13 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
               <button
                 key={pct}
                 type="button"
-                onClick={() => handleWinChanceChange(pct)}
+                onClick={() => {
+                  soundHaptics.selectionChanged();
+                  handleWinChanceChange(pct);
+                }}
                 className={`h-7 px-2 rounded-lg font-mono text-[11px] font-semibold cursor-pointer tabular-nums ${
                   Math.abs(winChance - pct) < 1
-                    ? 'bg-purple-600/40 text-[#00f59b] border border-purple-400/40'
+                    ? 'bg-gradient-to-b from-amber-500/35 to-purple-700/45 text-[#00f59b] border border-amber-400/50'
                     : 'bg-purple-950/60 text-purple-300/70 hover:text-white'
                 }`}
               >
@@ -1049,10 +1106,14 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
             type="button"
             data-testid="dice-roll-bet-btn"
             onClick={handlePrimaryBetAction}
-            className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] to-[#7e22ce] shadow-[0_4px_0_#581c87] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-[#9333ea] via-[#7e22ce] to-[#6b21a8] border border-amber-400/40 shadow-[0_4px_0_#4c1d95,0_8px_24px_rgba(147,51,234,0.35)] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            <LuxuryDiceCubeIcon size={17} />
-            <span>{rollingNow ? 'Rolling 52-Bit...' : `Roll Dice (${multiplier.toFixed(2)}x)`}</span>
+            <LuxuryDiceCubeIcon size={17} className={rollingNow ? 'animate-spin' : ''} />
+            <span>
+              {rollingNow
+                ? tr(lang, 'در حال رول ۵۲ بیتی...', 'Rolling 52-Bit...')
+                : `Roll Dice (${multiplier.toFixed(2)}x)`}
+            </span>
             <span className="px-2 py-0.5 rounded-lg bg-black/25 text-xs font-mono tabular-nums">
               {formatCurrency(betAmount)}
             </span>
@@ -1063,7 +1124,7 @@ export const DiceGameArena: React.FC<DiceGameArenaProps> = ({ onRoundSettled }) 
             data-testid="dice-test-lucky7777-btn"
             onClick={handleSimulateLucky7777Roll}
             title="Test Lucky 77.77 Free Ticket"
-            className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-purple-500/25 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer inline-flex items-center gap-1 active:scale-95 transition-transform duration-200"
+            className="h-12 px-3 rounded-xl bg-[#090612] hover:bg-purple-950/80 border border-amber-500/35 text-xs font-mono font-bold text-[#fbbf24] shrink-0 cursor-pointer inline-flex items-center gap-1 active:scale-95 transition-transform duration-200"
           >
             <LuxuryDiceCubeIcon size={15} />
             <span>77</span>

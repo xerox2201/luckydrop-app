@@ -23,6 +23,7 @@ import { HapticEngine } from '../utils/telegramTma';
 import { LuckyDropLogo } from './LuckyDropLogo';
 import {
   tr,
+  localizeServerText,
   GLOBAL_LANGUAGE_OPTIONS,
   getLanguageOptionMeta,
 } from '../utils/i18n';
@@ -48,11 +49,7 @@ export const Navbar: React.FC = () => {
     formatCurrency,
     telegramUser,
     isTelegramAdmin,
-    connectedTonWallet,
     tickets,
-    liveTonUsdPrice,
-    tonChange24hPercent,
-    liveStarsPerTon,
     portfolioUsdValue,
     unreadSupportCount,
     aiChatOpen,
@@ -87,23 +84,23 @@ export const Navbar: React.FC = () => {
   return (
     <>
       {/* TOP TELEGRAM MINI APP COMPACT HEADER */}
-      <header className="sticky top-0 z-50 w-full backdrop-blur-2xl bg-[#070510]/90 border-b border-white/10 shadow-[inset_0_1px_2px_rgba(255,255,255,0.12),_0_8px_20px_rgba(0,0,0,0.5)] select-none">
-        <div className="max-w-[440px] mx-auto px-2.5 h-14 flex items-center justify-between gap-1">
+      <header className="sticky top-0 z-50 w-full backdrop-blur-2xl bg-[#0B0E14]/95 border-b border-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.14),0_12px_28px_rgba(0,0,0,0.75)] select-none">
+        <div className="max-w-[440px] mx-auto px-2 h-14 flex items-center justify-between gap-1">
           {/* Brand + Language Switcher + Admin Trigger */}
           <div className="flex items-center gap-1 min-w-0 shrink-0">
             <div
               onClick={() => handleTabNav('lobby')}
               className="flex items-center gap-1 cursor-pointer group shrink-0"
             >
-              <LuckyDropLogo size={34} />
-              <div className="leading-tight hidden min-[410px]:block">
+              <LuckyDropLogo size={32} />
+              <div className="leading-tight hidden min-[390px]:block">
                 <div className="flex items-center gap-0.5">
                   <span className="font-black text-[11px] tracking-tight text-white">
-                    Lucky<span className="text-[#FFE066]">Drop</span>
+                    Lucky<span className="text-[#F5D061]">Drop</span>
                   </span>
                 </div>
-                <div className="text-[8px] text-slate-400 font-medium truncate max-w-[64px]">
-                  {telegramUser.first_name}
+                <div className="text-[8px] text-slate-400 font-medium truncate max-w-[58px]">
+                  {localizeServerText(lang, telegramUser.first_name)}
                 </div>
               </div>
             </div>
@@ -119,13 +116,13 @@ export const Navbar: React.FC = () => {
                 }}
                 title={tr(lang, 'تغییر زبان', 'Switch Language')}
                 data-testid="language-selector-dropdown"
-                className="flex items-center gap-1 px-2 py-1 rounded-2xl bg-gradient-to-b from-[#1A132F] to-[#0E0A1C] hover:from-[#231A3E] hover:to-[#130D26] border border-[#FFE066]/35 shadow-[inset_0_1px_2px_rgba(255,255,255,0.22),_0_6px_14px_rgba(0,0,0,0.5)] text-[10px] font-mono font-black text-white transition-all cursor-pointer shrink-0 active:scale-95"
+                className="flex items-center gap-1 px-1.5 py-1 rounded-xl bg-[#111622] hover:bg-[#161D2C] border border-white/[0.12] shadow-[inset_0_1px_1px_rgba(255,255,255,0.14),0_4px_12px_rgba(0,0,0,0.5)] text-[10px] font-mono font-black text-white transition-all cursor-pointer shrink-0 active:scale-95"
               >
-                <LuxuryFlagIcon lang={activeLangMeta.locale} size={15} />
-                <span className="text-[#FFE066] tracking-tight">{activeLangMeta.code}</span>
+                <LuxuryFlagIcon lang={activeLangMeta.locale} size={14} />
+                <span className="text-[#F5D061] tracking-tight">{activeLangMeta.code}</span>
                 <ChevronDown
                   className={`w-2.5 h-2.5 text-slate-300 transition-transform duration-150 ${
-                    langMenuOpen ? 'rotate-180 text-[#FFE066]' : ''
+                    langMenuOpen ? 'rotate-180 text-[#F5D061]' : ''
                   }`}
                 />
               </button>
@@ -133,7 +130,7 @@ export const Navbar: React.FC = () => {
               {langMenuOpen && (
                 <div
                   data-testid="language-selector-menu"
-                  className="absolute left-0 top-full mt-1.5 w-36 rounded-2xl p-1 bg-[#0C081A]/98 backdrop-blur-2xl border border-[#FFE066]/40 shadow-[inset_0_1px_2px_rgba(255,255,255,0.2),_0_16px_36px_rgba(0,0,0,0.85)] space-y-0.5 z-50"
+                  className="absolute left-0 top-full mt-1.5 w-36 rounded-2xl p-1 bg-[#0B0E14]/98 backdrop-blur-2xl border border-white/[0.12] shadow-[inset_0_1px_1px_rgba(255,255,255,0.16),0_16px_36px_rgba(0,0,0,0.85)] space-y-0.5 z-50"
                 >
                   {GLOBAL_LANGUAGE_OPTIONS.map((opt) => {
                     const isSelected = activeLangMeta.locale === opt.locale;
@@ -149,7 +146,7 @@ export const Navbar: React.FC = () => {
                         }}
                         className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-gradient-to-r from-[#FFE066]/25 to-emerald-500/20 border border-[#FFE066]/50 text-[#FFE066]'
+                            ? 'bg-gradient-to-r from-[#F5D061]/20 to-emerald-500/15 border border-[#D4AF37]/50 text-[#F5D061]'
                             : 'text-slate-200 hover:bg-white/10 hover:text-white border border-transparent'
                         }`}
                       >
@@ -174,10 +171,10 @@ export const Navbar: React.FC = () => {
                 data-testid="navbar-admin-cockpit-btn"
                 onClick={() => handleTabNav('cockpit')}
                 title={tr(lang, 'پنل مدیریت ادمین', 'Admin Cockpit')}
-                className={`flex items-center gap-0.5 px-1.5 py-1 rounded-2xl text-[9px] font-black transition-all cursor-pointer shrink-0 ${
+                className={`flex items-center gap-0.5 px-1.5 py-1 rounded-xl text-[9px] font-black transition-all cursor-pointer shrink-0 ${
                   activeRoute === 'cockpit'
-                    ? 'bg-[#FFD700] text-slate-950 shadow-[inset_0_2px_4px_rgba(255,255,255,0.6),_0_6px_14px_rgba(255,215,0,0.5)]'
-                    : 'bg-[#FFD700]/15 text-[#FFE066] border border-[#FFD700]/40 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_6px_14px_rgba(0,0,0,0.45)] hover:bg-[#FFD700]/25'
+                    ? 'bg-gradient-to-b from-[#F5D061] via-[#D4AF37] to-[#9A7418] text-[#090B10] shadow-[inset_0_1px_1px_rgba(255,255,255,0.6),0_4px_12px_rgba(212,175,55,0.4)]'
+                    : 'bg-[#D4AF37]/15 text-[#F5D061] border border-[#D4AF37]/40 hover:bg-[#D4AF37]/25'
                 }`}
               >
                 <ShieldCheck className="w-3 h-3" />
@@ -186,36 +183,36 @@ export const Navbar: React.FC = () => {
             )}
           </div>
 
-          {/* Right Controls: Dual-Currency Switcher + Live Balance + My Tickets + More Menu */}
+          {/* Right Controls: Dual-Currency Switcher + Live Balance + My Tickets + Single Support Icon + More Menu */}
           <div className="flex items-center gap-1 shrink-0">
             {/* Dual-Currency Toggle: TON vs STARS */}
             <div
-              className="flex items-center p-0.5 rounded-2xl bg-[#120D24] border border-white/10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),_0_6px_14px_rgba(0,0,0,0.45)]"
+              className="flex items-center p-0.5 rounded-xl bg-[#07090E] border border-white/[0.08] shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]"
               dir="ltr"
             >
               <button
                 type="button"
                 aria-label="TON Currency"
                 onClick={() => setActiveTmaCurrency('TON')}
-                className={`px-1.5 py-1 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer flex items-center justify-center ${
+                className={`px-1 py-1 rounded-lg text-[10px] font-mono font-black transition-all cursor-pointer flex items-center justify-center ${
                   activeTmaCurrency === 'TON'
-                    ? 'bg-[#0098EA]/30 text-white border border-[#0098EA]/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.35),_0_4px_10px_rgba(0,152,234,0.45)]'
+                    ? 'bg-[#0098EA]/25 text-white border border-[#0098EA]/60 shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]'
                     : 'text-slate-400 hover:text-white opacity-70 hover:opacity-100'
                 }`}
               >
-                <TonCrystalIcon size={14} />
+                <TonCrystalIcon size={13} />
               </button>
               <button
                 type="button"
                 aria-label="Telegram Stars Currency"
                 onClick={() => setActiveTmaCurrency('STARS')}
-                className={`px-1.5 py-1 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer flex items-center justify-center ${
+                className={`px-1 py-1 rounded-lg text-[10px] font-mono font-black transition-all cursor-pointer flex items-center justify-center ${
                   activeTmaCurrency === 'STARS'
-                    ? 'bg-[#F59E0B]/25 text-slate-950 border border-[#FDE047]/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.45),_0_4px_10px_rgba(255,215,0,0.45)]'
+                    ? 'bg-[#D4AF37]/25 text-white border border-[#F5D061]/60 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]'
                     : 'text-slate-400 hover:text-white opacity-70 hover:opacity-100'
                 }`}
               >
-                <TelegramStarIcon size={14} />
+                <TelegramStarIcon size={13} />
               </button>
             </div>
 
@@ -224,24 +221,24 @@ export const Navbar: React.FC = () => {
               type="button"
               onClick={() => handleTabNav('wallet')}
               data-testid="navbar-balance-pill"
-              className="flex items-center gap-1 px-1.5 py-1 rounded-2xl bg-gradient-to-r from-[#140F28] to-[#1C1436] border border-white/15 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] hover:border-[#00F5D4]/50 transition-all cursor-pointer"
+              className="flex items-center gap-1 px-1.5 py-1 rounded-xl bg-[#111622] border border-white/[0.1] shadow-[inset_0_1px_1px_rgba(255,255,255,0.14),0_6px_14px_rgba(0,0,0,0.5)] hover:border-emerald-400/50 transition-all cursor-pointer"
             >
               {activeTmaCurrency === 'TON' ? (
-                <TonCrystalIcon size={13} />
+                <TonCrystalIcon size={12} />
               ) : (
-                <TelegramStarIcon size={13} />
+                <TelegramStarIcon size={12} />
               )}
-              <div className="text-right leading-none" dir="ltr">
-                <div className="text-[10px] font-mono font-black text-white">
+              <div className="text-right leading-none tabular-nums" dir="ltr">
+                <div className="text-[9.5px] font-mono font-black text-white tabular-nums">
                   {activeTmaCurrency === 'TON'
                     ? formatCurrency(tonBalance, 'TON')
                     : formatCurrency(starsBalance, 'STARS')}
                 </div>
-                <div className="text-[8px] font-mono text-[#00F5D4]">
+                <div className="text-[7.5px] font-mono text-emerald-400 tabular-nums">
                   ≈ ${portfolioUsdValue.toFixed(2)}
                 </div>
               </div>
-              <div className="w-4 h-4 rounded-lg bg-[#00F5D4]/20 border border-[#00F5D4]/40 shadow-[inset_0_1px_2px_rgba(255,255,255,0.3)] flex items-center justify-center text-[#00F5D4]">
+              <div className="w-3.5 h-3.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
                 <Plus className="w-2.5 h-2.5" />
               </div>
             </button>
@@ -252,21 +249,24 @@ export const Navbar: React.FC = () => {
               onClick={() => handleTabNav('my-tickets')}
               title={tr(lang, 'بلیت‌های من', 'My Tickets')}
               data-testid="header-my-tickets-btn"
-              className={`relative p-1.5 rounded-2xl border shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] transition-all cursor-pointer ${
+              className={`relative p-1.5 rounded-xl border shadow-[inset_0_1px_1px_rgba(255,255,255,0.14)] transition-all cursor-pointer ${
                 activeRoute === 'my-tickets'
-                  ? 'bg-[#FFE066]/20 border-[#FFE066]/50 text-[#FFE066]'
-                  : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+                  ? 'bg-[#D4AF37]/20 border-[#F5D061]/50 text-[#F5D061]'
+                  : 'bg-[#111622] border-white/[0.08] text-slate-300 hover:text-white'
               }`}
             >
-              <VipTicketIcon size={16} />
+              <VipTicketIcon size={15} />
               {tickets.length > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[#00F5D4] text-slate-950 font-mono text-[9px] font-black flex items-center justify-center">
+                <span
+                  dir="ltr"
+                  className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-emerald-400 text-[#090B10] font-mono text-[9px] font-black tabular-nums flex items-center justify-center"
+                >
                   {tickets.length}
                 </span>
               )}
             </button>
 
-            {/* Quick Live VIP Support Button with Unread Red Badge */}
+            {/* Single Clean VIP Support Entry Point with Unread Red Badge */}
             <button
               type="button"
               onClick={() => {
@@ -276,17 +276,18 @@ export const Navbar: React.FC = () => {
               }}
               title={tr(lang, 'پشتیبانی زنده VIP', 'VIP Live Support')}
               data-testid="header-support-btn"
-              className={`relative p-1.5 rounded-2xl border shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] transition-all cursor-pointer ${
+              className={`relative p-1.5 rounded-xl border shadow-[inset_0_1px_1px_rgba(255,255,255,0.14)] transition-all cursor-pointer ${
                 aiChatOpen
-                  ? 'bg-[#FFE066]/20 border-[#FFE066]/60 text-[#FFE066]'
-                  : 'bg-white/5 border-white/10 text-slate-300 hover:text-[#FFE066]'
+                  ? 'bg-[#D4AF37]/25 border-[#F5D061]/60 text-[#F5D061]'
+                  : 'bg-[#111622] border-white/[0.08] text-slate-300 hover:text-[#F5D061]'
               }`}
             >
-              <Headset className="w-4 h-4" />
+              <Headset className="w-3.5 h-3.5" />
               {unreadSupportCount > 0 && (
                 <span
+                  dir="ltr"
                   data-testid="header-support-unread-badge"
-                  className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black flex items-center justify-center animate-pulse"
+                  className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black tabular-nums flex items-center justify-center animate-pulse"
                 >
                   {unreadSupportCount}
                 </span>
@@ -302,49 +303,14 @@ export const Navbar: React.FC = () => {
               }}
               title={tr(lang, 'منوی امکانات و پروفایل', 'More Views & Profile')}
               data-testid="more-menu-btn"
-              className={`p-1.5 rounded-2xl border shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] transition-all cursor-pointer ${
+              className={`p-1.5 rounded-xl border shadow-[inset_0_1px_1px_rgba(255,255,255,0.14)] transition-all cursor-pointer ${
                 moreMenuOpen
-                  ? 'bg-[#00F5D4]/20 border-[#00F5D4]/50 text-[#00F5D4]'
-                  : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+                  ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                  : 'bg-[#111622] border-white/[0.08] text-slate-300 hover:text-white'
               }`}
             >
-              {moreMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              {moreMenuOpen ? <X className="w-3.5 h-3.5" /> : <Menu className="w-3.5 h-3.5" />}
             </button>
-          </div>
-        </div>
-
-        {/* LIVE MARKET ORACLE SUB-BAR (CONSTRAINED TO 440PX) */}
-        <div
-          onClick={() => handleTabNav('wallet')}
-          data-testid="navbar-live-oracle-bar"
-          className="max-w-[440px] mx-auto px-2.5 py-1 bg-[#0B0818]/90 border-t border-white/5 flex items-center justify-between gap-2 text-[9px] font-mono cursor-pointer hover:bg-[#110C24]/90 transition-colors"
-          dir="ltr"
-        >
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#00F5D4] animate-pulse shrink-0" />
-            <span className="text-slate-400">LIVE ORACLE:</span>
-            <span className="text-white font-bold inline-flex items-center gap-1">
-              <TonCrystalIcon size={11} />
-              TON ${liveTonUsdPrice.toFixed(2)}
-            </span>
-            <span
-              className={`px-1 py-0.2 rounded font-bold ${
-                tonChange24hPercent >= 0
-                  ? 'bg-emerald-500/15 text-emerald-400'
-                  : 'bg-rose-500/15 text-rose-400'
-              }`}
-            >
-              {tonChange24hPercent >= 0 ? '+' : ''}
-              {tonChange24hPercent.toFixed(2)}%
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0 text-slate-300">
-            <span className="inline-flex items-center gap-1">
-              1 TON ≈ {liveStarsPerTon} <TelegramStarIcon size={11} />
-            </span>
-            <span className="text-[#FFE066] font-bold">
-              Portfolio ≈ ${portfolioUsdValue.toFixed(2)}
-            </span>
           </div>
         </div>
 
@@ -352,16 +318,16 @@ export const Navbar: React.FC = () => {
         {moreMenuOpen && (
           <div
             data-testid="more-menu-dropdown"
-            className="max-w-[440px] mx-auto px-3 pb-3 pt-1.5 bg-[#0B0818]/98 border-t border-white/10 rounded-b-3xl shadow-[inset_0_2px_4px_rgba(255,255,255,0.12),_0_16px_30px_rgba(0,0,0,0.65)] animate-in fade-in duration-150"
+            className="max-w-[440px] mx-auto px-3 pb-3 pt-2 bg-[#0B0E14]/98 border-t border-white/[0.08] rounded-b-3xl shadow-[inset_0_1px_1px_rgba(255,255,255,0.12),0_16px_36px_rgba(0,0,0,0.85)] animate-in fade-in duration-150"
           >
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 data-testid="more-nav-play"
                 onClick={() => handleTabNav('play')}
-                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#111622] hover:bg-[#161D2C] border border-white/[0.08] text-xs font-bold text-white cursor-pointer"
               >
-                <Target className="w-4 h-4 text-[#FFE066] shrink-0" />
+                <Target className="w-4 h-4 text-[#F5D061] shrink-0" />
                 <span className="truncate">
                   {tr(lang, 'انتخاب دستی شماره‌ها', 'Custom Ball Picker')}
                 </span>
@@ -370,7 +336,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-my-tickets"
                 onClick={() => handleTabNav('my-tickets')}
-                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#111622] hover:bg-[#161D2C] border border-white/[0.08] text-xs font-bold text-white cursor-pointer"
               >
                 <VipTicketIcon size={16} />
                 <span className="truncate">
@@ -381,9 +347,9 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-user-panel"
                 onClick={() => handleTabNav('user-panel')}
-                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#111622] hover:bg-[#161D2C] border border-white/[0.08] text-xs font-bold text-white cursor-pointer"
               >
-                <UserCheck className="w-4 h-4 text-purple-400 shrink-0" />
+                <UserCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span className="truncate">
                   {tr(lang, 'پروفایل VIP و صندوقچه', 'VIP Profile & Chest')}
                 </span>
@@ -392,9 +358,9 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-winners"
                 onClick={() => handleTabNav('winners')}
-                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#111622] hover:bg-[#161D2C] border border-white/[0.08] text-xs font-bold text-white cursor-pointer"
               >
-                <Trophy className="w-4 h-4 text-[#FFE066] shrink-0" />
+                <Trophy className="w-4 h-4 text-[#F5D061] shrink-0" />
                 <span className="truncate">
                   {tr(lang, 'برندگان و نتایج ادوار', 'Winners & Draws')}
                 </span>
@@ -403,9 +369,9 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-transparency"
                 onClick={() => handleTabNav('transparency')}
-                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#111622] hover:bg-[#161D2C] border border-white/[0.08] text-xs font-bold text-white cursor-pointer"
               >
-                <ShieldCheck className="w-4 h-4 text-[#00F5D4] shrink-0" />
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span className="truncate">
                   {tr(lang, 'اثبات عدالت (RNG)', 'Provably Fair RNG')}
                 </span>
@@ -414,7 +380,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-how-it-works"
                 onClick={() => handleTabNav('how-it-works')}
-                className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
+                className="flex items-center gap-2 p-2.5 rounded-2xl bg-[#111622] hover:bg-[#161D2C] border border-white/[0.08] text-xs font-bold text-white cursor-pointer"
               >
                 <HelpCircle className="w-4 h-4 text-[#38BDF8] shrink-0" />
                 <span className="truncate">
@@ -429,7 +395,7 @@ export const Navbar: React.FC = () => {
                   setMoreMenuOpen(false);
                   setAiChatOpen(true);
                 }}
-                className="col-span-2 flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#1A1230] to-[#120D24] hover:brightness-110 border border-[#FFE066]/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-black text-[#FFE066] cursor-pointer"
+                className="col-span-2 flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-[#111622] hover:bg-[#161D2C] border border-[#D4AF37]/40 text-xs font-black text-[#F5D061] cursor-pointer"
               >
                 <div className="flex items-center gap-2">
                   <CashbackEmeraldVaultIcon size={16} />
@@ -442,7 +408,10 @@ export const Navbar: React.FC = () => {
                   </span>
                 </div>
                 {unreadSupportCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[10px] font-black">
+                  <span
+                    dir="ltr"
+                    className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[10px] font-black tabular-nums"
+                  >
                     {unreadSupportCount}
                   </span>
                 )}
@@ -451,7 +420,7 @@ export const Navbar: React.FC = () => {
                 type="button"
                 data-testid="more-nav-terms"
                 onClick={() => handleTabNav('terms')}
-                className="col-span-2 flex items-center justify-center gap-2 p-2 rounded-2xl bg-white/[0.03] hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.16),_0_8px_16px_rgba(0,0,0,0.45)] text-[11px] font-bold text-slate-300 cursor-pointer"
+                className="col-span-2 flex items-center justify-center gap-2 p-2 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] font-bold text-slate-300 cursor-pointer"
               >
                 <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>
@@ -466,50 +435,74 @@ export const Navbar: React.FC = () => {
             {/* Official Proprietary Brand Signature Badge inside Header Menu */}
             <div
               data-testid="header-menu-brand-badge"
-              className="mt-2 pt-2 border-t border-white/10 flex items-center justify-center gap-1.5 text-[10px] font-mono font-bold text-[#FFE066]/90 text-center"
+              className="mt-2 pt-2 border-t border-white/[0.08] flex items-center justify-center gap-1.5 text-[10px] font-mono font-bold text-[#F5D061]/90 text-center"
             >
               <LuckyDropLogo size={16} />
-              <span className="truncate">{officialBrandTitle}</span>
+              <span className="truncate">{localizeServerText(lang, officialBrandTitle)}</span>
             </div>
           </div>
         )}
       </header>
 
-      {/* BOTTOM 4-TAB MOBILE NAVIGATION BAR (TMA STANDARD) */}
-      <nav className="fixed bottom-0 inset-x-0 z-50 bg-[#070510]/95 backdrop-blur-2xl border-t border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.14),_0_-10px_24px_rgba(0,0,0,0.65)] select-none pb-[env(safe-area-inset-bottom)]">
-        <div className="max-w-[440px] mx-auto px-2 h-16 grid grid-cols-4 gap-1 items-center">
+      {/* FLOATING GLASSMORPHIC TMA DOCK WITH RAISED GOLDEN CENTER ACTION BUTTON */}
+      <nav
+        data-testid="bottom-floating-tma-dock"
+        className="fixed bottom-0 inset-x-0 z-50 px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1 pointer-events-none select-none"
+      >
+        <div className="max-w-[430px] mx-auto rounded-3xl border border-white/[0.1] bg-[#0B0E14]/94 backdrop-blur-2xl shadow-[inset_0_1px_1px_rgba(255,255,255,0.16),0_-12px_36px_rgba(0,0,0,0.85)] px-2 h-16 grid grid-cols-5 gap-1 items-center pointer-events-auto relative">
           <BottomTabButton
-            active={activeRoute === 'lobby' || activeRoute === 'play'}
+            testId="nav-tab-lobby"
+            active={activeRoute === 'lobby'}
             onClick={() => handleTabNav('lobby')}
-            icon={<VipTicketIcon size={19} />}
-            label={tr(lang, 'لابی لاتاری', 'Lottery')}
-            subLabel={tr(lang, 'قرعه‌کشی', 'Draws')}
+            icon={<VipTicketIcon size={18} />}
+            label={tr(lang, 'لابی', 'Lobby')}
+            subLabel={tr(lang, 'لاتاری', 'Draws')}
             accent="gold"
           />
           <BottomTabButton
+            testId="nav-tab-games"
             active={activeRoute === 'mini-games'}
             onClick={() => handleTabNav('mini-games')}
-            icon={<Gamepad2 className="w-5 h-5" />}
-            label={tr(lang, 'بازی‌های آنی', 'Games')}
+            icon={<Gamepad2 className="w-4 h-4" />}
+            label={tr(lang, 'بازی‌ها', 'Games')}
             subLabel="Plinko • Crash"
             accent="cyan"
           />
+
+          {/* RAISED BRUSHED METALLIC GOLD CIRCULAR CENTER ACTION BUTTON */}
+          <div className="relative flex flex-col items-center justify-center -mt-6">
+            <button
+              type="button"
+              data-testid="nav-center-play-btn"
+              onClick={() => handleTabNav(activeRoute === 'lobby' ? 'play' : 'lobby')}
+              aria-label={tr(lang, 'خرید بلیت و قرعه‌کشی', 'Play Lottery')}
+              className="w-14 h-14 rounded-full bg-gradient-to-b from-[#F5D061] via-[#D4AF37] to-[#9A7418] border border-[#FFF6D6]/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.85),0_8px_22px_rgba(212,175,55,0.45)] flex flex-col items-center justify-center text-[#090B10] active:scale-95 transition-transform cursor-pointer"
+            >
+              <VipTicketIcon size={22} />
+              <span className="font-mono text-[8px] font-black uppercase tracking-tighter leading-none mt-0.5 text-[#090B10]">
+                PLAY
+              </span>
+            </button>
+          </div>
+
           <BottomTabButton
+            testId="nav-tab-earn"
             active={activeRoute === 'earn'}
             onClick={() => handleTabNav('earn')}
-            icon={<AmbassadorRocketIcon size={19} />}
-            label={tr(lang, 'ماموریت و دعوت', 'Earn')}
-            subLabel={tr(lang, 'پاداش رایگان', 'Quests')}
+            icon={<AmbassadorRocketIcon size={18} />}
+            label={tr(lang, 'ماموریت', 'Earn')}
+            subLabel={tr(lang, 'پاداش', 'Quests')}
             accent="emerald"
           />
           <BottomTabButton
+            testId="nav-tab-wallet"
             active={
               activeRoute === 'wallet' ||
               activeRoute === 'deposit' ||
               activeRoute === 'withdraw'
             }
             onClick={() => handleTabNav('wallet')}
-            icon={<TonCrystalIcon size={19} />}
+            icon={<TonCrystalIcon size={18} />}
             label={tr(lang, 'کیف پول', 'Wallet')}
             subLabel="TON & Stars"
             accent="blue"
@@ -521,6 +514,7 @@ export const Navbar: React.FC = () => {
 };
 
 interface BottomTabButtonProps {
+  testId?: string;
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
@@ -530,6 +524,7 @@ interface BottomTabButtonProps {
 }
 
 const BottomTabButton: React.FC<BottomTabButtonProps> = ({
+  testId,
   active,
   onClick,
   icon,
@@ -546,16 +541,18 @@ const BottomTabButton: React.FC<BottomTabButtonProps> = ({
 
   return (
     <button
+      type="button"
+      data-testid={testId}
       onClick={onClick}
-      className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl border transition-all cursor-pointer ${
+      className={`flex flex-col items-center justify-center py-1 px-1 rounded-2xl border transition-all cursor-pointer ${
         active
           ? `${activeColorMap[accent]} shadow-[inset_0_2px_4px_rgba(255,255,255,0.22),_0_8px_16px_rgba(0,0,0,0.5)] scale-[1.02]`
           : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
       }`}
     >
       {icon}
-      <span className="text-[11px] font-black mt-0.5 leading-tight">{label}</span>
-      <span className="text-[8px] font-mono opacity-75 leading-none mt-0.5">{subLabel}</span>
+      <span className="text-[10.5px] font-black mt-0.5 leading-tight truncate max-w-full">{label}</span>
+      <span className="text-[7.5px] font-mono opacity-75 leading-none mt-0.5 truncate max-w-full">{subLabel}</span>
     </button>
   );
 };
