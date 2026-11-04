@@ -70,6 +70,7 @@ export interface IsolatedUserAccountRecord {
   banReason?: string;
   activeGameSession?: ActiveGameSessionState | null;
   rakebackVault?: UserRakebackVaultState;
+  referralProfile?: UserReferralProfileState;
   welcomeTicketUnlocked?: boolean;
   welcomeTicketEntitlement?: number;
   welcomeTicketClaimed?: boolean;
@@ -228,6 +229,19 @@ export function createCleanZeroUserProfile(
       totalClaimsCount: 0,
       lastUpdatedIso: nowIso,
     },
+    referralProfile: {
+      referralCode: `ref_${uid}`,
+      referredByUserKey: referredByUserId,
+      invitedCount: 0,
+      activeBuyersCount: 0,
+      activeBuyerUserKeys: [],
+      claimableReferralTon: 0,
+      claimableReferralStars: 0,
+      lifetimeReferralTon: 0,
+      lifetimeReferralStars: 0,
+      totalClaimsCount: 0,
+      lastUpdatedIso: nowIso,
+    },
     welcomeTicketUnlocked: false,
     welcomeTicketEntitlement: 0,
     welcomeTicketClaimed: false,
@@ -299,7 +313,7 @@ export function bindUserReferralAntiSybil(params: {
     };
   }
 
-  if (userAccount.referredByUserId) {
+  if (userAccount.referredByUserId || userAccount.referralProfile?.referredByUserKey) {
     return {
       ok: false,
       bound: false,
@@ -309,20 +323,38 @@ export function bindUserReferralAntiSybil(params: {
     };
   }
 
-  const inviterRecord = usersMap[inviterId];
-  if (inviterRecord && inviterRecord.referredByUserId === userAccount.telegramUserId) {
-    return {
-      ok: false,
-      bound: false,
-      status: 400,
-      reason: 'CIRCULAR_REFERRAL_FORBIDDEN',
-      error: 'CIRCULAR_REFERRAL_FORBIDDEN — ثبت معرف چرخشی مجاز نیست.',
-    };
+  // Prevent 2-hop and multi-hop circular referral loops (A -> B -> ... -> A)
+  const visited = new Set<string>([userAccount.telegramUserId]);
+  let cursorKey: string | null = inviterId;
+  let hop = 0;
+  while (cursorKey && hop < 25) {
+    if (visited.has(cursorKey)) {
+      return {
+        ok: false,
+        bound: false,
+        status: 400,
+        reason: 'CIRCULAR_REFERRAL_FORBIDDEN',
+        error: 'CIRCULAR_REFERRAL_FORBIDDEN — ثبت معرف چرخشی مجاز نیست.',
+      };
+    }
+    visited.add(cursorKey);
+    const node: IsolatedUserAccountRecord | undefined = usersMap[cursorKey];
+    cursorKey = node
+      ? node.referredByUserId || node.referralProfile?.referredByUserKey || null
+      : null;
+    hop += 1;
   }
 
   userAccount.referredByUserId = inviterId;
-  if (inviterRecord && !inviterRecord.referrals.includes(userAccount.telegramUserId)) {
-    inviterRecord.referrals.push(userAccount.telegramUserId);
+  userAccount.referralProfile = normalizeReferralProfileState(userAccount);
+  userAccount.referralProfile.referredByUserKey = inviterId;
+
+  const inviterRecord = usersMap[inviterId];
+  if (inviterRecord) {
+    if (!inviterRecord.referrals.includes(userAccount.telegramUserId)) {
+      inviterRecord.referrals.push(userAccount.telegramUserId);
+    }
+    inviterRecord.referralProfile = normalizeReferralProfileState(inviterRecord);
   }
 
   return {
@@ -3124,6 +3156,1032 @@ export function evaluateUserWelcomeTicketStatus(params: {
   };
 }
 
+// ============================================================================
+// UPGRADE 3: TELEGRAM SQUADS & SYNDICATE LOTTERY POOLS (سندیکای گروهی و خرید اشتراکی بلیت)
+// - Zero-Escrow Instant Share Minting (1 Share = 1 Real Lottery Ticket tagged with syndicateId)
+// - Strict 85% Pool / 3% Buyer Rakeback Vault / 3% Welcome $1,000 Reserve / 9% Net House Split
+// - +15 XP Squad Synergy Bonus to Creator when another user joins
+// - Pro-Rata Automated Prize Distribution with 6-Decimal Precision & Zero Leakage
+// ============================================================================
 
+export interface SyndicateMemberRecord {
+  userKey: string;
+  username: string;
+  sharesCount: number;
+  contributedTon: number;
+  joinedAtMs: number;
+}
 
+export interface SyndicatePoolRecord {
+  id: string;
+  name: string;
+  creatorUserKey: string;
+  creatorUsername: string;
+  roundCode: string;
+  targetShares: number;
+  filledShares: number;
+  sharePriceUsdt: number;
+  members: SyndicateMemberRecord[];
+  ticketIds: string[];
+  totalPrizeWonTon: number;
+  totalPrizeWonUsdt: number;
+  status: 'OPEN' | 'FULL' | 'SETTLED';
+  inviteCode: string;
+}
+
+export interface SyndicateShareFinancialSplit {
+  grossTon: number;
+  grossUsdt: number;
+  distributablePool85Ton: number;
+  distributablePool85Usdt: number;
+  buyerRakeback3Ton: number;
+  buyerRakeback3Stars: number;
+  welcomeReserve3Ton: number;
+  welcomeReserve3Usdt: number;
+  netHouseRevenue9Ton: number;
+  netHouseRevenue9Usdt: number;
+}
+
+export function calculateSyndicateShareFinancialSplit(params: {
+  currency: 'TON' | 'STARS';
+  totalTon: number;
+  totalStars: number;
+  tonUsdRate?: number;
+}): SyndicateShareFinancialSplit {
+  const tonRate =
+    typeof params.tonUsdRate === 'number' &&
+    Number.isFinite(params.tonUsdRate) &&
+    params.tonUsdRate > 0.1
+      ? params.tonUsdRate
+      : 5.0;
+
+  const grossTon =
+    params.currency === 'STARS'
+      ? roundTonClean(Math.max(0, Number(params.totalStars) || 0) / 250)
+      : roundTonClean(Math.max(0, Number(params.totalTon) || 0));
+  const grossUsdt = Number((grossTon * tonRate).toFixed(6));
+
+  const distributablePool85Ton = roundTonClean(grossTon * 0.85);
+  const distributablePool85Usdt = Number((distributablePool85Ton * tonRate).toFixed(6));
+
+  const buyerRakeback3Ton = roundTonClean(grossTon * 0.03);
+  const buyerRakeback3Stars =
+    params.currency === 'STARS'
+      ? Math.max(1, roundStarsClean((Number(params.totalStars) || 0) * 0.03))
+      : roundStarsClean(buyerRakeback3Ton * 250);
+
+  // 25% of the 12% house margin = 3% of gross routed to welcomeGrandLottery.fundedReserveTon
+  const houseMargin12Ton = roundTonClean(grossTon * 0.12);
+  const welcomeReserve3Ton = roundTonClean(houseMargin12Ton * 0.25);
+  const welcomeReserve3Usdt = Number((welcomeReserve3Ton * tonRate).toFixed(6));
+
+  const netHouseRevenue9Ton = roundTonClean(Math.max(0, houseMargin12Ton - welcomeReserve3Ton));
+  const netHouseRevenue9Usdt = Number((netHouseRevenue9Ton * tonRate).toFixed(6));
+
+  return {
+    grossTon,
+    grossUsdt,
+    distributablePool85Ton,
+    distributablePool85Usdt,
+    buyerRakeback3Ton,
+    buyerRakeback3Stars,
+    welcomeReserve3Ton,
+    welcomeReserve3Usdt,
+    netHouseRevenue9Ton,
+    netHouseRevenue9Usdt,
+  };
+}
+
+export function validateSyndicateCreationInput(params: {
+  name?: string;
+  targetShares?: number;
+  initialSharesToBuy?: number;
+}): {
+  valid: boolean;
+  error?: string;
+  cleanName: string;
+  cleanTargetShares: number;
+  cleanInitialShares: number;
+} {
+  const cleanName = String(params.name || '')
+    .trim()
+    .replace(/[<>]/g, '')
+    .slice(0, 48);
+
+  if (cleanName.length < 2) {
+    return {
+      valid: false,
+      error: 'INVALID_SYNDICATE_NAME — لطفاً یک نام معتبر (حداقل ۲ کاراکتر) برای سندیکای گروهی انتخاب کنید.',
+      cleanName: '',
+      cleanTargetShares: 10,
+      cleanInitialShares: 1,
+    };
+  }
+
+  const targetShares = Math.floor(Number(params.targetShares) || 0);
+  if (!Number.isFinite(targetShares) || targetShares < 5 || targetShares > 100) {
+    return {
+      valid: false,
+      error: 'INVALID_TARGET_SHARES — ظرفیت کل سهام سندیکا باید بین ۵ تا ۱۰۰ سهم باشد.',
+      cleanName,
+      cleanTargetShares: 10,
+      cleanInitialShares: 1,
+    };
+  }
+
+  const initialShares = Math.floor(Number(params.initialSharesToBuy ?? 1));
+  if (!Number.isFinite(initialShares) || initialShares < 1 || initialShares > targetShares) {
+    return {
+      valid: false,
+      error: `INVALID_INITIAL_SHARES — تعداد سهام اولیه باید بین ۱ تا ${targetShares} سهم باشد.`,
+      cleanName,
+      cleanTargetShares: targetShares,
+      cleanInitialShares: 1,
+    };
+  }
+
+  return {
+    valid: true,
+    cleanName,
+    cleanTargetShares: targetShares,
+    cleanInitialShares: initialShares,
+  };
+}
+
+export function validateSyndicateJoinInput(params: {
+  syndicate?: SyndicatePoolRecord | null;
+  sharesToBuy?: number;
+}): {
+  valid: boolean;
+  error?: string;
+  cleanSharesToBuy: number;
+  remainingShares: number;
+} {
+  const syn = params.syndicate;
+  if (!syn) {
+    return {
+      valid: false,
+      error: 'SYNDICATE_NOT_FOUND — سندیکای مورد نظر یافت نشد.',
+      cleanSharesToBuy: 0,
+      remainingShares: 0,
+    };
+  }
+
+  if (syn.status === 'SETTLED') {
+    return {
+      valid: false,
+      error: 'SYNDICATE_ALREADY_SETTLED — قرعه‌کشی این سندیکا قبلاً انجام و تسویه شده است.',
+      cleanSharesToBuy: 0,
+      remainingShares: 0,
+    };
+  }
+
+  const remainingShares = Math.max(0, Math.floor(syn.targetShares - syn.filledShares));
+  if (syn.status === 'FULL' || remainingShares <= 0) {
+    return {
+      valid: false,
+      error: 'SYNDICATE_FULL — ظرفیت سهام این سندیکا تکمیل شده است.',
+      cleanSharesToBuy: 0,
+      remainingShares: 0,
+    };
+  }
+
+  const requested = Math.floor(Number(params.sharesToBuy ?? 1));
+  if (!Number.isFinite(requested) || requested < 1) {
+    return {
+      valid: false,
+      error: 'INVALID_SHARES_COUNT — حداقل باید ۱ سهم خریداری کنید.',
+      cleanSharesToBuy: 0,
+      remainingShares,
+    };
+  }
+
+  if (requested > remainingShares) {
+    return {
+      valid: false,
+      error: `SHARES_EXCEED_CAPACITY — تنها ${remainingShares} سهم خالی در این سندیکا باقی مانده است.`,
+      cleanSharesToBuy: 0,
+      remainingShares,
+    };
+  }
+
+  return {
+    valid: true,
+    cleanSharesToBuy: requested,
+    remainingShares,
+  };
+}
+
+export function applySyndicateSharePurchase(params: {
+  syndicate: SyndicatePoolRecord;
+  buyerUserKey: string;
+  buyerUsername: string;
+  sharesBought: number;
+  contributedTon: number;
+  mintedTicketCodes: string[];
+  nowMs?: number;
+}): {
+  updatedSyndicate: SyndicatePoolRecord;
+  creatorSynergyXpBonus: number;
+  buyerXpBonus: number;
+} {
+  const {
+    syndicate,
+    buyerUserKey,
+    buyerUsername,
+    sharesBought,
+    contributedTon,
+    mintedTicketCodes,
+  } = params;
+  const nowMs = params.nowMs ?? Date.now();
+  const cleanShares = Math.max(1, Math.floor(Number(sharesBought) || 1));
+  const cleanTon = roundTonClean(Math.max(0, Number(contributedTon) || 0));
+
+  const membersCopy: SyndicateMemberRecord[] = Array.isArray(syndicate.members)
+    ? syndicate.members.map((m) => ({ ...m }))
+    : [];
+
+  const existingMember = membersCopy.find((m) => m.userKey === buyerUserKey);
+  if (existingMember) {
+    existingMember.sharesCount += cleanShares;
+    existingMember.contributedTon = roundTonClean(existingMember.contributedTon + cleanTon);
+    if (buyerUsername && !existingMember.username) {
+      existingMember.username = buyerUsername;
+    }
+  } else {
+    membersCopy.push({
+      userKey: buyerUserKey,
+      username: buyerUsername || `user_${buyerUserKey.slice(-4)}`,
+      sharesCount: cleanShares,
+      contributedTon: cleanTon,
+      joinedAtMs: nowMs,
+    });
+  }
+
+  const nextFilledShares = Math.min(
+    syndicate.targetShares,
+    Math.max(0, Number(syndicate.filledShares) || 0) + cleanShares
+  );
+  const nextStatus: 'OPEN' | 'FULL' | 'SETTLED' =
+    syndicate.status === 'SETTLED'
+      ? 'SETTLED'
+      : nextFilledShares >= syndicate.targetShares
+      ? 'FULL'
+      : 'OPEN';
+
+  const nextTicketIds = [
+    ...(Array.isArray(syndicate.ticketIds) ? syndicate.ticketIds : []),
+    ...mintedTicketCodes,
+  ];
+
+  // +15 XP Squad Synergy Bonus to syndicate creator whenever ANOTHER user joins their syndicate
+  const isAnotherUserJoining = String(buyerUserKey) !== String(syndicate.creatorUserKey);
+  const creatorSynergyXpBonus = isAnotherUserJoining ? 15 : 0;
+  const buyerXpBonus = cleanShares * 25;
+
+  return {
+    updatedSyndicate: {
+      ...syndicate,
+      filledShares: nextFilledShares,
+      members: membersCopy,
+      ticketIds: nextTicketIds,
+      status: nextStatus,
+    },
+    creatorSynergyXpBonus,
+    buyerXpBonus,
+  };
+}
+
+export interface SyndicateProRataPayoutItem {
+  userKey: string;
+  username: string;
+  sharesCount: number;
+  filledShares: number;
+  memberRatio: number;
+  payoutTon: number;
+  payoutUsdt: number;
+  descriptionFa: string;
+}
+
+export function calculateSyndicateProRataDistribution(params: {
+  syndicate: SyndicatePoolRecord;
+  totalPrizeTon: number;
+  tonUsdRate?: number;
+}): {
+  totalPrizeTon: number;
+  totalPrizeUsdt: number;
+  totalDistributedTon: number;
+  totalDistributedUsdt: number;
+  unallocatedDustTon: number;
+  payouts: SyndicateProRataPayoutItem[];
+} {
+  const tonRate =
+    typeof params.tonUsdRate === 'number' &&
+    Number.isFinite(params.tonUsdRate) &&
+    params.tonUsdRate > 0.1
+      ? params.tonUsdRate
+      : 5.0;
+
+  const cleanTotalPrizeTon = roundTonClean(Math.max(0, Number(params.totalPrizeTon) || 0));
+  const cleanTotalPrizeUsdt = Number((cleanTotalPrizeTon * tonRate).toFixed(6));
+
+  const members = Array.isArray(params.syndicate.members) ? params.syndicate.members : [];
+  const totalMemberShares = members.reduce(
+    (sum, m) => sum + Math.max(0, Math.floor(Number(m.sharesCount) || 0)),
+    0
+  );
+  const effectiveFilledShares = Math.max(
+    1,
+    totalMemberShares > 0
+      ? totalMemberShares
+      : Math.floor(Number(params.syndicate.filledShares) || 1)
+  );
+
+  if (cleanTotalPrizeTon <= 0 || members.length === 0) {
+    return {
+      totalPrizeTon: cleanTotalPrizeTon,
+      totalPrizeUsdt: cleanTotalPrizeUsdt,
+      totalDistributedTon: 0,
+      totalDistributedUsdt: 0,
+      unallocatedDustTon: cleanTotalPrizeTon,
+      payouts: [],
+    };
+  }
+
+  let allocatedTonSoFar = 0;
+  const payouts: SyndicateProRataPayoutItem[] = [];
+  const cleanSyndicateId = String(params.syndicate.id || 'SYN-0000').replace(/^#/, '');
+
+  for (const member of members) {
+    const memberShares = Math.max(0, Math.floor(Number(member.sharesCount) || 0));
+    if (memberShares <= 0) continue;
+
+    const memberRatio = Number((memberShares / effectiveFilledShares).toFixed(8));
+    // Floor to 6 decimal places first, then pass through roundTonClean and clamp to remaining pool
+    // so sum(memberPayoutTon) NEVER exceeds cleanTotalPrizeTon (zero leakage!)
+    const rawExactTon = (cleanTotalPrizeTon * memberShares) / effectiveFilledShares;
+    const floored6Ton = roundTonClean(Math.floor(rawExactTon * 1_000_000 + 1e-9) / 1_000_000);
+    const remainingTon = roundTonClean(Math.max(0, cleanTotalPrizeTon - allocatedTonSoFar));
+    const payoutTon = roundTonClean(Math.min(floored6Ton, remainingTon));
+    const payoutUsdt = Number((payoutTon * tonRate).toFixed(6));
+
+    allocatedTonSoFar = roundTonClean(allocatedTonSoFar + payoutTon);
+
+    payouts.push({
+      userKey: member.userKey,
+      username: member.username,
+      sharesCount: memberShares,
+      filledShares: effectiveFilledShares,
+      memberRatio,
+      payoutTon,
+      payoutUsdt,
+      descriptionFa: `سهم برنده سندیکای گروهی (#${cleanSyndicateId})`,
+    });
+  }
+
+  const totalDistributedUsdt = Number((allocatedTonSoFar * tonRate).toFixed(6));
+  const unallocatedDustTon = roundTonClean(Math.max(0, cleanTotalPrizeTon - allocatedTonSoFar));
+
+  return {
+    totalPrizeTon: cleanTotalPrizeTon,
+    totalPrizeUsdt: cleanTotalPrizeUsdt,
+    totalDistributedTon: allocatedTonSoFar,
+    totalDistributedUsdt,
+    unallocatedDustTon,
+    payouts,
+  };
+}
+
+// ============================================================================
+// UPGRADE 4: SELF-FUNDING LIFETIME REFERRAL COMMISSION VAULT & ANTI-SYBIL SOCIAL QUESTS
+// - 2% Ticket Purchase Commission (85% Pool + 3% Buyer Rakeback + 2% Inviter Referral + 3% Welcome Reserve + 7% Net House = 100%)
+// - 0.5% Mini-Game Turnover Commission (roundTonClean / Math.floor Stars)
+// - 1:1 Atomic Referral Claim into PAM Seamless Wallet
+// - 4 Verifiable Zero-Capital Growth Quests (+XP & Conditional Monthly VIP Super-Tickets)
+// ============================================================================
+
+export interface UserReferralProfileState {
+  referralCode: string;
+  referredByUserKey: string | null;
+  invitedCount: number;
+  activeBuyersCount: number;
+  activeBuyerUserKeys: string[];
+  claimableReferralTon: number;
+  claimableReferralStars: number;
+  lifetimeReferralTon: number;
+  lifetimeReferralStars: number;
+  totalClaimsCount: number;
+  lastUpdatedIso: string;
+}
+
+export function normalizeReferralProfileState(
+  userAccount?: Partial<IsolatedUserAccountRecord> | null
+): UserReferralProfileState {
+  const uid = String(userAccount?.telegramUserId || 'guest_isolated').trim();
+  const raw = userAccount?.referralProfile;
+  const referralCode =
+    String(raw?.referralCode || userAccount?.referralCode || `ref_${uid}`).trim() || `ref_${uid}`;
+  const referredByUserKey =
+    raw?.referredByUserKey !== undefined
+      ? raw.referredByUserKey
+      : userAccount?.referredByUserId || null;
+
+  const referralsList = Array.isArray(userAccount?.referrals) ? userAccount!.referrals : [];
+  const invitedCount = Math.max(
+    referralsList.length,
+    Math.max(0, Math.floor(Number(raw?.invitedCount) || 0))
+  );
+
+  const activeBuyerUserKeys = Array.from(
+    new Set(
+      (Array.isArray(raw?.activeBuyerUserKeys) ? raw!.activeBuyerUserKeys : [])
+        .map((k) => String(k || '').trim())
+        .filter(Boolean)
+    )
+  );
+  const activeBuyersCount = Math.max(
+    activeBuyerUserKeys.length,
+    Math.max(0, Math.floor(Number(raw?.activeBuyersCount) || 0))
+  );
+
+  const claimableReferralTon = roundTonClean(
+    Math.max(
+      0,
+      Number(raw?.claimableReferralTon ?? userAccount?.pamState?.referralEarningsTon ?? 0) || 0
+    )
+  );
+  const claimableReferralStars = Math.max(
+    0,
+    Math.floor(
+      Number(raw?.claimableReferralStars ?? userAccount?.pamState?.referralEarningsStars ?? 0) || 0
+    )
+  );
+  const lifetimeReferralTon = roundTonClean(
+    Math.max(claimableReferralTon, Number(raw?.lifetimeReferralTon) || 0)
+  );
+  const lifetimeReferralStars = Math.max(
+    claimableReferralStars,
+    Math.floor(Number(raw?.lifetimeReferralStars) || 0)
+  );
+  const totalClaimsCount = Math.max(0, Math.floor(Number(raw?.totalClaimsCount) || 0));
+
+  return {
+    referralCode,
+    referredByUserKey: referredByUserKey ? String(referredByUserKey) : null,
+    invitedCount,
+    activeBuyersCount,
+    activeBuyerUserKeys,
+    claimableReferralTon,
+    claimableReferralStars,
+    lifetimeReferralTon,
+    lifetimeReferralStars,
+    totalClaimsCount,
+    lastUpdatedIso: raw?.lastUpdatedIso || new Date().toISOString(),
+  };
+}
+
+export interface ReferredTicketFinancialSplit {
+  hasReferrer: boolean;
+  currency: 'TON' | 'STARS';
+  grossTon: number;
+  grossStars: number;
+  grossUsdt: number;
+  distributablePool85Ton: number;
+  buyerCashback3Ton: number;
+  buyerCashback3Stars: number;
+  inviterReferral2Ton: number;
+  inviterReferral2Stars: number;
+  welcomeReserve3Ton: number;
+  netHouseProfitTon: number;
+  sumCheckTon: number;
+  conservationDeltaTon: number;
+}
+
+/**
+ * Computes the exact 100.000000% zero-leakage conservation split on ticket sales:
+ * - Referred sale: 85% Pool + 3% Buyer Cashback + 2% Inviter Referral + 3% Welcome Reserve + 7% Net House = 100.000000%
+ * - Non-referred sale: 85% Pool + 3% Buyer Cashback + 0% Inviter Referral + 3% Welcome Reserve + 9% Net House = 100.000000%
+ */
+export function calculateReferredTicketFinancialSplit(params: {
+  currency: 'TON' | 'STARS';
+  grossTon: number;
+  grossStars?: number;
+  hasReferrer: boolean;
+  tonUsdRate?: number;
+}): ReferredTicketFinancialSplit {
+  const tonRate =
+    typeof params.tonUsdRate === 'number' &&
+    Number.isFinite(params.tonUsdRate) &&
+    params.tonUsdRate > 0.1
+      ? params.tonUsdRate
+      : 5.0;
+
+  const grossStars = Math.max(0, Math.floor(Number(params.grossStars) || 0));
+  const grossTon =
+    params.currency === 'STARS' && grossStars > 0 && !(Number(params.grossTon) > 0)
+      ? roundTonClean(grossStars / 250)
+      : roundTonClean(Math.max(0, Number(params.grossTon) || 0));
+  const grossUsdt = Number((grossTon * tonRate).toFixed(6));
+
+  const distributablePool85Ton = roundTonClean(grossTon * 0.85);
+  const buyerCashback3Ton = roundTonClean(grossTon * 0.03);
+  const buyerCashback3Stars =
+    params.currency === 'STARS'
+      ? Math.max(0, Math.floor(grossStars * 0.03))
+      : Math.floor(buyerCashback3Ton * 250);
+
+  const welcomeReserve3Ton = roundTonClean(grossTon * 0.03);
+
+  const inviterReferral2Ton = params.hasReferrer ? roundTonClean(grossTon * 0.02) : 0;
+  const inviterReferral2Stars = params.hasReferrer
+    ? params.currency === 'STARS'
+      ? Math.max(0, Math.floor(grossStars * 0.02))
+      : Math.floor(inviterReferral2Ton * 250)
+    : 0;
+
+  // Net House Profit absorbs the exact remainder (7% when referred, 9% when non-referred) so sum === 100.000000%
+  const allocatedBeforeNetHouse = roundTonClean(
+    distributablePool85Ton + buyerCashback3Ton + welcomeReserve3Ton + inviterReferral2Ton
+  );
+  const netHouseProfitTon = roundTonClean(Math.max(0, grossTon - allocatedBeforeNetHouse));
+  const sumCheckTon = roundTonClean(
+    distributablePool85Ton +
+      buyerCashback3Ton +
+      inviterReferral2Ton +
+      welcomeReserve3Ton +
+      netHouseProfitTon
+  );
+  const conservationDeltaTon = roundTonClean(Math.abs(grossTon - sumCheckTon));
+
+  return {
+    hasReferrer: Boolean(params.hasReferrer),
+    currency: params.currency,
+    grossTon,
+    grossStars,
+    grossUsdt,
+    distributablePool85Ton,
+    buyerCashback3Ton,
+    buyerCashback3Stars,
+    inviterReferral2Ton,
+    inviterReferral2Stars,
+    welcomeReserve3Ton,
+    netHouseProfitTon,
+    sumCheckTon,
+    conservationDeltaTon,
+  };
+}
+
+/**
+ * Credits 2% lifetime referral commission to the inviter when a referred user buys regular or syndicate tickets.
+ * Also marks the buyer in the inviter's `activeBuyerUserKeys` (`activeBuyersCount`).
+ */
+export function accrueReferralTicketCommission(params: {
+  buyerAccount: IsolatedUserAccountRecord;
+  usersMap: Record<string, IsolatedUserAccountRecord>;
+  currency: 'TON' | 'STARS';
+  grossTon: number;
+  grossStars: number;
+  tonUsdRate?: number;
+}): {
+  hasValidReferrer: boolean;
+  inviterUserKey: string | null;
+  inviterAccount: IsolatedUserAccountRecord | null;
+  creditedTon: number;
+  creditedStars: number;
+  split: ReferredTicketFinancialSplit;
+} {
+  const buyerKey = String(params.buyerAccount.telegramUserId || '').trim();
+  const buyerProfile = normalizeReferralProfileState(params.buyerAccount);
+  const inviterKey = buyerProfile.referredByUserKey || params.buyerAccount.referredByUserId;
+
+  const inviterAccount =
+    inviterKey && inviterKey !== buyerKey && params.usersMap[inviterKey]
+      ? params.usersMap[inviterKey]
+      : null;
+
+  const split = calculateReferredTicketFinancialSplit({
+    currency: params.currency,
+    grossTon: params.grossTon,
+    grossStars: params.grossStars,
+    hasReferrer: Boolean(inviterAccount),
+    tonUsdRate: params.tonUsdRate,
+  });
+
+  if (!inviterAccount || !inviterKey) {
+    return {
+      hasValidReferrer: false,
+      inviterUserKey: null,
+      inviterAccount: null,
+      creditedTon: 0,
+      creditedStars: 0,
+      split,
+    };
+  }
+
+  const inviterProfile = normalizeReferralProfileState(inviterAccount);
+  if (!inviterAccount.referrals.includes(buyerKey)) {
+    inviterAccount.referrals.push(buyerKey);
+  }
+  if (!inviterProfile.activeBuyerUserKeys.includes(buyerKey)) {
+    inviterProfile.activeBuyerUserKeys.push(buyerKey);
+  }
+  inviterProfile.invitedCount = Math.max(
+    inviterProfile.invitedCount,
+    inviterAccount.referrals.length
+  );
+  inviterProfile.activeBuyersCount = inviterProfile.activeBuyerUserKeys.length;
+
+  let creditedTon = 0;
+  let creditedStars = 0;
+
+  if (params.currency === 'STARS') {
+    creditedStars = Math.max(0, Math.floor(Number(params.grossStars || 0) * 0.02));
+    inviterProfile.claimableReferralStars += creditedStars;
+    inviterProfile.lifetimeReferralStars += creditedStars;
+    inviterAccount.pamState.referralEarningsStars = inviterProfile.claimableReferralStars;
+  } else {
+    creditedTon = split.inviterReferral2Ton;
+    inviterProfile.claimableReferralTon = roundTonClean(
+      inviterProfile.claimableReferralTon + creditedTon
+    );
+    inviterProfile.lifetimeReferralTon = roundTonClean(
+      inviterProfile.lifetimeReferralTon + creditedTon
+    );
+    inviterAccount.pamState.referralEarningsTon = inviterProfile.claimableReferralTon;
+  }
+
+  inviterProfile.lastUpdatedIso = new Date().toISOString();
+  inviterAccount.referralProfile = inviterProfile;
+
+  return {
+    hasValidReferrer: true,
+    inviterUserKey: inviterKey,
+    inviterAccount,
+    creditedTon,
+    creditedStars,
+    split,
+  };
+}
+
+/**
+ * Credits 0.5% mini-game turnover commission (`roundTonClean(bet * 0.005)` or `Math.floor(stars * 0.005)`)
+ * into the inviter's referral vault whenever a referred user plays any instant mini-game.
+ */
+export function accrueReferralMiniGameCommission(params: {
+  playerAccount: IsolatedUserAccountRecord;
+  usersMap: Record<string, IsolatedUserAccountRecord>;
+  currency: 'TON' | 'STARS';
+  betAmountTon: number;
+  betAmountStars: number;
+}): {
+  hasValidReferrer: boolean;
+  inviterUserKey: string | null;
+  inviterAccount: IsolatedUserAccountRecord | null;
+  creditedTon: number;
+  creditedStars: number;
+} {
+  const playerKey = String(params.playerAccount.telegramUserId || '').trim();
+  const playerProfile = normalizeReferralProfileState(params.playerAccount);
+  const inviterKey = playerProfile.referredByUserKey || params.playerAccount.referredByUserId;
+
+  const inviterAccount =
+    inviterKey && inviterKey !== playerKey && params.usersMap[inviterKey]
+      ? params.usersMap[inviterKey]
+      : null;
+
+  if (!inviterAccount || !inviterKey) {
+    return {
+      hasValidReferrer: false,
+      inviterUserKey: null,
+      inviterAccount: null,
+      creditedTon: 0,
+      creditedStars: 0,
+    };
+  }
+
+  const inviterProfile = normalizeReferralProfileState(inviterAccount);
+  let creditedTon = 0;
+  let creditedStars = 0;
+
+  if (params.currency === 'STARS') {
+    creditedStars = Math.max(0, Math.floor(Math.max(0, Number(params.betAmountStars) || 0) * 0.005));
+    if (creditedStars > 0) {
+      inviterProfile.claimableReferralStars += creditedStars;
+      inviterProfile.lifetimeReferralStars += creditedStars;
+      inviterAccount.pamState.referralEarningsStars = inviterProfile.claimableReferralStars;
+    }
+  } else {
+    creditedTon = roundTonClean(Math.max(0, Number(params.betAmountTon) || 0) * 0.005);
+    if (creditedTon > 0) {
+      inviterProfile.claimableReferralTon = roundTonClean(
+        inviterProfile.claimableReferralTon + creditedTon
+      );
+      inviterProfile.lifetimeReferralTon = roundTonClean(
+        inviterProfile.lifetimeReferralTon + creditedTon
+      );
+      inviterAccount.pamState.referralEarningsTon = inviterProfile.claimableReferralTon;
+    }
+  }
+
+  inviterProfile.lastUpdatedIso = new Date().toISOString();
+  inviterAccount.referralProfile = inviterProfile;
+
+  return {
+    hasValidReferrer: true,
+    inviterUserKey: inviterKey,
+    inviterAccount,
+    creditedTon,
+    creditedStars,
+  };
+}
+
+/**
+ * 1:1 Atomic Referral Claim (`POST /api/referrals/claim`):
+ * Transfers `claimableReferralTon` and `claimableReferralStars` 1:1 into the inviter's main PAM wallet
+ * with zero fees and resets claimable referral balances to `0`.
+ */
+export function executeAtomicReferralVaultClaim(params: {
+  userAccount: IsolatedUserAccountRecord;
+  userPam: PAMSeamlessWalletEngine;
+  tonUsdRate?: number;
+}): {
+  ok: boolean;
+  status: 200 | 400;
+  error?: string;
+  claimedTon: number;
+  claimedStars: number;
+  updatedProfile: UserReferralProfileState;
+  tonBalance: number;
+  starsBalance: number;
+} {
+  const tonRate =
+    typeof params.tonUsdRate === 'number' && params.tonUsdRate > 0 ? params.tonUsdRate : 5.0;
+  const profile = normalizeReferralProfileState(params.userAccount);
+  const claimableTon = roundTonClean(profile.claimableReferralTon);
+  const claimableStars = Math.max(0, Math.floor(profile.claimableReferralStars));
+
+  if (claimableTon <= 0 && claimableStars <= 0) {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        'NO_CLAIMABLE_REFERRAL_COMMISSION — موجودی قابل برداشت پورسانت دعوت دوستان در حال حاضر صفر است.',
+      claimedTon: 0,
+      claimedStars: 0,
+      updatedProfile: profile,
+      tonBalance: roundTonClean(params.userPam.getState().tonBalance),
+      starsBalance: roundStarsClean(params.userPam.getState().starsBalance),
+    };
+  }
+
+  const nowMs = Date.now();
+  const rnd = crypto.randomBytes(3).toString('hex');
+
+  if (claimableTon > 0) {
+    params.userPam.credit({
+      transactionUuid: `tx_ref_claim_ton_${params.userAccount.telegramUserId}_${nowMs}_${rnd}`,
+      referenceTransactionUuid: null,
+      roundId: `#REF-VAULT-${String(nowMs).slice(-6)}`,
+      vertical: 'AFFILIATE_REFERRAL_VAULT',
+      currency: 'TON',
+      amountTon: claimableTon,
+      amountUsdt: Number((claimableTon * tonRate).toFixed(4)),
+      note: `برداشت آنی پورسانت دعوت دوستان به کیف پول (${claimableTon.toFixed(6)} TON • بدون کارمزد)`,
+    });
+  }
+
+  if (claimableStars > 0) {
+    params.userPam.credit({
+      transactionUuid: `tx_ref_claim_stars_${params.userAccount.telegramUserId}_${nowMs}_${rnd}`,
+      referenceTransactionUuid: null,
+      roundId: `#REF-VAULT-${String(nowMs).slice(-6)}`,
+      vertical: 'AFFILIATE_REFERRAL_VAULT',
+      currency: 'STARS',
+      amountStars: claimableStars,
+      amountUsdt: Number((claimableStars * 0.02).toFixed(4)),
+      note: `برداشت آنی پورسانت دعوت دوستان به کیف پول (${claimableStars} ⭐ Stars • بدون کارمزد)`,
+    });
+  }
+
+  profile.claimableReferralTon = 0;
+  profile.claimableReferralStars = 0;
+  profile.totalClaimsCount += 1;
+  profile.lastUpdatedIso = new Date().toISOString();
+
+  const latestPam = params.userPam.getState();
+  latestPam.referralEarningsTon = 0;
+  latestPam.referralEarningsStars = 0;
+
+  params.userAccount.referralProfile = profile;
+  params.userAccount.pamState = latestPam;
+  params.userAccount.tonBalance = roundTonClean(latestPam.tonBalance);
+  params.userAccount.starsBalance = roundStarsClean(latestPam.starsBalance);
+
+  return {
+    ok: true,
+    status: 200,
+    claimedTon: claimableTon,
+    claimedStars: claimableStars,
+    updatedProfile: profile,
+    tonBalance: roundTonClean(latestPam.tonBalance),
+    starsBalance: roundStarsClean(latestPam.starsBalance),
+  };
+}
+
+export type AntiSybilGrowthQuestId =
+  | 'QUEST_JOIN_CHANNEL'
+  | 'QUEST_FIRST_SYNDICATE'
+  | 'QUEST_ACTIVE_REFERRAL_1'
+  | 'QUEST_ACTIVE_REFERRALS_5';
+
+export interface GrowthQuestSpecItem {
+  id: AntiSybilGrowthQuestId;
+  titleFa: string;
+  titleEn: string;
+  descriptionFa: string;
+  descriptionEn: string;
+  xpReward: number;
+  vipSuperTicketsReward: number;
+  targetProgress: number;
+}
+
+export interface GrowthQuestStatusItem extends GrowthQuestSpecItem {
+  currentProgress: number;
+   eligibleToClaim: boolean;
+  claimed: boolean;
+}
+
+export const GROWTH_QUEST_SPECS: GrowthQuestSpecItem[] = [
+  {
+    id: 'QUEST_JOIN_CHANNEL',
+    titleFa: '📢 عضویت در کانال رسمی تلگرام LuckyDrop',
+    titleEn: '📢 Join Official Telegram Channel',
+    descriptionFa: 'عضویت در کانال رسمی تلگرام و دریافت آنی +100 امتیاز وفاداری XP',
+    descriptionEn: 'Join the official Telegram channel to earn +100 Loyalty XP',
+    xpReward: 100,
+    vipSuperTicketsReward: 0,
+    targetProgress: 1,
+  },
+  {
+    id: 'QUEST_FIRST_SYNDICATE',
+    titleFa: '🤝 ساخت یا مشارکت در اولین سندیکای گروهی (Squad)',
+    titleEn: '🤝 Create or Join Any Syndicate Squad',
+    descriptionFa: 'ساخت یک اسکواد جدید یا خرید حداقل ۱ سهم در سندیکاهای فعال (+150 XP)',
+    descriptionEn: 'Create or join any active Telegram Syndicate Squad (+150 XP)',
+    xpReward: 150,
+    vipSuperTicketsReward: 0,
+    targetProgress: 1,
+  },
+  {
+    id: 'QUEST_ACTIVE_REFERRAL_1',
+    titleFa: '🚀 دعوت ۱ دوست فعال (خرید حداقل ۱ بلیت لاتاری)',
+    titleEn: '🚀 Invite 1 Active Friend (Buys >= 1 Paid Ticket)',
+    descriptionFa: '+200 XP + ۱ بلیت رایگان ابر جک‌پات ماهانه VIP (#LD-MONTHLY-VIP)',
+    descriptionEn: '+200 XP + 1 Free Monthly VIP Super-Ticket (#LD-MONTHLY-VIP)',
+    xpReward: 200,
+    vipSuperTicketsReward: 1,
+    targetProgress: 1,
+  },
+  {
+    id: 'QUEST_ACTIVE_REFERRALS_5',
+    titleFa: '👑 دعوت ۵ دوست فعال (هر کدام حداقل ۱ بلیت لاتاری)',
+    titleEn: '👑 Invite 5 Active Friends (Each Buys >= 1 Paid Ticket)',
+    descriptionFa: '+500 XP (تکمیل حدنصاب VIP!) + ۳ بلیت رایگان ابر جک‌پات ماهانه VIP',
+    descriptionEn: '+500 XP + 3 Free Monthly VIP Super-Tickets (#LD-MONTHLY-VIP)',
+    xpReward: 500,
+    vipSuperTicketsReward: 3,
+    targetProgress: 5,
+  },
+];
+
+export function evaluateUserGrowthQuests(params: {
+  userAccount: IsolatedUserAccountRecord;
+  syndicatePools?: SyndicatePoolRecord[];
+  channelJoinedVerified?: boolean;
+}): GrowthQuestStatusItem[] {
+  const userKey = String(params.userAccount.telegramUserId || '').trim();
+  const completed = Array.isArray(params.userAccount.completedQuests)
+    ? params.userAccount.completedQuests
+    : [];
+  const profile = normalizeReferralProfileState(params.userAccount);
+  const pools = Array.isArray(params.syndicatePools) ? params.syndicatePools : [];
+
+  const hasJoinedOrCreatedSyndicate = pools.some(
+    (s) =>
+      String(s.creatorUserKey) === userKey ||
+      (Array.isArray(s.members) && s.members.some((m) => String(m.userKey) === userKey))
+  );
+
+  return GROWTH_QUEST_SPECS.map((spec) => {
+    const isClaimed = completed.includes(spec.id);
+    let currentProgress = 0;
+
+    if (spec.id === 'QUEST_JOIN_CHANNEL') {
+      currentProgress = isClaimed || params.channelJoinedVerified !== false ? 1 : 0;
+    } else if (spec.id === 'QUEST_FIRST_SYNDICATE') {
+      currentProgress = isClaimed || hasJoinedOrCreatedSyndicate ? 1 : 0;
+    } else if (spec.id === 'QUEST_ACTIVE_REFERRAL_1') {
+      currentProgress = Math.min(1, profile.activeBuyersCount);
+    } else if (spec.id === 'QUEST_ACTIVE_REFERRALS_5') {
+      currentProgress = Math.min(5, profile.activeBuyersCount);
+    }
+
+    if (isClaimed) {
+      currentProgress = spec.targetProgress;
+    }
+
+    return {
+      ...spec,
+      currentProgress,
+      eligibleToClaim: !isClaimed && currentProgress >= spec.targetProgress,
+      claimed: isClaimed,
+    };
+  });
+}
+
+export function verifyAndClaimGrowthQuest(params: {
+  userAccount: IsolatedUserAccountRecord;
+  questId: string;
+  syndicatePools?: SyndicatePoolRecord[];
+  channelJoinedVerified?: boolean;
+}): {
+  ok: boolean;
+  status: 200 | 400 | 404 | 409;
+  error?: string;
+  questSpec?: GrowthQuestSpecItem;
+  xpAwarded: number;
+  vipSuperTicketsAwarded: number;
+  updatedXp: number;
+  growthQuests: GrowthQuestStatusItem[];
+} {
+  const cleanQuestId = String(params.questId || '').trim() as AntiSybilGrowthQuestId;
+  const spec = GROWTH_QUEST_SPECS.find((q) => q.id === cleanQuestId);
+
+  if (!spec) {
+    return {
+      ok: false,
+      status: 404,
+      error: 'QUEST_NOT_FOUND — ماموریت مورد نظر یافت نشد.',
+      xpAwarded: 0,
+      vipSuperTicketsAwarded: 0,
+      updatedXp: Number(params.userAccount.xp) || 0,
+      growthQuests: evaluateUserGrowthQuests(params),
+    };
+  }
+
+  if (!Array.isArray(params.userAccount.completedQuests)) {
+    params.userAccount.completedQuests = [];
+  }
+
+  if (params.userAccount.completedQuests.includes(cleanQuestId)) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'QUEST_ALREADY_CLAIMED — پاداش این ماموریت قبلاً دریافت شده است.',
+      questSpec: spec,
+      xpAwarded: 0,
+      vipSuperTicketsAwarded: 0,
+      updatedXp: Number(params.userAccount.xp) || 0,
+      growthQuests: evaluateUserGrowthQuests(params),
+    };
+  }
+
+  const evaluatedList = evaluateUserGrowthQuests(params);
+  const currentStatus = evaluatedList.find((q) => q.id === cleanQuestId);
+
+  if (!currentStatus || currentStatus.currentProgress < spec.targetProgress) {
+    const missingMsg =
+      cleanQuestId === 'QUEST_FIRST_SYNDICATE'
+        ? 'ابتدا یک سندیکای گروهی بسازید یا حداقل ۱ سهم در یکی از سندیکاهای فعال خریداری کنید.'
+        : cleanQuestId === 'QUEST_ACTIVE_REFERRAL_1'
+        ? 'برای دریافت این پاداش، حداقل ۱ نفر از دوستان دعوت‌شده شما باید ۱ بلیت لاتاری خریداری کند.'
+        : cleanQuestId === 'QUEST_ACTIVE_REFERRALS_5'
+        ? `شما تاکنون ${currentStatus?.currentProgress || 0} نفر از ۵ دوست خریدار بلیت را دعوت کرده‌اید.`
+        : 'ابتدا عضو کانال رسمی تلگرام شوید و دوباره تلاش کنید.';
+
+    return {
+      ok: false,
+      status: 400,
+      error: `QUEST_REQUIREMENTS_NOT_MET — ${missingMsg}`,
+      questSpec: spec,
+      xpAwarded: 0,
+      vipSuperTicketsAwarded: 0,
+      updatedXp: Number(params.userAccount.xp) || 0,
+      growthQuests: evaluatedList,
+    };
+  }
+
+  params.userAccount.completedQuests.push(cleanQuestId);
+  params.userAccount.xp = Math.max(0, (Number(params.userAccount.xp) || 0) + spec.xpReward);
+
+  return {
+    ok: true,
+    status: 200,
+    questSpec: spec,
+    xpAwarded: spec.xpReward,
+    vipSuperTicketsAwarded: spec.vipSuperTicketsReward,
+    updatedXp: params.userAccount.xp,
+    growthQuests: evaluateUserGrowthQuests(params),
+  };
+}
 

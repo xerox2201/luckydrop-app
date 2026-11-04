@@ -99,7 +99,13 @@ import type {
   UserRakebackVaultState,
   WelcomeGrandLotteryState,
   UserWelcomeTicketStatus,
+  SyndicatePoolRecord,
+  SyndicateMemberRecord,
+  UserReferralProfileState,
+  GrowthQuestStatusItem,
+  AntiSybilGrowthQuestId,
 } from '../services/securityGuard.ts';
+import { GROWTH_QUEST_SPECS } from '../services/securityGuard.ts';
 
 export type {
   MonthlySuperJackpotState,
@@ -108,6 +114,11 @@ export type {
   UserRakebackVaultState,
   WelcomeGrandLotteryState,
   UserWelcomeTicketStatus,
+  SyndicatePoolRecord,
+  SyndicateMemberRecord,
+  UserReferralProfileState,
+  GrowthQuestStatusItem,
+  AntiSybilGrowthQuestId,
 };
 
 export interface RealtimeLiveTickerEvent {
@@ -197,6 +208,7 @@ export interface TicketItem {
   confirmations: number;
   prizeWonUsdt: string;
   claimed?: boolean;
+  syndicateId?: string | null;
   createdAt: string;
 }
 
@@ -778,6 +790,51 @@ interface LotteryContextType {
     autoExtendDaysIfUnfunded?: number;
   }) => Promise<boolean>;
   triggerWelcomeLotteryDraw: () => Promise<DrawExecutionResult | null>;
+  // Telegram Squads & Syndicate Lottery Pools
+  syndicatePools: SyndicatePoolRecord[];
+  createSyndicatePool: (params: {
+    name: string;
+    roundCode?: string;
+    targetShares: number;
+    initialSharesToBuy: number;
+    currency?: ActiveTmaCurrency;
+  }) => Promise<{
+    ok: boolean;
+    syndicate?: SyndicatePoolRecord;
+    tickets?: TicketItem[];
+    message: string;
+  }>;
+  joinSyndicatePool: (params: {
+    syndicateId: string;
+    sharesToBuy: number;
+    currency?: ActiveTmaCurrency;
+  }) => Promise<{
+    ok: boolean;
+    syndicate?: SyndicatePoolRecord;
+    tickets?: TicketItem[];
+    creatorSynergyXpAwarded?: number;
+    message: string;
+  }>;
+  // Self-Funding Lifetime Referral Commission Vault & Anti-Sybil Social Quests
+  referralProfile: UserReferralProfileState;
+  growthQuests: GrowthQuestStatusItem[];
+  bindReferralCode: (code: string) => Promise<{
+    ok: boolean;
+    referredBy?: string | null;
+    message: string;
+  }>;
+  claimReferralCommissionVault: () => Promise<{
+    ok: boolean;
+    claimedTon: number;
+    claimedStars: number;
+    message: string;
+  }>;
+  claimGrowthQuest: (questId: AntiSybilGrowthQuestId | string) => Promise<{
+    ok: boolean;
+    xpAwarded: number;
+    vipSuperTicketsAwarded: number;
+    message: string;
+  }>;
   firestoreConnected: boolean;
   supabaseConnected: boolean;
 }
@@ -1356,6 +1413,28 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     statusCode: 'LOCKED_BUY_FIRST_TICKET',
     statusLabelFa: 'با خرید اولین بلیت لاتاری، ۱ بلیت رایگان با اعداد دلخواه دریافت کنید!',
   }));
+  const [syndicatePools, setSyndicatePools] = useState<SyndicatePoolRecord[]>([]);
+  const [referralProfile, setReferralProfile] = useState<UserReferralProfileState>(() => ({
+    referralCode: `ref_${telegramUser.id}`,
+    referredByUserKey: null,
+    invitedCount: 0,
+    activeBuyersCount: 0,
+    activeBuyerUserKeys: [],
+    claimableReferralTon: 0,
+    claimableReferralStars: 0,
+    lifetimeReferralTon: 0,
+    lifetimeReferralStars: 0,
+    totalClaimsCount: 0,
+    lastUpdatedIso: new Date().toISOString(),
+  }));
+  const [growthQuests, setGrowthQuests] = useState<GrowthQuestStatusItem[]>(() =>
+    GROWTH_QUEST_SPECS.map((spec) => ({
+      ...spec,
+      currentProgress: 0,
+      eligibleToClaim: spec.id === 'QUEST_JOIN_CHANNEL',
+      claimed: false,
+    }))
+  );
   const [liveTickerEvent, setLiveTickerEvent] = useState<RealtimeLiveTickerEvent | null>(null);
   const [poolPulseKey, setPoolPulseKey] = useState<number>(0);
   const [sseConnected, setSseConnected] = useState<boolean>(false);
@@ -1791,6 +1870,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (data.rakebackVault && typeof data.rakebackVault === 'object') {
         setRakebackVault(data.rakebackVault);
       }
+      if (data.referralProfile && typeof data.referralProfile === 'object') {
+        setReferralProfile(data.referralProfile);
+      }
+      if (Array.isArray(data.growthQuests)) {
+        setGrowthQuests(data.growthQuests);
+      }
+      if (Array.isArray(data.syndicatePools)) {
+        setSyndicatePools(data.syndicatePools);
+      }
       if (typeof data.chestsClaimedCount === 'number') {
         setChestsClaimedCount(data.chestsClaimedCount);
       }
@@ -2005,6 +2093,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (data.welcomeTicketStatus && typeof data.welcomeTicketStatus === 'object') {
         setWelcomeTicketStatus(data.welcomeTicketStatus);
       }
+      if (Array.isArray(data.syndicatePools)) {
+        setSyndicatePools(data.syndicatePools);
+      }
+      if (data.referralProfile && typeof data.referralProfile === 'object') {
+        setReferralProfile(data.referralProfile);
+      }
+      if (Array.isArray(data.growthQuests)) {
+        setGrowthQuests(data.growthQuests);
+      }
       if (typeof data.killSwitchActive === 'boolean') setKillSwitchActive(data.killSwitchActive);
 
       // If URL contains a referral parameter (?ref= or start_param), bind it once on the backend
@@ -2015,7 +2112,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         params.get('tgWebAppStartParam') ||
         String((window as any)?.Telegram?.WebApp?.initDataUnsafe?.start_param || '').trim();
       if (startRef && startRef.length >= 4 && !data.user?.referredBy) {
-        fetch('/api/referral/bind', {
+        fetch('/api/referrals/bind', {
           method: 'POST',
           headers: snapshotHeaders,
           body: JSON.stringify({ startParam: startRef }),
@@ -3483,6 +3580,15 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (rawPayload.rakebackVault && typeof rawPayload.rakebackVault === 'object') {
         setRakebackVault(rawPayload.rakebackVault);
       }
+      if (rawPayload.referralProfile && typeof rawPayload.referralProfile === 'object') {
+        setReferralProfile(rawPayload.referralProfile);
+      }
+      if (Array.isArray(rawPayload.growthQuests)) {
+        setGrowthQuests(rawPayload.growthQuests);
+      }
+      if (Array.isArray(rawPayload.syndicatePools)) {
+        setSyndicatePools(rawPayload.syndicatePools);
+      }
       if (typeof rawPayload.rolloverReservePoolUsdt === 'number') {
         setRolloverReservePoolUsdt(rawPayload.rolloverReservePoolUsdt);
       }
@@ -3506,7 +3612,12 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
 
-      if (evtType === 'ROUND_POOL_UPDATED') {
+      if (evtType === 'SYNDICATES_UPDATED') {
+        if (Array.isArray(rawPayload.syndicatePools)) {
+          setSyndicatePools(rawPayload.syndicatePools);
+        }
+        setPoolPulseKey((prev) => prev + 1);
+      } else if (evtType === 'ROUND_POOL_UPDATED') {
         setPoolPulseKey((prev) => prev + 1);
         if (rawPayload.tickerEvent && typeof rawPayload.tickerEvent === 'object') {
           setLiveTickerEvent(rawPayload.tickerEvent);
@@ -3532,8 +3643,17 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (typeof rawPayload.starsBalance === 'number') {
           setStarsBalance(rawPayload.starsBalance);
         }
+        if (typeof rawPayload.xp === 'number') {
+          setTmaXpPoints(rawPayload.xp);
+        }
         if (typeof rawPayload.freeLotteryTickets === 'number') {
           setFreeLotteryTickets(rawPayload.freeLotteryTickets);
+        }
+        if (rawPayload.referralProfile && typeof rawPayload.referralProfile === 'object') {
+          setReferralProfile(rawPayload.referralProfile);
+        }
+        if (Array.isArray(rawPayload.growthQuests)) {
+          setGrowthQuests(rawPayload.growthQuests);
         }
         void refreshSnapshot();
       } else if (evtType === 'SUPPORT_REPLY') {
@@ -5137,6 +5257,428 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return null;
   };
 
+  const createSyndicatePool = async (params: {
+    name: string;
+    roundCode?: string;
+    targetShares: number;
+    initialSharesToBuy: number;
+    currency?: ActiveTmaCurrency;
+  }): Promise<{
+    ok: boolean;
+    syndicate?: SyndicatePoolRecord;
+    tickets?: TicketItem[];
+    message: string;
+  }> => {
+    HapticEngine.impactOccurred('medium');
+    const effectiveCurrency = params.currency || activeTmaCurrency;
+    const targetRoundCode = params.roundCode || activeLotterySpec.roundCode || '#LDR-8493';
+    const roundObj = rounds.find((r) => r.roundCode === targetRoundCode) || activeRound;
+    const sharePriceUsdt = Math.max(
+      0.1,
+      parseFloat(String(roundObj?.ticketPriceUsdt || activeLotterySpec.ticketPriceUsdt || 5))
+    );
+    const unitTon = Number((sharePriceUsdt / 5.0).toFixed(6));
+    const unitStars = Math.max(1, Math.round(unitTon * 250));
+    const sharesCount = Math.max(1, Math.floor(Number(params.initialSharesToBuy) || 1));
+    const totalTon = Number((sharesCount * unitTon).toFixed(6));
+    const totalStars = Math.round(sharesCount * unitStars);
+
+    if (
+      (effectiveCurrency === 'TON' && tonBalance < totalTon) ||
+      (effectiveCurrency === 'STARS' && starsBalance < totalStars)
+    ) {
+      HapticEngine.notificationOccurred('warning');
+      setDepositModalOpen(true);
+      return {
+        ok: false,
+        message: '⚠️ موجودی کیف پول شما برای خرید سهام اولیه سندیکا کافی نیست. لطفاً حساب خود را شارژ کنید.',
+      };
+    }
+
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/syndicates/create', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: params.name,
+          roundCode: targetRoundCode,
+          targetShares: params.targetShares,
+          initialSharesToBuy: sharesCount,
+          currency: effectiveCurrency,
+          amountTon: effectiveCurrency === 'TON' ? totalTon : undefined,
+          amountStars: effectiveCurrency === 'STARS' ? totalStars : undefined,
+          transaction_uuid: generateDeterministicUuid('tx_syn_create'),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        HapticEngine.notificationOccurred('error');
+        if (String(data.error || '').includes('INSUFFICIENT_BALANCE')) {
+          setDepositModalOpen(true);
+        }
+        return {
+          ok: false,
+          message: data.error || 'خطا در ساخت سندیکای گروهی',
+        };
+      }
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState);
+      } else {
+        if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+        if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
+      }
+      if (Array.isArray(data.syndicatePools)) {
+        setSyndicatePools(data.syndicatePools);
+      }
+      if (data.rakebackVault) {
+        setRakebackVault(data.rakebackVault);
+      }
+      if (data.welcomeGrandLottery) {
+        setWelcomeGrandLottery(data.welcomeGrandLottery);
+      }
+      if (data.welcomeTicketStatus) {
+        setWelcomeTicketStatus(data.welcomeTicketStatus);
+      }
+      if (data.monthlySuperJackpot) {
+        setMonthlySuperJackpot(data.monthlySuperJackpot);
+      }
+      if (data.monthlyVipQualification) {
+        setMonthlyVipQualification(data.monthlyVipQualification);
+      }
+      if (typeof data.xp === 'number') {
+        setTmaXpPoints(data.xp);
+      }
+      await refreshSnapshot();
+      HapticEngine.notificationOccurred('success');
+      return {
+        ok: true,
+        syndicate: data.syndicate,
+        tickets: data.tickets || [],
+        message:
+          data.message ||
+          `🤝 سندیکای گروهی با موفقیت ساخته شد و ${sharesCount} بلیت واقعی صادر گردید!`,
+      };
+    } catch {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: 'خطا در ارتباط با سرور (/api/syndicates/create)',
+      };
+    }
+  };
+
+  const joinSyndicatePool = async (params: {
+    syndicateId: string;
+    sharesToBuy: number;
+    currency?: ActiveTmaCurrency;
+  }): Promise<{
+    ok: boolean;
+    syndicate?: SyndicatePoolRecord;
+    tickets?: TicketItem[];
+    creatorSynergyXpAwarded?: number;
+    message: string;
+  }> => {
+    HapticEngine.impactOccurred('medium');
+    const effectiveCurrency = params.currency || activeTmaCurrency;
+    const targetSyn = syndicatePools.find(
+      (s) => s.id.toUpperCase() === String(params.syndicateId || '').trim().replace(/^#/, '').toUpperCase()
+    );
+    const sharePriceUsdt = Math.max(
+      0.1,
+      Number(targetSyn?.sharePriceUsdt || activeLotterySpec.ticketPriceUsdt || 5)
+    );
+    const unitTon = Number((sharePriceUsdt / 5.0).toFixed(6));
+    const unitStars = Math.max(1, Math.round(unitTon * 250));
+    const sharesCount = Math.max(1, Math.floor(Number(params.sharesToBuy) || 1));
+    const totalTon = Number((sharesCount * unitTon).toFixed(6));
+    const totalStars = Math.round(sharesCount * unitStars);
+
+    if (
+      (effectiveCurrency === 'TON' && tonBalance < totalTon) ||
+      (effectiveCurrency === 'STARS' && starsBalance < totalStars)
+    ) {
+      HapticEngine.notificationOccurred('warning');
+      setDepositModalOpen(true);
+      return {
+        ok: false,
+        message: '⚠️ موجودی کیف پول شما برای خرید سهام در این سندیکا کافی نیست. لطفاً حساب خود را شارژ کنید.',
+      };
+    }
+
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/syndicates/join', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          syndicateId: params.syndicateId,
+          sharesToBuy: sharesCount,
+          currency: effectiveCurrency,
+          amountTon: effectiveCurrency === 'TON' ? totalTon : undefined,
+          amountStars: effectiveCurrency === 'STARS' ? totalStars : undefined,
+          transaction_uuid: generateDeterministicUuid('tx_syn_join'),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        HapticEngine.notificationOccurred('error');
+        if (String(data.error || '').includes('INSUFFICIENT_BALANCE')) {
+          setDepositModalOpen(true);
+        }
+        return {
+          ok: false,
+          message: data.error || 'خطا در پیوستن به سندیکای گروهی',
+        };
+      }
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState);
+      } else {
+        if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+        if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
+      }
+      if (Array.isArray(data.syndicatePools)) {
+        setSyndicatePools(data.syndicatePools);
+      }
+      if (data.rakebackVault) {
+        setRakebackVault(data.rakebackVault);
+      }
+      if (data.welcomeGrandLottery) {
+        setWelcomeGrandLottery(data.welcomeGrandLottery);
+      }
+      if (data.welcomeTicketStatus) {
+        setWelcomeTicketStatus(data.welcomeTicketStatus);
+      }
+      if (data.monthlySuperJackpot) {
+        setMonthlySuperJackpot(data.monthlySuperJackpot);
+      }
+      if (data.monthlyVipQualification) {
+        setMonthlyVipQualification(data.monthlyVipQualification);
+      }
+      if (typeof data.xp === 'number') {
+        setTmaXpPoints(data.xp);
+      }
+      await refreshSnapshot();
+      HapticEngine.notificationOccurred('success');
+      return {
+        ok: true,
+        syndicate: data.syndicate,
+        tickets: data.tickets || [],
+        creatorSynergyXpAwarded: data.creatorSynergyXpAwarded || 0,
+        message:
+          data.message ||
+          `⚡ شما با موفقیت ${sharesCount} سهم در سندیکای گروهی خریداری کردید!`,
+      };
+    } catch {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: 'خطا در ارتباط با سرور (/api/syndicates/join)',
+      };
+    }
+  };
+
+  const bindReferralCode = async (
+    code: string
+  ): Promise<{
+    ok: boolean;
+    referredBy?: string | null;
+    message: string;
+  }> => {
+    HapticEngine.impactOccurred('medium');
+    const cleanCode = String(code || '').trim();
+    if (!cleanCode) {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: '⚠️ لطفاً کد معرف معتبر وارد کنید.',
+      };
+    }
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/referrals/bind', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ referralCode: cleanCode, startParam: cleanCode }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        HapticEngine.notificationOccurred('error');
+        return {
+          ok: false,
+          message: data.error || 'کد معرف نامعتبر است یا قبلاً ثبت شده است.',
+        };
+      }
+      if (data.referralProfile) {
+        setReferralProfile(data.referralProfile);
+      }
+      if (Array.isArray(data.growthQuests)) {
+        setGrowthQuests(data.growthQuests);
+      }
+      if (data.referredBy) {
+        setReferredByCode(data.referredBy);
+      }
+      await refreshSnapshot();
+      HapticEngine.notificationOccurred('success');
+      return {
+        ok: true,
+        referredBy: data.referredBy,
+        message: '✅ کد معرف شما با موفقیت در بلاکچین داخلی ثبت شد!',
+      };
+    } catch {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        message: 'خطا در ارتباط با سرور (/api/referrals/bind)',
+      };
+    }
+  };
+
+  const claimReferralCommissionVault = async (): Promise<{
+    ok: boolean;
+    claimedTon: number;
+    claimedStars: number;
+    message: string;
+  }> => {
+    HapticEngine.impactOccurred('heavy');
+    const claimableTon = Number(
+      (referralProfile?.claimableReferralTon ?? referralEarningsTon ?? 0).toFixed(6)
+    );
+    const claimableStars = Math.floor(
+      referralProfile?.claimableReferralStars ?? referralEarningsStars ?? 0
+    );
+    if (claimableTon <= 0 && claimableStars <= 0) {
+      HapticEngine.notificationOccurred('warning');
+      return {
+        ok: false,
+        claimedTon: 0,
+        claimedStars: 0,
+        message: '⚠️ موجودی قابل برداشت در صندوق پورسانت سفیران شما صفر است.',
+      };
+    }
+
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/referrals/claim', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        HapticEngine.notificationOccurred('error');
+        return {
+          ok: false,
+          claimedTon: 0,
+          claimedStars: 0,
+          message: data.error || 'خطا در برداشت پورسانت دعوت دوستان',
+        };
+      }
+      if (data.pamState) {
+        syncPamStateEverywhere(data.pamState);
+      } else {
+        if (typeof data.tonBalance === 'number') setTonBalance(data.tonBalance);
+        if (typeof data.starsBalance === 'number') setStarsBalance(data.starsBalance);
+      }
+      if (data.referralProfile) {
+        setReferralProfile(data.referralProfile);
+      }
+      setReferralEarningsTon(0);
+      setReferralEarningsStars(0);
+      await refreshSnapshot();
+      HapticEngine.notificationOccurred('success');
+      return {
+        ok: true,
+        claimedTon: Number(data.claimedTon || claimableTon),
+        claimedStars: Number(data.claimedStars || claimableStars),
+        message:
+          data.message ||
+          `💎 پورسانت دعوت دوستان (${claimableTon.toFixed(6)} TON${
+            claimableStars > 0 ? ` + ${claimableStars} ⭐` : ''
+          }) به کیف پول اصلی شما واریز شد!`,
+      };
+    } catch {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        claimedTon: 0,
+        claimedStars: 0,
+        message: 'خطا در ارتباط با سرور (/api/referrals/claim)',
+      };
+    }
+  };
+
+  const claimGrowthQuest = async (
+    questId: AntiSybilGrowthQuestId | string
+  ): Promise<{
+    ok: boolean;
+    xpAwarded: number;
+    vipSuperTicketsAwarded: number;
+    message: string;
+  }> => {
+    HapticEngine.impactOccurred('medium');
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/quests/claim', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          questId,
+          walletConnected: Boolean(realTonAddress),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        HapticEngine.notificationOccurred('error');
+        return {
+          ok: false,
+          xpAwarded: 0,
+          vipSuperTicketsAwarded: 0,
+          message: data.error || 'شرایط این مأموریت هنوز تکمیل نشده است.',
+        };
+      }
+      if (typeof data.xp === 'number') {
+        setTmaXpPoints(data.xp);
+      }
+      if (Array.isArray(data.growthQuests)) {
+        setGrowthQuests(data.growthQuests);
+      }
+      if (data.referralProfile) {
+        setReferralProfile(data.referralProfile);
+      }
+      if (data.monthlyVipQualification) {
+        setMonthlyVipQualification(data.monthlyVipQualification);
+      }
+      if (Array.isArray(data.mintedVipTickets) && data.mintedVipTickets.length > 0) {
+        setTickets((prev) => [...data.mintedVipTickets, ...prev]);
+      } else if (data.bonusTicketAwarded) {
+        setTickets((prev) => [data.bonusTicketAwarded, ...prev]);
+      }
+      await refreshSnapshot();
+      HapticEngine.notificationOccurred('success');
+      return {
+        ok: true,
+        xpAwarded: Number(data.xpAwarded || 0),
+        vipSuperTicketsAwarded: Number(data.vipSuperTicketsAwarded || 0),
+        message:
+          data.message ||
+          `🎉 مأموریت تکمیل شد! +${data.xpAwarded || 0} XP${
+            data.vipSuperTicketsAwarded > 0
+              ? ` و +${data.vipSuperTicketsAwarded} سوپر بلیت ماهانه VIP`
+              : ''
+          } دریافت گردید!`,
+      };
+    } catch {
+      HapticEngine.notificationOccurred('error');
+      return {
+        ok: false,
+        xpAwarded: 0,
+        vipSuperTicketsAwarded: 0,
+        message: 'خطا در ارتباط با سرور (/api/quests/claim)',
+      };
+    }
+  };
+
   return (
     <LotteryContext.Provider
       value={{
@@ -5327,6 +5869,14 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         claimWelcomeLotteryTicket,
         updateWelcomeLotteryConfig,
         triggerWelcomeLotteryDraw,
+        syndicatePools,
+        createSyndicatePool,
+        joinSyndicatePool,
+        referralProfile,
+        growthQuests,
+        bindReferralCode,
+        claimReferralCommissionVault,
+        claimGrowthQuest,
         firestoreConnected,
         supabaseConnected: isSupabaseConfigured,
       }}

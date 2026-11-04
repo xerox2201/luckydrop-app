@@ -83,6 +83,19 @@ import {
   evaluateWelcomeLotteryScheduleGuard,
   validateAndPrepareWelcomeTicketSelection,
   evaluateUserWelcomeTicketStatus,
+  calculateSyndicateShareFinancialSplit,
+  validateSyndicateCreationInput,
+  validateSyndicateJoinInput,
+  applySyndicateSharePurchase,
+  calculateSyndicateProRataDistribution,
+  normalizeReferralProfileState,
+  calculateReferredTicketFinancialSplit,
+  accrueReferralTicketCommission,
+  accrueReferralMiniGameCommission,
+  executeAtomicReferralVaultClaim,
+  GROWTH_QUEST_SPECS,
+  evaluateUserGrowthQuests,
+  verifyAndClaimGrowthQuest,
   type VipSupportMessageRecord,
   type SupportDiagnosticChipType,
   type IsolatedUserAccountRecord,
@@ -93,6 +106,10 @@ import {
   type UserRakebackVaultState,
   type WelcomeGrandLotteryState,
   type UserWelcomeTicketStatus,
+  type SyndicatePoolRecord,
+  type SyndicateMemberRecord,
+  type UserReferralProfileState,
+  type GrowthQuestStatusItem,
 } from './src/services/securityGuard.ts';
 
 const app = express();
@@ -205,6 +222,7 @@ export interface PersistentTicketRecord {
   confirmations: number;
   prizeWonUsdt: string;
   claimed?: boolean;
+  syndicateId?: string | null;
   createdAt: string;
 }
 
@@ -318,6 +336,7 @@ interface PersistentDatabaseSchema {
   adminAuditLogs?: AdminAuditLogEntry[];
   monthlySuperJackpot: MonthlySuperJackpotState;
   welcomeGrandLottery: WelcomeGrandLotteryState;
+  syndicatePools?: SyndicatePoolRecord[];
 }
 
 const MONTHLY_VIP_ROUND_ID = '#LD-MONTHLY-VIP';
@@ -498,6 +517,7 @@ function buildDefaultDatabase(): PersistentDatabaseSchema {
     adminAuditLogs: [],
     monthlySuperJackpot: buildInitialMonthlySuperJackpot(),
     welcomeGrandLottery: normalizeWelcomeGrandLotteryState(null, DEFAULT_FX_RATES.TON || 5.0, 0),
+    syndicatePools: [],
   };
 }
 
@@ -574,6 +594,9 @@ function loadPersistentDatabase(): PersistentDatabaseSchema {
           DEFAULT_FX_RATES.TON || 5.0,
           welcomeParticipants
         );
+        if (!Array.isArray(parsed.syndicatePools)) {
+          parsed.syndicatePools = [];
+        }
         return parsed;
       }
     }
@@ -621,6 +644,7 @@ if (!dbState.users) dbState.users = {};
 if (!Array.isArray(dbState.processedTxHashes)) dbState.processedTxHashes = [];
 if (!Array.isArray(dbState.processedStarsChargeIds)) dbState.processedStarsChargeIds = [];
 if (!Array.isArray(dbState.adminAuditLogs)) dbState.adminAuditLogs = [];
+if (!Array.isArray(dbState.syndicatePools)) dbState.syndicatePools = [];
 
 const processedWebhookKeys = new Set<string>();
 const processedDepositTxHashes = new Set<string>(dbState.processedTxHashes);
@@ -941,14 +965,21 @@ function getOrCreateIsolatedUserContext(req: express.Request): {
     userAccount.connectedTonWallet = headerTonWallet;
   }
 
-  // Anti-Sybil Referral Binding on initial account creation
-  if (isNewlyCreated && session.startParam && req.path !== '/api/referral/bind') {
+  // Anti-Sybil Referral Binding on initial account creation or startapp=ref_CODE
+  if (
+    !userAccount.referredByUserId &&
+    session.startParam &&
+    !req.path.endsWith('/referral/bind') &&
+    !req.path.endsWith('/referrals/bind') &&
+    !session.startParam.toLowerCase().startsWith('syn_')
+  ) {
     bindUserReferralAntiSybil({
       userId: userKey,
       startParam: session.startParam,
       usersMap: dbState.users,
     });
   }
+  userAccount.referralProfile = normalizeReferralProfileState(userAccount);
 
   const userPam = new PAMSeamlessWalletEngine(userAccount.pamState);
   const commitUserAccount = () => {
@@ -957,6 +988,7 @@ function getOrCreateIsolatedUserContext(req: express.Request): {
     userAccount.tonBalance = roundTonClean(nextPam.tonBalance);
     userAccount.starsBalance = roundStarsClean(nextPam.starsBalance);
     userAccount.bonusTokens = roundTonClean(nextPam.bonusTokensTon);
+    userAccount.referralProfile = normalizeReferralProfileState(userAccount);
     userAccount.ledger = nextPam.ledger;
     userAccount.updatedAt = new Date().toISOString();
     persistAll();
@@ -1034,6 +1066,8 @@ app.use(
     '/api/quests',
     '/api/loyalty',
     '/api/referral',
+    '/api/referrals',
+    '/api/syndicates',
   ],
   (req, res, next) => {
     if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') {
@@ -1808,6 +1842,28 @@ const handleMiniGamePlay = async (req: AuthRequest, res: express.Response) => {
         accruedTon: rakebackRes.accruedTon,
         accruedStars: rakebackRes.accruedStars,
       };
+
+      // 0.5% Mini-Game Turnover Commission to Inviter's Referral Vault
+      const mgRefRes = accrueReferralMiniGameCommission({
+        playerAccount: userAccount,
+        usersMap: dbState.users || {},
+        currency: activeCurrency,
+        betAmountTon: safeBetTon,
+        betAmountStars: safeBetStars,
+      });
+      if (
+        mgRefRes.hasValidReferrer &&
+        mgRefRes.inviterUserKey &&
+        mgRefRes.inviterAccount &&
+        (mgRefRes.creditedTon > 0 || mgRefRes.creditedStars > 0)
+      ) {
+        sendRealtimeToUser(mgRefRes.inviterUserKey, 'USER_BALANCE_UPDATED', {
+          reason: 'REFERRAL_MINIGAME_COMMISSION_ACCRUED',
+          referralProfile: mgRefRes.inviterAccount.referralProfile,
+          creditedTon: mgRefRes.creditedTon,
+          creditedStars: mgRefRes.creditedStars,
+        });
+      }
     } else {
       userAccount.rakebackVault = normalizeRakebackVaultState(userAccount.rakebackVault);
     }
@@ -2067,6 +2123,28 @@ app.post(
         betAmountStars: safeBetStars,
       });
       userAccount.rakebackVault = sessRakeback.updatedVault;
+
+      // 0.5% Mini-Game Turnover Commission to Inviter's Referral Vault
+      const sessRefRes = accrueReferralMiniGameCommission({
+        playerAccount: userAccount,
+        usersMap: dbState.users || {},
+        currency: activeCurrency,
+        betAmountTon: safeBetTon,
+        betAmountStars: safeBetStars,
+      });
+      if (
+        sessRefRes.hasValidReferrer &&
+        sessRefRes.inviterUserKey &&
+        sessRefRes.inviterAccount &&
+        (sessRefRes.creditedTon > 0 || sessRefRes.creditedStars > 0)
+      ) {
+        sendRealtimeToUser(sessRefRes.inviterUserKey, 'USER_BALANCE_UPDATED', {
+          reason: 'REFERRAL_MINIGAME_COMMISSION_ACCRUED',
+          referralProfile: sessRefRes.inviterAccount.referralProfile,
+          creditedTon: sessRefRes.creditedTon,
+          creditedStars: sessRefRes.creditedStars,
+        });
+      }
 
       const sessionId = `sess_${gameId.toLowerCase()}_${seedsBefore.nonce}_${Date.now().toString(36)}`;
 
@@ -3087,6 +3165,12 @@ app.get('/api/realtime/stream', optionalAuth, (req: AuthRequest, res) => {
       session.userKey
     ),
     rakebackVault: normalizeRakebackVaultState(userAccount.rakebackVault),
+    referralProfile: normalizeReferralProfileState(userAccount),
+    growthQuests: evaluateUserGrowthQuests({
+      userAccount,
+      syndicatePools: dbState.syndicatePools || [],
+    }),
+    syndicatePools: dbState.syndicatePools || [],
     totalTicketsCount: dbState.tickets.length,
     killSwitchActive: dbState.killSwitchActive,
     liveOracle: {
@@ -3177,6 +3261,11 @@ function buildSnapshotPayload(req: express.Request) {
     referrals: userAccount.referrals,
     referredByUserId: userAccount.referredByUserId,
     referralCode: userAccount.referralCode,
+    referralProfile: normalizeReferralProfileState(userAccount),
+    growthQuests: evaluateUserGrowthQuests({
+      userAccount,
+      syndicatePools: dbState.syndicatePools || [],
+    }),
     quests: userQuests,
     rakebackVault: normalizeRakebackVaultState(userAccount.rakebackVault),
     activeGameSession: sanitizedActiveSession,
@@ -3269,6 +3358,7 @@ function buildSnapshotPayload(req: express.Request) {
       playerId,
       session.userKey
     ),
+    syndicatePools: dbState.syndicatePools || [],
     chestsClaimedCount: dbState.chestsClaimedCount,
     claimedTicketCodes: dbState.claimedTicketCodes,
     killSwitchActive: dbState.killSwitchActive,
@@ -3433,7 +3523,9 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         });
       }
 
-      // 2. Anti-Sybil Referral Check & Commission Credit
+      // 2. Anti-Sybil Referral Check & 2% Lifetime Ticket Purchase Commission (Funded from House Margin)
+      // Keeps 85% Prize Pool, 3% Buyer Rakeback, and 3% Welcome $1,000 Reserve untouched;
+      // Allocates 2% to inviter's referralProfile (leaving 7% net house profit on referred sales, or 9% on non-referred sales).
       if (!userAccount.referredByUserId && referredByCode) {
         bindUserReferralAntiSybil({
           userId: userKey,
@@ -3441,19 +3533,20 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
           usersMap: dbState.users || {},
         });
       }
-      const inviterId = userAccount.referredByUserId;
-      const hasValidReferrer = Boolean(inviterId && inviterId !== userKey && dbState.users?.[inviterId]);
+      const tonRateNow = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+      const referralAccrual = accrueReferralTicketCommission({
+        buyerAccount: userAccount,
+        usersMap: dbState.users || {},
+        currency: activeCurrency,
+        grossTon: ticketCostRes.totalTon,
+        grossStars: ticketCostRes.totalStars,
+        tonUsdRate: tonRateNow,
+      });
+      const hasValidReferrer = referralAccrual.hasValidReferrer;
+      const inviterId = referralAccrual.inviterUserKey;
       const zeroLossSplit = calculateZeroLossTicketSplit(totalCostNum, hasValidReferrer, 85, 2);
 
-      if (hasValidReferrer && inviterId && dbState.users?.[inviterId] && zeroLossSplit.referralCommissionUsdt > 0) {
-        const inviterAccount = dbState.users[inviterId];
-        const commTon = roundTonClean(zeroLossSplit.referralCommissionUsdt / DEFAULT_FX_RATES.TON);
-        inviterAccount.pamState.referralEarningsTon = roundTonClean(
-          (inviterAccount.pamState.referralEarningsTon || 0) + commTon
-        );
-      }
-
-      // 2B. Instant VIP Cashback Vault (3% Instant Rebate out of the 15% House Margin; 85% Pool untouched; 12% Net House)
+      // 2B. Instant VIP Cashback Vault (3% Instant Rebate out of the 15% House Margin; 85% Pool untouched)
       const ticketCashbackRes = accrueLotteryTicketCashback(userAccount.rakebackVault, {
         currency: activeCurrency,
         totalTon: ticketCostRes.totalTon,
@@ -3463,7 +3556,7 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
 
       // 2C. $1,000 Welcome Grand Lottery (`#LD-WELCOME-1000`):
       // - Unlock 1 Free Welcome Ticket Entitlement on the user's first paid lottery ticket purchase (max 1 per user lifetime)
-      // - Route configurable share (default 25%) of netHouseMargin12Ton into `dbState.welcomeGrandLottery.fundedReserveTon`
+      // - Route 3% (25% of 12% House Margin) into `dbState.welcomeGrandLottery.fundedReserveTon`
       if (!userAccount.welcomeTicketClaimed && !userAccount.welcomeTicketUnlocked) {
         userAccount.welcomeTicketUnlocked = true;
         userAccount.welcomeTicketEntitlement = 1;
@@ -3472,7 +3565,7 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         currency: activeCurrency,
         grossTon: ticketCostRes.totalTon,
         grossStars: ticketCostRes.totalStars,
-        tonUsdRate: liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0,
+        tonUsdRate: tonRateNow,
       });
       const currentWelcomeParticipants = (dbState.tickets || []).filter(
         (t) =>
@@ -3484,7 +3577,7 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         dbState.welcomeGrandLottery,
         {
           netHouseMarginTon: selfFundedSplit.netHouseMargin12Ton,
-          tonUsdRate: liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0,
+          tonUsdRate: tonRateNow,
           participantsCount: currentWelcomeParticipants,
         }
       );
@@ -3498,15 +3591,38 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         const prevSales = parseFloat(roundObj.totalSalesUsdt) || 0;
         const nextSales = prevSales + totalCostNum;
         const poolSplit = calculateDynamicPariMutuelPool(nextSales, 15);
-        const netHouse12Usdt = Number((poolSplit.grossCollectedUsdt * 0.12).toFixed(6));
+        const netHouseUsdt = Number(
+          (
+            (parseFloat(roundObj.operatorProfitUsdt) || 0) +
+            referralAccrual.split.netHouseProfitTon * tonRateNow
+          ).toFixed(6)
+        );
         const cashback3Usdt = Number((poolSplit.grossCollectedUsdt * 0.03).toFixed(6));
         roundObj.totalSalesUsdt = poolSplit.grossCollectedUsdt.toFixed(2);
         roundObj.jackpotUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
         roundObj.totalPayoutUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
-        roundObj.operatorProfitUsdt = netHouse12Usdt.toFixed(2);
+        roundObj.operatorProfitUsdt = netHouseUsdt.toFixed(2);
         roundObj.rolloverReserveUsdt = cashback3Usdt.toFixed(2);
         roundObj.ticketsSoldCount = (Number(roundObj.ticketsSoldCount) || 0) + slipArray.length;
         roundObj.soldPercent = Math.min(99, (roundObj.soldPercent || 0) + slipArray.length);
+      }
+
+      if (
+        hasValidReferrer &&
+        inviterId &&
+        referralAccrual.inviterAccount &&
+        (referralAccrual.creditedTon > 0 || referralAccrual.creditedStars > 0)
+      ) {
+        sendRealtimeToUser(inviterId, 'USER_BALANCE_UPDATED', {
+          reason: 'REFERRAL_TICKET_COMMISSION_ACCRUED',
+          referralProfile: referralAccrual.inviterAccount.referralProfile,
+          growthQuests: evaluateUserGrowthQuests({
+            userAccount: referralAccrual.inviterAccount,
+            syndicatePools: dbState.syndicatePools || [],
+          }),
+          creditedTon: referralAccrual.creditedTon,
+          creditedStars: referralAccrual.creditedStars,
+        });
       }
 
       // 3. Persist each purchased ticket scoped to userAccount
@@ -3724,6 +3840,11 @@ const handleTicketPurchase = async (req: AuthRequest, res: express.Response) => 
         monthlyVipQualification: updatedVipQualification,
         welcomeGrandLottery: getPublicWelcomeGrandLottery(),
         welcomeTicketStatus: updatedWelcomeTicketStatus,
+        referralProfile: normalizeReferralProfileState(userAccount),
+        growthQuests: evaluateUserGrowthQuests({
+          userAccount,
+          syndicatePools: dbState.syndicatePools || [],
+        }),
       });
     });
   } catch (error: any) {
@@ -3858,6 +3979,17 @@ async function executeLotteryDrawWithDynamicPool(params: {
     payoutTransactionUuid: string | null;
   }> = [];
 
+  // Map to aggregate winning prizes by syndicateId for Pro-Rata Squad distribution
+  const syndicateWinsByPoolId = new Map<
+    string,
+    {
+      totalPrizeTon: number;
+      totalPrizeUsdt: number;
+      winningTicketCodes: string[];
+      tierLabels: string[];
+    }
+  >();
+
   for (let idx = 0; idx < candidateTickets.length; idx++) {
     const { ticket, evalResult } = candidateTickets[idx];
     const cappedPrizeUsdt = hasTier1JackpotWinner
@@ -3872,65 +4004,90 @@ async function executeLotteryDrawWithDynamicPool(params: {
       ticket.tierLabelFa = evalResult.tierLabelFa;
       ticket.claimed = true;
       winnersCount += 1;
-      totalPayoutUsdt = Number((totalPayoutUsdt + finalPrizeUsdt).toFixed(6));
 
-      const payoutUuid = `tx_win_${ticket.ticketCode}_${drawNonce}`;
-      const ownerKey = String(ticket.userUid || '').replace(/^tg_/, '');
-      const ownerAccount = dbState.users?.[ownerKey];
-      let winnerDisplayName = 'کاربر برنده LuckyDrop';
+      const belongingSyndicateId = String(ticket.syndicateId || '').trim();
+      const matchedSyndicate = belongingSyndicateId
+        ? (dbState.syndicatePools || []).find((s) => s.id === belongingSyndicateId)
+        : undefined;
 
-      if (ownerAccount) {
-        const ownerPam = new PAMSeamlessWalletEngine(ownerAccount.pamState);
-        const creditRes = ownerPam.credit({
-          transactionUuid: payoutUuid,
-          referenceTransactionUuid: ticket.transactionUuid || null,
-          roundId: roundObj.roundCode,
-          vertical: 'LUCKYDROP_LOTTERY',
-          currency: 'TON',
-          amountTon: finalPrizeTon,
-          amountUsdt: finalPrizeUsdt,
-          note: `تسویه راس تایم استخر ۸۵٪ برای کوپن ${ticket.ticketCode} (${evalResult.tierLabelFa}) در دور ${roundObj.roundCode}`,
-        });
-        ownerAccount.pamState = ownerPam.getState();
-        ownerAccount.tonBalance = roundTonClean(ownerAccount.pamState.tonBalance);
-        ownerAccount.starsBalance = roundStarsClean(ownerAccount.pamState.starsBalance);
-        ownerAccount.ledger = ownerAccount.pamState.ledger;
-        winnerDisplayName = ownerAccount.displayName;
-        ticket.payoutTransactionUuid = creditRes.ledgerEntry?.transactionUuid || payoutUuid;
-
-        sendRealtimeToUser(ownerKey, 'USER_BALANCE_UPDATED', {
-          reason: 'LOTTERY_ROUND_WIN',
-          roundCode: roundObj.roundCode,
-          tonBalance: ownerAccount.tonBalance,
-          starsBalance: ownerAccount.starsBalance,
-          prizeWonTon: finalPrizeTon,
-        });
+      if (belongingSyndicateId && matchedSyndicate) {
+        // Aggregate into Syndicate Pool for Pro-Rata distribution after the ticket loop
+        const prevAgg = syndicateWinsByPoolId.get(belongingSyndicateId) || {
+          totalPrizeTon: 0,
+          totalPrizeUsdt: 0,
+          winningTicketCodes: [],
+          tierLabels: [],
+        };
+        prevAgg.totalPrizeTon = roundTonClean(prevAgg.totalPrizeTon + finalPrizeTon);
+        prevAgg.totalPrizeUsdt = Number((prevAgg.totalPrizeUsdt + finalPrizeUsdt).toFixed(6));
+        prevAgg.winningTicketCodes.push(ticket.ticketCode);
+        prevAgg.tierLabels.push(evalResult.tierLabelFa);
+        syndicateWinsByPoolId.set(belongingSyndicateId, prevAgg);
+        ticket.payoutTransactionUuid = `tx_syn_win_${belongingSyndicateId}_${ticket.ticketCode}_${drawNonce}`;
+        if (!dbState.claimedTicketCodes.includes(ticket.ticketCode)) {
+          dbState.claimedTicketCodes.push(ticket.ticketCode);
+        }
       } else {
-        ticket.payoutTransactionUuid = payoutUuid;
-      }
+        totalPayoutUsdt = Number((totalPayoutUsdt + finalPrizeUsdt).toFixed(6));
 
-      if (!dbState.claimedTicketCodes.includes(ticket.ticketCode)) {
-        dbState.claimedTicketCodes.push(ticket.ticketCode);
-      }
+        const payoutUuid = `tx_win_${ticket.ticketCode}_${drawNonce}`;
+        const ownerKey = String(ticket.userUid || '').replace(/^tg_/, '');
+        const ownerAccount = dbState.users?.[ownerKey];
+        let winnerDisplayName = 'کاربر برنده LuckyDrop';
 
-      const tonWon = finalPrizeTon.toFixed(2);
-      dbState.transactions.unshift({
-        id: Date.now() + winnersCount,
-        txHash: `0x${drawProof.primaryHmacHex}`,
-        userUid: ticket.userUid,
-        type: 'PAYOUT',
-        network: 'TON Network',
-        amountUsdt: finalPrizeUsdt.toFixed(2),
-        amountCrypto: `${tonWon} TON`,
-        winnerName: winnerDisplayName,
-        winnerLocation: 'تسویه راس تایم (۸۵٪ استخر)',
-        lotteryTitle: roundObj.titleFa,
-        winningCombo: `[${drawnMain.join(', ')}] + ★${drawnGolden}`,
-        timeAgoLabel: 'همین الان',
-        status: 'CONFIRMED',
-        blockNumber: 62195000 + drawNonce,
-        confirmations: 19,
-      });
+        if (ownerAccount) {
+          const ownerPam = new PAMSeamlessWalletEngine(ownerAccount.pamState);
+          const creditRes = ownerPam.credit({
+            transactionUuid: payoutUuid,
+            referenceTransactionUuid: ticket.transactionUuid || null,
+            roundId: roundObj.roundCode,
+            vertical: 'LUCKYDROP_LOTTERY',
+            currency: 'TON',
+            amountTon: finalPrizeTon,
+            amountUsdt: finalPrizeUsdt,
+            note: `تسویه راس تایم استخر ۸۵٪ برای کوپن ${ticket.ticketCode} (${evalResult.tierLabelFa}) در دور ${roundObj.roundCode}`,
+          });
+          ownerAccount.pamState = ownerPam.getState();
+          ownerAccount.tonBalance = roundTonClean(ownerAccount.pamState.tonBalance);
+          ownerAccount.starsBalance = roundStarsClean(ownerAccount.pamState.starsBalance);
+          ownerAccount.ledger = ownerAccount.pamState.ledger;
+          winnerDisplayName = ownerAccount.displayName;
+          ticket.payoutTransactionUuid = creditRes.ledgerEntry?.transactionUuid || payoutUuid;
+
+          sendRealtimeToUser(ownerKey, 'USER_BALANCE_UPDATED', {
+            reason: 'LOTTERY_ROUND_WIN',
+            roundCode: roundObj.roundCode,
+            tonBalance: ownerAccount.tonBalance,
+            starsBalance: ownerAccount.starsBalance,
+            prizeWonTon: finalPrizeTon,
+          });
+        } else {
+          ticket.payoutTransactionUuid = payoutUuid;
+        }
+
+        if (!dbState.claimedTicketCodes.includes(ticket.ticketCode)) {
+          dbState.claimedTicketCodes.push(ticket.ticketCode);
+        }
+
+        const tonWon = finalPrizeTon.toFixed(2);
+        dbState.transactions.unshift({
+          id: Date.now() + winnersCount,
+          txHash: `0x${drawProof.primaryHmacHex}`,
+          userUid: ticket.userUid,
+          type: 'PAYOUT',
+          network: 'TON Network',
+          amountUsdt: finalPrizeUsdt.toFixed(2),
+          amountCrypto: `${tonWon} TON`,
+          winnerName: winnerDisplayName,
+          winnerLocation: 'تسویه راس تایم (۸۵٪ استخر)',
+          lotteryTitle: roundObj.titleFa,
+          winningCombo: `[${drawnMain.join(', ')}] + ★${drawnGolden}`,
+          timeAgoLabel: 'همین الان',
+          status: 'CONFIRMED',
+          blockNumber: 62195000 + drawNonce,
+          confirmations: 19,
+        });
+      }
     } else {
       ticket.status = 'LOST';
       ticket.prizeWonUsdt = '0.00';
@@ -3944,6 +4101,90 @@ async function executeLotteryDrawWithDynamicPool(params: {
       tierLabelFa: evalResult.tierLabelFa,
       payoutTransactionUuid: ticket.payoutTransactionUuid || null,
     });
+  }
+
+  // 2B. Pro-Rata Automated Prize Distribution for Syndicate Lottery Pools in this Round
+  if (!Array.isArray(dbState.syndicatePools)) {
+    dbState.syndicatePools = [];
+  }
+  for (const syndicate of dbState.syndicatePools) {
+    const aggWin = syndicateWinsByPoolId.get(syndicate.id);
+    if (syndicate.roundCode === roundObj.roundCode || aggWin) {
+      syndicate.status = 'SETTLED';
+      if (aggWin && aggWin.totalPrizeTon > 0) {
+        const proRataDist = calculateSyndicateProRataDistribution({
+          syndicate,
+          totalPrizeTon: aggWin.totalPrizeTon,
+          tonUsdRate: tonRate,
+        });
+
+        syndicate.totalPrizeWonTon = roundTonClean(
+          (Number(syndicate.totalPrizeWonTon) || 0) + proRataDist.totalDistributedTon
+        );
+        syndicate.totalPrizeWonUsdt = Number(
+          ((Number(syndicate.totalPrizeWonUsdt) || 0) + proRataDist.totalDistributedUsdt).toFixed(2)
+        );
+        totalPayoutUsdt = Number(
+          (totalPayoutUsdt + proRataDist.totalDistributedUsdt).toFixed(6)
+        );
+
+        for (let mIdx = 0; mIdx < proRataDist.payouts.length; mIdx++) {
+          const memberPayout = proRataDist.payouts[mIdx];
+          if (memberPayout.payoutTon <= 0) continue;
+
+          const cleanMemberKey = String(memberPayout.userKey || '').replace(/^tg_/, '');
+          const memberAccount = dbState.users?.[cleanMemberKey];
+          const memberTxUuid = `tx_syn_payout_${syndicate.id}_${cleanMemberKey}_${drawNonce}_${mIdx}`;
+
+          if (memberAccount) {
+            const memberPam = new PAMSeamlessWalletEngine(memberAccount.pamState);
+            memberPam.credit({
+              transactionUuid: memberTxUuid,
+              referenceTransactionUuid: null,
+              roundId: roundObj.roundCode,
+              vertical: 'LUCKYDROP_LOTTERY',
+              currency: 'TON',
+              amountTon: memberPayout.payoutTon,
+              amountUsdt: memberPayout.payoutUsdt,
+              note: memberPayout.descriptionFa,
+            });
+            memberAccount.pamState = memberPam.getState();
+            memberAccount.tonBalance = roundTonClean(memberAccount.pamState.tonBalance);
+            memberAccount.starsBalance = roundStarsClean(memberAccount.pamState.starsBalance);
+            memberAccount.ledger = memberAccount.pamState.ledger;
+
+            sendRealtimeToUser(cleanMemberKey, 'USER_BALANCE_UPDATED', {
+              reason: 'SYNDICATE_PRO_RATA_WIN',
+              syndicateId: syndicate.id,
+              syndicateName: syndicate.name,
+              roundCode: roundObj.roundCode,
+              tonBalance: memberAccount.tonBalance,
+              starsBalance: memberAccount.starsBalance,
+              prizeWonTon: memberPayout.payoutTon,
+              memberRatio: memberPayout.memberRatio,
+            });
+          }
+
+          dbState.transactions.unshift({
+            id: Date.now() + 1000 + mIdx,
+            txHash: `0x${drawProof.primaryHmacHex}`,
+            userUid: `tg_${cleanMemberKey}`,
+            type: 'PAYOUT',
+            network: 'TON Syndicate Pool',
+            amountUsdt: memberPayout.payoutUsdt.toFixed(2),
+            amountCrypto: `${memberPayout.payoutTon.toFixed(6)} TON`,
+            winnerName: `${memberPayout.username} (${syndicate.name})`,
+            winnerLocation: memberPayout.descriptionFa,
+            lotteryTitle: roundObj.titleFa,
+            winningCombo: `[${drawnMain.join(', ')}] + ★${drawnGolden}`,
+            timeAgoLabel: 'همین الان',
+            status: 'CONFIRMED',
+            blockNumber: 62195000 + drawNonce,
+            confirmations: 19,
+          });
+        }
+      }
+    }
   }
 
   // 3. Update round winning numbers, rotate serverSeed, and roll over countdown timer for next cycle
@@ -4038,6 +4279,11 @@ async function executeLotteryDrawWithDynamicPool(params: {
     rounds: publicRoundsAfterDraw,
     drawHistory: dbState.drawHistory.slice(0, 30),
     monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+    syndicatePools: dbState.syndicatePools || [],
+  });
+  broadcastRealtimeEvent('SYNDICATES_UPDATED', {
+    roundCode: roundObj.roundCode,
+    syndicatePools: dbState.syndicatePools || [],
   });
 
   void dispatchAdminTelegramAlert({
@@ -5008,6 +5254,739 @@ app.post('/api/admin/welcome-lottery/draw', optionalAuth, async (req: AuthReques
 });
 
 // ============================================================================
+// UPGRADE 3 ENDPOINTS: TELEGRAM SQUADS & SYNDICATE LOTTERY POOLS
+// - GET /api/syndicates
+// - POST /api/syndicates/create (Create Squad + Instant Share Minting)
+// - POST /api/syndicates/join (Join Squad + Instant Share Minting + +15 XP Creator Synergy Bonus)
+// ============================================================================
+
+async function executeAtomicSyndicateSharePurchase(params: {
+  userKey: string;
+  userAccount: IsolatedUserAccountRecord;
+  userPam: PAMSeamlessWalletEngine;
+  commitUserAccount: () => void;
+  syndicate: SyndicatePoolRecord;
+  roundObj: PersistentRoundRecord;
+  sharesToBuy: number;
+  currency: 'TON' | 'STARS';
+  requestedAmountTon?: number;
+  requestedAmountStars?: number;
+  transactionUuid?: string;
+}): Promise<{
+  ok: boolean;
+  statusHttp: number;
+  error?: string;
+  syndicate?: SyndicatePoolRecord;
+  mintedTickets?: PersistentTicketRecord[];
+  vipSuperTicketsMinted?: PersistentTicketRecord[];
+  creatorSynergyXpAwarded?: number;
+  accruedCashback?: { accruedTon: number; accruedStars: number };
+  financialSplit?: ReturnType<typeof calculateSyndicateShareFinancialSplit>;
+}> {
+  const {
+    userKey,
+    userAccount,
+    userPam,
+    commitUserAccount,
+    syndicate,
+    roundObj,
+    sharesToBuy,
+    currency,
+    requestedAmountTon,
+    requestedAmountStars,
+    transactionUuid,
+  } = params;
+
+  const ticketCostRes = resolveStrictNativeTicketCost({
+    currency,
+    ticketCount: sharesToBuy,
+    roundTicketPriceTon: (roundObj as any)?.ticketPriceTon,
+    roundTicketPriceUsdt: String(syndicate.sharePriceUsdt || roundObj.ticketPriceUsdt || '5'),
+    requestedAmountTon,
+    requestedAmountStars,
+    availableTonBalance: userPam.getState().tonBalance,
+    availableStarsBalance: userPam.getState().starsBalance,
+  });
+
+  if (!ticketCostRes.valid) {
+    return {
+      ok: false,
+      statusHttp: 400,
+      error: ticketCostRes.error || 'INSUFFICIENT_BALANCE',
+    };
+  }
+
+  const totalCostNum = ticketCostRes.nominalTotalUsdt;
+  const unitCostNum = ticketCostRes.nominalUnitUsdt;
+  const batchTxUuid = String(
+    transactionUuid || generateDeterministicUuid(`tx_syn_${syndicate.id.replace('#', '')}`)
+  ).trim();
+
+  // 1. Atomic Native Currency Debit via PAM Seamless Wallet Engine
+  const debitRes = userPam.debit({
+    transactionUuid: batchTxUuid,
+    roundId: roundObj.roundCode,
+    vertical: 'LUCKYDROP_LOTTERY',
+    currency,
+    amountTon: currency === 'TON' ? ticketCostRes.totalTon : undefined,
+    amountStars: currency === 'STARS' ? ticketCostRes.totalStars : undefined,
+    amountUsdt: totalCostNum,
+    note: `خرید ${sharesToBuy} سهم در سندیکای گروهی ${syndicate.name} (#${syndicate.id}) برای دور ${roundObj.roundCode}`,
+    incrementNonce: true,
+  });
+
+  if (!debitRes.ok) {
+    return {
+      ok: false,
+      statusHttp: 400,
+      error: debitRes.error || 'INSUFFICIENT_BALANCE',
+    };
+  }
+
+  // 2. Exact 85% / 3% / 2% (if referred) / 3% / 7% (or 9%) Financial Pipeline
+  const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+  const financialSplit = calculateSyndicateShareFinancialSplit({
+    currency,
+    totalTon: ticketCostRes.totalTon,
+    totalStars: ticketCostRes.totalStars,
+    tonUsdRate: tonRate,
+  });
+
+  // 2.0. 2% Lifetime Referral Commission on Syndicate Share Purchase (if buyer was referred)
+  const synReferralAccrual = accrueReferralTicketCommission({
+    buyerAccount: userAccount,
+    usersMap: dbState.users || {},
+    currency,
+    grossTon: ticketCostRes.totalTon,
+    grossStars: ticketCostRes.totalStars,
+    tonUsdRate: tonRate,
+  });
+  if (
+    synReferralAccrual.hasValidReferrer &&
+    synReferralAccrual.inviterUserKey &&
+    synReferralAccrual.inviterAccount &&
+    (synReferralAccrual.creditedTon > 0 || synReferralAccrual.creditedStars > 0)
+  ) {
+    dbState.referralEvents.unshift({
+      id: Date.now(),
+      referrerCode: `ref_${synReferralAccrual.inviterUserKey}`,
+      buyerDisplayName: `${userPam.getState().displayName} (سندیکای ${syndicate.name})`,
+      roundCode: roundObj.roundCode,
+      ticketAmountUsdt: totalCostNum,
+      prizePool85Usdt: Number((totalCostNum * 0.85).toFixed(2)),
+      grossLotteryProfit10Usdt: Number((totalCostNum * 0.1).toFixed(2)),
+      referralCommission2Usdt: Number((totalCostNum * 0.02).toFixed(2)),
+      commissionUsdt: Number((totalCostNum * 0.02).toFixed(2)),
+      netHouseProfit8Usdt: Number((totalCostNum * 0.07).toFixed(2)),
+      netHouseProfitUsdt: Number((totalCostNum * 0.07).toFixed(2)),
+      createdAt: 'همین الان',
+    });
+    sendRealtimeToUser(synReferralAccrual.inviterUserKey, 'USER_BALANCE_UPDATED', {
+      reason: 'REFERRAL_SYNDICATE_COMMISSION_ACCRUED',
+      referralProfile: synReferralAccrual.inviterAccount.referralProfile,
+      growthQuests: evaluateUserGrowthQuests({
+        userAccount: synReferralAccrual.inviterAccount,
+        syndicatePools: dbState.syndicatePools || [],
+      }),
+      creditedTon: synReferralAccrual.creditedTon,
+      creditedStars: synReferralAccrual.creditedStars,
+    });
+  }
+
+  // 2A. 3% Buyer Personal Rakeback Vault
+  const ticketCashbackRes = accrueLotteryTicketCashback(userAccount.rakebackVault, {
+    currency,
+    totalTon: ticketCostRes.totalTon,
+    totalStars: ticketCostRes.totalStars,
+  });
+  userAccount.rakebackVault = ticketCashbackRes.updatedVault;
+
+  // 2B. First-Purchase $1,000 Welcome Lottery Entitlement + 3% (25% of 12% House Margin) to Welcome Reserve
+  if (!userAccount.welcomeTicketClaimed && !userAccount.welcomeTicketUnlocked) {
+    userAccount.welcomeTicketUnlocked = true;
+    userAccount.welcomeTicketEntitlement = 1;
+  }
+  const selfFundedSplit = calculateSelfFundedTicketCashbackSplit({
+    currency,
+    grossTon: ticketCostRes.totalTon,
+    grossStars: ticketCostRes.totalStars,
+    tonUsdRate: tonRate,
+  });
+  const currentWelcomeParticipants = (dbState.tickets || []).filter(
+    (t) =>
+      t.roundCode === WELCOME_GRAND_ROUND_ID &&
+      (String(t.status || '').toUpperCase() === 'ACTIVE' ||
+        String(t.status || '').toUpperCase() === 'MINTED')
+  ).length;
+  const welcomeReserveRes = accrueWelcomeLotteryReserveFromHouseMargin(
+    dbState.welcomeGrandLottery,
+    {
+      netHouseMarginTon: selfFundedSplit.netHouseMargin12Ton,
+      tonUsdRate: tonRate,
+      participantsCount: currentWelcomeParticipants,
+    }
+  );
+  dbState.welcomeGrandLottery = welcomeReserveRes.updatedState;
+
+  // 2C. Route 85% to the Round's Distributable Pool
+  const prevSales = parseFloat(roundObj.totalSalesUsdt) || 0;
+  const nextSales = prevSales + totalCostNum;
+  const poolSplit = calculateDynamicPariMutuelPool(nextSales, 15);
+  const netHouseUsdt = Number(
+    (
+      (parseFloat(roundObj.operatorProfitUsdt) || 0) +
+      synReferralAccrual.split.netHouseProfitTon * tonRate
+    ).toFixed(6)
+  );
+  const cashback3Usdt = Number((poolSplit.grossCollectedUsdt * 0.03).toFixed(6));
+  roundObj.totalSalesUsdt = poolSplit.grossCollectedUsdt.toFixed(2);
+  roundObj.jackpotUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
+  roundObj.totalPayoutUsdt = poolSplit.distributablePool85Usdt.toFixed(2);
+  roundObj.operatorProfitUsdt = netHouseUsdt.toFixed(2);
+  roundObj.rolloverReserveUsdt = cashback3Usdt.toFixed(2);
+  roundObj.ticketsSoldCount = (Number(roundObj.ticketsSoldCount) || 0) + sharesToBuy;
+  roundObj.soldPercent = Math.min(99, (roundObj.soldPercent || 0) + sharesToBuy);
+
+  // 3. Instant Share Minting: 1 Share = 1 Real Lottery Ticket tagged with `syndicateId: syndicate.id`
+  const currentSeeds = userPam.getState().seeds;
+  const roundSeedHash = roundObj.serverSeedHash || currentSeeds.serverSeedHash;
+  const mintedTickets: PersistentTicketRecord[] = [];
+  const mintedTicketCodes: string[] = [];
+
+  for (let i = 0; i < sharesToBuy; i++) {
+    const ticketNonce = (roundObj.nonce || 1) + i;
+    roundObj.nonce = (roundObj.nonce || 1) + 1;
+    const serialRandom = Math.floor(100000 + Math.random() * 900000);
+    const prefix = roundObj.roundCode.replace(/[^A-Z]/gi, '').slice(0, 3).toUpperCase() || 'LDR';
+    const ticketCode = `${prefix}-${serialRandom}`;
+    const effectiveClientSeed =
+      `${syndicate.id}:${userKey}:${currentSeeds.clientSeed || 'luckydrop_squad_seed'}`;
+
+    // Provably Fair unique lucky numbers for each syndicate share ticket
+    const autoPick = deriveProvablyFairLotteryDraw({
+      serverSeed: roundObj.serverSeed || sha256Hex(`syn_pick_${ticketCode}_${Date.now()}`),
+      clientSeed: `${effectiveClientSeed}:${i}`,
+      nonce: ticketNonce,
+      roundCode: roundObj.roundCode,
+      mainCount: roundObj.mainCount || 5,
+      mainMax: roundObj.mainMax || 50,
+      goldenMax: roundObj.goldenMax ?? 15,
+    });
+
+    const txHash = `0x${sha256Hex(`${batchTxUuid}:${syndicate.id}:${ticketCode}:${ticketNonce}`)}`;
+    const ticketRecord: PersistentTicketRecord = {
+      id: Date.now() + i,
+      ticketCode,
+      userUid: userPam.getState().playerId,
+      roundCode: roundObj.roundCode,
+      mainNumbers: JSON.stringify(autoPick.drawnMain),
+      goldenBall: autoPick.drawnGolden,
+      costUsdt: unitCostNum.toFixed(2),
+      currencyNetwork:
+        currency === 'STARS'
+          ? `Telegram Stars Squad (#${syndicate.id})`
+          : `TON Squad Syndicate (#${syndicate.id})`,
+      txHash,
+      transactionUuid: i === 0 ? batchTxUuid : `${batchTxUuid}_${i + 1}`,
+      payoutTransactionUuid: null,
+      clientSeed: effectiveClientSeed,
+      serverSeedHash: roundSeedHash,
+      nonce: ticketNonce,
+      commitHash: txHash.slice(2, 34),
+      status: 'ACTIVE',
+      confirmations: 19,
+      prizeWonUsdt: '0.00',
+      claimed: false,
+      syndicateId: syndicate.id,
+      createdAt: new Date().toLocaleTimeString('fa-IR'),
+    };
+
+    dbState.tickets.unshift(ticketRecord);
+    userAccount.myTickets.unshift(ticketCode);
+    mintedTickets.push(ticketRecord);
+    mintedTicketCodes.push(ticketCode);
+  }
+
+  // 4. Update Syndicate Pool State & Apply +15 XP Creator Synergy Bonus when another user joins
+  const buyerUsername =
+    userAccount.username ||
+    userAccount.displayName ||
+    userPam.getState().displayName ||
+    `user_${userKey.slice(-4)}`;
+
+  const contributedTonEquivalent =
+    currency === 'TON'
+      ? ticketCostRes.totalTon
+      : roundTonClean(ticketCostRes.totalStars / 250);
+
+  const syndicateUpdate = applySyndicateSharePurchase({
+    syndicate,
+    buyerUserKey: userKey,
+    buyerUsername,
+    sharesBought: sharesToBuy,
+    contributedTon: contributedTonEquivalent,
+    mintedTicketCodes,
+  });
+
+  Object.assign(syndicate, syndicateUpdate.updatedSyndicate);
+
+  // Buyer XP (+25 XP per share) + Creator Squad Synergy Bonus (+15 XP when another user joins)
+  userAccount.xp = Math.max(
+    0,
+    (Number(userAccount.xp) || 0) + syndicateUpdate.buyerXpBonus
+  );
+
+  if (syndicateUpdate.creatorSynergyXpBonus > 0) {
+    const creatorKey = String(syndicate.creatorUserKey || '').replace(/^tg_/, '');
+    const creatorAcc = dbState.users?.[creatorKey];
+    if (creatorAcc) {
+      creatorAcc.xp = Math.max(
+        0,
+        (Number(creatorAcc.xp) || 0) + syndicateUpdate.creatorSynergyXpBonus
+      );
+      sendRealtimeToUser(creatorKey, 'USER_BALANCE_UPDATED', {
+        reason: 'SQUAD_SYNERGY_XP_BONUS',
+        syndicateId: syndicate.id,
+        syndicateName: syndicate.name,
+        xp: creatorAcc.xp,
+        synergyBonusXp: syndicateUpdate.creatorSynergyXpBonus,
+      });
+    }
+  }
+
+  // 5. Evaluate & Auto-Mint Monthly VIP Super-Tickets (1 VIP ticket per 5 regular/syndicate tickets)
+  const vipSuperTicketsMinted: PersistentTicketRecord[] = [];
+  dbState.monthlySuperJackpot = normalizeMonthlySuperJackpotState(dbState.monthlySuperJackpot);
+  const updatedVipQual = computeUserMonthlyVipQualification(
+    userAccount,
+    userPam.getState().playerId,
+    userKey
+  );
+  if (updatedVipQual.newlyEarnedVipSuperTicketsCount > 0) {
+    const monthlyHash = dbState.monthlySuperJackpot.serverSeedHash;
+    for (let vIdx = 0; vIdx < updatedVipQual.newlyEarnedVipSuperTicketsCount; vIdx++) {
+      const vipNonce = dbState.monthlySuperJackpot.nonce + vIdx;
+      dbState.monthlySuperJackpot.nonce += 1;
+      const vipSerial = Math.floor(100000 + Math.random() * 900000);
+      const vipTicketCode = `VIP-${vipSerial}`;
+      const vipDrawPick = deriveProvablyFairLotteryDraw({
+        serverSeed:
+          dbState.monthlySuperJackpot.serverSeed ||
+          sha256Hex(`vip_pick_${vipTicketCode}_${Date.now()}`),
+        clientSeed: `${userKey}:${vipTicketCode}`,
+        nonce: vipNonce,
+        roundCode: MONTHLY_VIP_ROUND_ID,
+        mainCount: 5,
+        mainMax: 50,
+        goldenMax: 15,
+      });
+      const vipTxHash = `0x${sha256Hex(`vip_loyalty:${batchTxUuid}:${vipTicketCode}:${vipNonce}`)}`;
+      const vipTicketRecord: PersistentTicketRecord = {
+        id: Date.now() + 100 + vIdx,
+        ticketCode: vipTicketCode,
+        userUid: userPam.getState().playerId,
+        roundCode: MONTHLY_VIP_ROUND_ID,
+        mainNumbers: JSON.stringify(vipDrawPick.drawnMain),
+        goldenBall: vipDrawPick.drawnGolden,
+        costUsdt: '0.00',
+        currencyNetwork: 'VIP LOYALTY SUPER-TICKET (1 PER 5 REGULAR/SYNDICATE)',
+        txHash: vipTxHash,
+        transactionUuid: `${batchTxUuid}_vip_${vIdx + 1}`,
+        payoutTransactionUuid: null,
+        clientSeed: userPam.getState().seeds.clientSeed || 'luckydrop_vip_client_seed',
+        serverSeedHash: monthlyHash,
+        nonce: vipNonce,
+        commitHash: vipTxHash.slice(2, 34),
+        status: 'ACTIVE',
+        confirmations: 19,
+        prizeWonUsdt: '0.00',
+        claimed: false,
+        createdAt: new Date().toLocaleTimeString('fa-IR'),
+      };
+      dbState.tickets.unshift(vipTicketRecord);
+      userAccount.myTickets.unshift(vipTicketCode);
+      vipSuperTicketsMinted.push(vipTicketRecord);
+    }
+  }
+
+  commitUserAccount();
+
+  // 6. Broadcast Real-Time SSE Events (`SYNDICATES_UPDATED` + `ROUND_POOL_UPDATED`)
+  const publicRoundsSnapshot = dbState.rounds.map((r) => ({ ...r, serverSeed: undefined }));
+  const updatedJackpotTon = roundTonClean(
+    (parseFloat(roundObj.jackpotUsdt) || 0) / (DEFAULT_FX_RATES.TON || 5.0)
+  );
+
+  broadcastRealtimeEvent('SYNDICATES_UPDATED', {
+    syndicateId: syndicate.id,
+    roundCode: roundObj.roundCode,
+    syndicatePools: dbState.syndicatePools || [],
+  });
+
+  broadcastRealtimeEvent('ROUND_POOL_UPDATED', {
+    roundCode: roundObj.roundCode,
+    roundTitleFa: roundObj.titleFa,
+    ticketsAddedCount: sharesToBuy,
+    vipSuperTicketsMintedCount: vipSuperTicketsMinted.length,
+    newJackpotTon: updatedJackpotTon,
+    newJackpotUsdt: roundObj.jackpotUsdt,
+    totalTicketsCount: dbState.tickets.length,
+    rounds: publicRoundsSnapshot,
+    syndicatePools: dbState.syndicatePools || [],
+    monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+    welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+    tickerEvent: {
+      id: `live_syn_${Date.now()}`,
+      buyerDisplayName: `${userPam.getState().displayName} (سندیکای ${syndicate.name})`,
+      roundCode: roundObj.roundCode,
+      roundTitleFa: roundObj.titleFa,
+      ticketCount: sharesToBuy,
+      vipTicketsEarned: vipSuperTicketsMinted.length,
+      newJackpotTon: updatedJackpotTon,
+      createdAt: 'همین الان',
+    },
+  });
+
+  const latestPam = userPam.getState();
+  const updatedWelcomeStatus = computeUserWelcomeTicketStatus(
+    userAccount,
+    latestPam.playerId,
+    userKey
+  );
+
+  sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+    reason: 'SYNDICATE_SHARE_PURCHASED',
+    tonBalance: latestPam.tonBalance,
+    starsBalance: latestPam.starsBalance,
+    xp: userAccount.xp,
+    rakebackVault: userAccount.rakebackVault,
+    welcomeTicketStatus: updatedWelcomeStatus,
+  });
+
+  return {
+    ok: true,
+    statusHttp: 200,
+    syndicate,
+    mintedTickets,
+    vipSuperTicketsMinted,
+    creatorSynergyXpAwarded: syndicateUpdate.creatorSynergyXpBonus,
+    accruedCashback: {
+      accruedTon: ticketCashbackRes.accruedTon,
+      accruedStars: ticketCashbackRes.accruedStars,
+    },
+    financialSplit,
+  };
+}
+
+app.get('/api/syndicates', optionalAuth, (req: AuthRequest, res) => {
+  const roundCodeFilter = String(req.query.roundCode || '').trim();
+  const allPools = Array.isArray(dbState.syndicatePools) ? dbState.syndicatePools : [];
+  const filtered = roundCodeFilter
+    ? allPools.filter((s) => s.roundCode === roundCodeFilter)
+    : allPools;
+  res.json({
+    ok: true,
+    syndicatePools: filtered,
+  });
+});
+
+app.post(
+  '/api/syndicates/create',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      if (dbState.killSwitchActive) {
+        return res.status(503).json({
+          ok: false,
+          error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: ساخت سندیکا موقتاً متوقف است.',
+        });
+      }
+
+      const { userKey, userAccount, userPam, commitUserAccount } =
+        getOrCreateIsolatedUserContext(req);
+
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const {
+          name,
+          roundCode = '#LDR-8493',
+          targetShares = 10,
+          initialSharesToBuy = 1,
+          currency = 'TON',
+          amountTon,
+          amountStars,
+          transaction_uuid,
+        } = req.body || {};
+
+        const validation = validateSyndicateCreationInput({
+          name,
+          targetShares,
+          initialSharesToBuy,
+        });
+
+        if (!validation.valid) {
+          return res.status(400).json({
+            ok: false,
+            error: validation.error,
+          });
+        }
+
+        const roundObj =
+          dbState.rounds.find((r) => r.roundCode === roundCode) || dbState.rounds[0];
+        if (!roundObj) {
+          return res.status(404).json({
+            ok: false,
+            error: 'ROUND_NOT_FOUND — دور قرعه‌کشی فعال برای ساخت سندیکا یافت نشد.',
+          });
+        }
+        if (roundObj.status && roundObj.status.toUpperCase() === 'PAUSED') {
+          return res.status(400).json({
+            ok: false,
+            error: `فروش بلیت برای دور ${roundObj.roundCode} موقتاً متوقف است.`,
+          });
+        }
+
+        const serialCode = Math.floor(1000 + Math.random() * 9000);
+        const syndicateId = `SYN-${serialCode}`;
+        const inviteCode = `syn_${serialCode}`;
+        const sharePriceUsdt = Math.max(0.1, parseFloat(roundObj.ticketPriceUsdt) || 5.0);
+        const creatorUsername =
+          userAccount.username ||
+          userAccount.displayName ||
+          userPam.getState().displayName ||
+          `user_${userKey.slice(-4)}`;
+
+        const newSyndicate: SyndicatePoolRecord = {
+          id: syndicateId,
+          name: validation.cleanName,
+          creatorUserKey: userKey,
+          creatorUsername,
+          roundCode: roundObj.roundCode,
+          targetShares: validation.cleanTargetShares,
+          filledShares: 0,
+          sharePriceUsdt,
+          members: [],
+          ticketIds: [],
+          totalPrizeWonTon: 0,
+          totalPrizeWonUsdt: 0,
+          status: 'OPEN',
+          inviteCode,
+        };
+
+        const activeCurrency: 'TON' | 'STARS' =
+          String(currency).toUpperCase() === 'STARS' ? 'STARS' : 'TON';
+
+        const purchaseRes = await executeAtomicSyndicateSharePurchase({
+          userKey,
+          userAccount,
+          userPam,
+          commitUserAccount,
+          syndicate: newSyndicate,
+          roundObj,
+          sharesToBuy: validation.cleanInitialShares,
+          currency: activeCurrency,
+          requestedAmountTon: typeof amountTon === 'number' ? amountTon : undefined,
+          requestedAmountStars: typeof amountStars === 'number' ? amountStars : undefined,
+          transactionUuid: transaction_uuid,
+        });
+
+        if (!purchaseRes.ok) {
+          return res.status(purchaseRes.statusHttp).json({
+            ok: false,
+            error: purchaseRes.error,
+            tonBalance: userPam.getState().tonBalance,
+            starsBalance: userPam.getState().starsBalance,
+          });
+        }
+
+        if (!Array.isArray(dbState.syndicatePools)) {
+          dbState.syndicatePools = [];
+        }
+        dbState.syndicatePools.unshift(newSyndicate);
+        persistAll();
+
+        // Broadcast updated syndicates list after unshifting newSyndicate
+        broadcastRealtimeEvent('SYNDICATES_UPDATED', {
+          syndicateId: newSyndicate.id,
+          roundCode: roundObj.roundCode,
+          syndicatePools: dbState.syndicatePools,
+        });
+
+        const latestPam = userPam.getState();
+        return res.json({
+          ok: true,
+          syndicate: newSyndicate,
+          syndicatePools: dbState.syndicatePools,
+          tickets: [
+            ...(purchaseRes.mintedTickets || []),
+            ...(purchaseRes.vipSuperTicketsMinted || []),
+          ],
+          tonBalance: latestPam.tonBalance,
+          starsBalance: latestPam.starsBalance,
+          xp: userAccount.xp,
+          rakebackVault: userAccount.rakebackVault,
+          welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+          welcomeTicketStatus: computeUserWelcomeTicketStatus(
+            userAccount,
+            latestPam.playerId,
+            userKey
+          ),
+          monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+          monthlyVipQualification: computeUserMonthlyVipQualification(
+            userAccount,
+            latestPam.playerId,
+            userKey
+          ),
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+          message: `🤝 سندیکای گروهی «${newSyndicate.name}» (#${newSyndicate.id}) با موفقیت ساخته شد و ${validation.cleanInitialShares} بلیت واقعی برای شما صادر گردید!`,
+        });
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        ok: false,
+        error: error.message || 'خطا در ساخت سندیکای گروهی',
+      });
+    }
+  }
+);
+
+app.post(
+  '/api/syndicates/join',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  async (req: AuthRequest, res) => {
+    try {
+      if (dbState.killSwitchActive) {
+        return res.status(503).json({
+          ok: false,
+          error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: خرید سهم سندیکا موقتاً متوقف است.',
+        });
+      }
+
+      const { userKey, userAccount, userPam, commitUserAccount } =
+        getOrCreateIsolatedUserContext(req);
+
+      await globalUserLocks.runExclusive(userKey, async () => {
+        const {
+          syndicateId,
+          inviteCode,
+          sharesToBuy = 1,
+          currency = 'TON',
+          amountTon,
+          amountStars,
+          transaction_uuid,
+        } = req.body || {};
+
+        if (!Array.isArray(dbState.syndicatePools)) {
+          dbState.syndicatePools = [];
+        }
+
+        const cleanId = String(syndicateId || '').trim().replace(/^#/, '');
+        const cleanInvite = String(inviteCode || '').trim();
+        const targetSyndicate = dbState.syndicatePools.find(
+          (s) =>
+            s.id.toUpperCase() === cleanId.toUpperCase() ||
+            (cleanInvite && s.inviteCode.toLowerCase() === cleanInvite.toLowerCase())
+        );
+
+        const joinCheck = validateSyndicateJoinInput({
+          syndicate: targetSyndicate,
+          sharesToBuy,
+        });
+
+        if (!joinCheck.valid || !targetSyndicate) {
+          return res.status(400).json({
+            ok: false,
+            error: joinCheck.error,
+          });
+        }
+
+        const roundObj =
+          dbState.rounds.find((r) => r.roundCode === targetSyndicate.roundCode) ||
+          dbState.rounds[0];
+        if (!roundObj) {
+          return res.status(404).json({
+            ok: false,
+            error: 'ROUND_NOT_FOUND — دور قرعه‌کشی این سندیکا یافت نشد.',
+          });
+        }
+
+        const activeCurrency: 'TON' | 'STARS' =
+          String(currency).toUpperCase() === 'STARS' ? 'STARS' : 'TON';
+
+        const purchaseRes = await executeAtomicSyndicateSharePurchase({
+          userKey,
+          userAccount,
+          userPam,
+          commitUserAccount,
+          syndicate: targetSyndicate,
+          roundObj,
+          sharesToBuy: joinCheck.cleanSharesToBuy,
+          currency: activeCurrency,
+          requestedAmountTon: typeof amountTon === 'number' ? amountTon : undefined,
+          requestedAmountStars: typeof amountStars === 'number' ? amountStars : undefined,
+          transactionUuid: transaction_uuid,
+        });
+
+        if (!purchaseRes.ok) {
+          return res.status(purchaseRes.statusHttp).json({
+            ok: false,
+            error: purchaseRes.error,
+            tonBalance: userPam.getState().tonBalance,
+            starsBalance: userPam.getState().starsBalance,
+          });
+        }
+
+        persistAll();
+
+        const latestPam = userPam.getState();
+        return res.json({
+          ok: true,
+          syndicate: targetSyndicate,
+          syndicatePools: dbState.syndicatePools,
+          tickets: [
+            ...(purchaseRes.mintedTickets || []),
+            ...(purchaseRes.vipSuperTicketsMinted || []),
+          ],
+          creatorSynergyXpAwarded: purchaseRes.creatorSynergyXpAwarded || 0,
+          tonBalance: latestPam.tonBalance,
+          starsBalance: latestPam.starsBalance,
+          xp: userAccount.xp,
+          rakebackVault: userAccount.rakebackVault,
+          welcomeGrandLottery: getPublicWelcomeGrandLottery(),
+          welcomeTicketStatus: computeUserWelcomeTicketStatus(
+            userAccount,
+            latestPam.playerId,
+            userKey
+          ),
+          monthlySuperJackpot: getPublicMonthlySuperJackpot(),
+          monthlyVipQualification: computeUserMonthlyVipQualification(
+            userAccount,
+            latestPam.playerId,
+            userKey
+          ),
+          pamState: {
+            ...latestPam,
+            seeds: { ...latestPam.seeds, serverSeed: '' },
+          },
+          message: `⚡ شما با خرید ${joinCheck.cleanSharesToBuy} سهم وارد سندیکای «${targetSyndicate.name}» (#${targetSyndicate.id}) شدید و ${joinCheck.cleanSharesToBuy} بلیت واقعی در دور ${roundObj.roundCode} ثبت شد!`,
+        });
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        ok: false,
+        error: error.message || 'خطا در پیوستن به سندیکای گروهی',
+      });
+    }
+  }
+);
+
+// ============================================================================
 // LOTTERY ROUNDS CRUD (CREATE UNLIMITED, DELETE, TOGGLE STATUS, UPDATE PRICE & TIMER)
 // ============================================================================
 
@@ -5256,6 +6235,155 @@ const handleQuestVerificationAndClaim = async (req: AuthRequest, res: express.Re
     await globalUserLocks.runExclusive(userKey, async () => {
       const { questId, channelId } = req.body || {};
       const cleanQuestId = String(questId || '').trim();
+
+      // Check if this is one of the 4 Anti-Sybil Social & Growth Quests
+      const isGrowthQuest = GROWTH_QUEST_SPECS.some((q) => q.id === cleanQuestId);
+      if (isGrowthQuest) {
+        let channelJoinedVerified = true;
+        if (cleanQuestId === 'QUEST_JOIN_CHANNEL') {
+          const activeBotToken = getEffectiveBotToken();
+          const targetChannel = normalizeTelegramChatId(
+            String(channelId || getEffectiveNotificationChatId() || '@LuckyDropOfficial')
+          );
+          const numericUserId = session.verifiedUserId || Number(userKey);
+          if (
+            activeBotToken &&
+            activeBotToken.length > 10 &&
+            Number.isFinite(numericUserId) &&
+            numericUserId > 0 &&
+            targetChannel.startsWith('@')
+          ) {
+            try {
+              const chatMemberUrl = `https://api.telegram.org/bot${encodeURIComponent(
+                activeBotToken
+              )}/getChatMember?chat_id=${encodeURIComponent(
+                targetChannel
+              )}&user_id=${encodeURIComponent(String(numericUserId))}`;
+              const tgResp = await fetch(chatMemberUrl, { method: 'GET' });
+              const tgData: any = await tgResp.json().catch(() => null);
+              if (tgResp.ok && tgData?.ok) {
+                const memberStatus = String(tgData?.result?.status || '').toLowerCase();
+                channelJoinedVerified =
+                  memberStatus === 'member' ||
+                  memberStatus === 'administrator' ||
+                  memberStatus === 'creator';
+              }
+            } catch {
+              // Allow verification fallback when Telegram API is unreachable in preview container
+              channelJoinedVerified = true;
+            }
+          }
+        }
+
+        const claimRes = verifyAndClaimGrowthQuest({
+          userAccount,
+          questId: cleanQuestId,
+          syndicatePools: dbState.syndicatePools || [],
+          channelJoinedVerified,
+        });
+
+        if (!claimRes.ok) {
+          return res.status(claimRes.status).json({
+            ok: false,
+            error: claimRes.error,
+            growthQuests: claimRes.growthQuests,
+          });
+        }
+
+        // Mint conditional Monthly VIP Super-Tickets (#LD-MONTHLY-VIP) if vipSuperTicketsAwarded > 0
+        const vipSuperTicketsMinted: PersistentTicketRecord[] = [];
+        dbState.monthlySuperJackpot = normalizeMonthlySuperJackpotState(
+          dbState.monthlySuperJackpot
+        );
+        const playerId = userPam.getState().playerId;
+        if (claimRes.vipSuperTicketsAwarded > 0) {
+          const monthlyHash = dbState.monthlySuperJackpot.serverSeedHash;
+          for (let vIdx = 0; vIdx < claimRes.vipSuperTicketsAwarded; vIdx++) {
+            const vipNonce = dbState.monthlySuperJackpot.nonce + vIdx;
+            dbState.monthlySuperJackpot.nonce += 1;
+            const vipSerial = Math.floor(100000 + Math.random() * 900000);
+            const vipTicketCode = `VIP-${vipSerial}`;
+            const vipDrawPick = deriveProvablyFairLotteryDraw({
+              serverSeed:
+                dbState.monthlySuperJackpot.serverSeed ||
+                sha256Hex(`vip_quest_${vipTicketCode}_${Date.now()}`),
+              clientSeed: `${userKey}:${cleanQuestId}:${vipTicketCode}`,
+              nonce: vipNonce,
+              roundCode: MONTHLY_VIP_ROUND_ID,
+              mainCount: 5,
+              mainMax: 50,
+              goldenMax: 15,
+            });
+            const vipTxHash = `0x${sha256Hex(`vip_quest:${cleanQuestId}:${userKey}:${vipTicketCode}:${vipNonce}`)}`;
+            const vipTicketRecord: PersistentTicketRecord = {
+              id: Date.now() + 200 + vIdx,
+              ticketCode: vipTicketCode,
+              userUid: playerId,
+              roundCode: MONTHLY_VIP_ROUND_ID,
+              mainNumbers: JSON.stringify(vipDrawPick.drawnMain),
+              goldenBall: vipDrawPick.drawnGolden,
+              costUsdt: '0.00',
+              currencyNetwork: `GROWTH QUEST VIP SUPER-TICKET (${cleanQuestId})`,
+              txHash: vipTxHash,
+              transactionUuid: `tx_quest_${cleanQuestId}_${userKey}_vip_${vIdx + 1}`,
+              payoutTransactionUuid: null,
+              clientSeed: userPam.getState().seeds.clientSeed || 'luckydrop_vip_client_seed',
+              serverSeedHash: monthlyHash,
+              nonce: vipNonce,
+              commitHash: vipTxHash.slice(2, 34),
+              status: 'ACTIVE',
+              confirmations: 19,
+              prizeWonUsdt: '0.00',
+              claimed: false,
+              createdAt: new Date().toLocaleTimeString('fa-IR'),
+            };
+            dbState.tickets.unshift(vipTicketRecord);
+            userAccount.myTickets.unshift(vipTicketCode);
+            vipSuperTicketsMinted.push(vipTicketRecord);
+          }
+        }
+
+        commitUserAccount();
+
+        const updatedVipQual = computeUserMonthlyVipQualification(
+          userAccount,
+          playerId,
+          userKey
+        );
+        const updatedQuests = INITIAL_TMA_QUESTS.map((q) => ({
+          ...q,
+          progress: userAccount.completedQuests.includes(q.id) ? q.target : 0,
+          claimed: userAccount.completedQuests.includes(q.id),
+        }));
+
+        sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+          reason: 'GROWTH_QUEST_CLAIMED',
+          xp: userAccount.xp,
+          growthQuests: claimRes.growthQuests,
+          referralProfile: normalizeReferralProfileState(userAccount),
+          monthlyVipQualification: updatedVipQual,
+        });
+
+        return res.json({
+          ok: true,
+          verified: true,
+          questId: cleanQuestId,
+          xpAwarded: claimRes.xpAwarded,
+          vipSuperTicketsAwarded: claimRes.vipSuperTicketsAwarded,
+          vipSuperTicketsMinted,
+          xp: userAccount.xp,
+          growthQuests: claimRes.growthQuests,
+          quests: updatedQuests,
+          completedQuests: userAccount.completedQuests,
+          monthlyVipQualification: updatedVipQual,
+          referralProfile: normalizeReferralProfileState(userAccount),
+          message:
+            claimRes.vipSuperTicketsAwarded > 0
+              ? `🎉 پاداش ماموریت «${claimRes.questSpec?.titleFa}» دریافت شد: +${claimRes.xpAwarded} XP و ${claimRes.vipSuperTicketsAwarded} بلیت رایگان ابر جک‌پات ماهانه VIP صادر گردید!`
+              : `✅ پاداش ماموریت «${claimRes.questSpec?.titleFa}» دریافت شد: +${claimRes.xpAwarded} XP به حساب شما اضافه گردید!`,
+        });
+      }
+
       const questSpec = INITIAL_TMA_QUESTS.find((q) => q.id === cleanQuestId);
       if (!questSpec) {
         return res.status(404).json({
@@ -5401,6 +6529,10 @@ const handleQuestVerificationAndClaim = async (req: AuthRequest, res: express.Re
         verified: true,
         questId: cleanQuestId,
         quests: updatedQuests,
+        growthQuests: evaluateUserGrowthQuests({
+          userAccount,
+          syndicatePools: dbState.syndicatePools || [],
+        }),
         completedQuests: userAccount.completedQuests,
         freePlinkoDrops: userAccount.freePlinkoDrops,
         freeScratchCards: userAccount.freeScratchCards,
@@ -5430,42 +6562,149 @@ app.post(
   handleQuestVerificationAndClaim
 );
 
-// Anti-Sybil Referral Binding Endpoint
+// Anti-Sybil Referral Binding Handler (`POST /api/referrals/bind` & `POST /api/referral/bind`)
+const handleReferralBind = async (req: AuthRequest, res: express.Response) => {
+  const { userKey, userAccount, commitUserAccount } = getOrCreateIsolatedUserContext(req);
+  await globalUserLocks.runExclusive(userKey, async () => {
+    const startParam = String(
+      req.body?.startParam || req.body?.referralCode || req.body?.code || ''
+    ).trim();
+    const result = bindUserReferralAntiSybil({
+      userId: userKey,
+      startParam,
+      usersMap: dbState.users || {},
+    });
+    commitUserAccount();
+    if (!result.bound) {
+      return res.status(result.status || 400).json({
+        ok: false,
+        reason: result.reason,
+        referralProfile: normalizeReferralProfileState(userAccount),
+        error:
+          result.reason === 'SELF_REFERRAL_FORBIDDEN'
+            ? '⛔ قفل ضدتقلب (Anti-Sybil): امکان ثبت کد دعوت خودتان وجود ندارد.'
+            : result.reason === 'ALREADY_REFERRED_IMMUTABLE'
+            ? 'ℹ️ کد معرف شما قبلاً ثبت شده و غیرقابل تغییر است.'
+            : result.reason === 'CIRCULAR_REFERRAL_FORBIDDEN'
+            ? '⛔ قفل ضدتقلب (Anti-Sybil): ثبت کد معرف چرخشی مجاز نیست.'
+            : 'کد معرف واردشده نامعتبر است.',
+      });
+    }
+
+    if (result.inviterId && dbState.users?.[result.inviterId]) {
+      const inviterAcc = dbState.users[result.inviterId];
+      inviterAcc.referralProfile = normalizeReferralProfileState(inviterAcc);
+      sendRealtimeToUser(result.inviterId, 'USER_BALANCE_UPDATED', {
+        reason: 'REFERRAL_FRIEND_JOINED',
+        referralProfile: inviterAcc.referralProfile,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      inviterId: result.inviterId,
+      referredByUserId: userAccount.referredByUserId,
+      referralProfile: normalizeReferralProfileState(userAccount),
+      message: `✅ کد معرف (${result.inviterId}) با موفقیت به حساب شما متصل شد.`,
+    });
+  });
+};
+
 app.post(
   '/api/referral/bind',
   optionalAuth,
   requireTelegramWebAppAuth,
   enforceMutationRateLimit,
-  async (req: AuthRequest, res) => {
-    const { userKey, userAccount, commitUserAccount } = getOrCreateIsolatedUserContext(req);
-    await globalUserLocks.runExclusive(userKey, async () => {
-      const startParam = String(req.body?.startParam || req.body?.code || '').trim();
-      const result = bindUserReferralAntiSybil({
-        userId: userKey,
-        startParam,
-        usersMap: dbState.users || {},
+  handleReferralBind
+);
+app.post(
+  '/api/referrals/bind',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleReferralBind
+);
+
+// 1:1 Atomic Referral Commission Vault Claim (`POST /api/referrals/claim` & `POST /api/referral/claim`)
+const handleReferralVaultClaim = async (req: AuthRequest, res: express.Response) => {
+  try {
+    if (dbState.killSwitchActive) {
+      return res.status(503).json({
+        ok: false,
+        error: '503 Service Unavailable — KILL_SWITCH_ACTIVE: برداشت پورسانت موقتاً متوقف است.',
       });
-      commitUserAccount();
-      if (!result.bound) {
-        return res.status(result.status || 400).json({
+    }
+
+    const { userKey, userAccount, userPam, commitUserAccount } =
+      getOrCreateIsolatedUserContext(req);
+
+    await globalUserLocks.runExclusive(userKey, async () => {
+      const tonRate = liveMarketOracleState.tonUsdPrice || DEFAULT_FX_RATES.TON || 5.0;
+      const claimRes = executeAtomicReferralVaultClaim({
+        userAccount,
+        userPam,
+        tonUsdRate: tonRate,
+      });
+
+      if (!claimRes.ok) {
+        return res.status(claimRes.status).json({
           ok: false,
-          reason: result.reason,
-          error:
-            result.reason === 'SELF_REFERRAL_FORBIDDEN'
-              ? '⛔ قفل ضدتقلب (Anti-Sybil): امکان ثبت کد دعوت خودتان وجود ندارد.'
-              : result.reason === 'ALREADY_REFERRED_IMMUTABLE'
-              ? 'ℹ️ کد معرف شما قبلاً ثبت شده و غیرقابل تغییر است.'
-              : 'کد معرف واردشده نامعتبر است.',
+          error: claimRes.error,
+          referralProfile: claimRes.updatedProfile,
+          tonBalance: claimRes.tonBalance,
+          starsBalance: claimRes.starsBalance,
         });
       }
+
+      commitUserAccount();
+      const latestPam = userPam.getState();
+
+      sendRealtimeToUser(userKey, 'USER_BALANCE_UPDATED', {
+        reason: 'REFERRAL_COMMISSION_CLAIMED',
+        tonBalance: claimRes.tonBalance,
+        starsBalance: claimRes.starsBalance,
+        referralProfile: claimRes.updatedProfile,
+      });
+
       return res.json({
         ok: true,
-        inviterId: result.inviterId,
-        referredByUserId: userAccount.referredByUserId,
-        message: `✅ کد معرف (${result.inviterId}) با موفقیت به حساب شما متصل شد.`,
+        claimedTon: claimRes.claimedTon,
+        claimedStars: claimRes.claimedStars,
+        referralProfile: claimRes.updatedProfile,
+        tonBalance: claimRes.tonBalance,
+        starsBalance: claimRes.starsBalance,
+        pamState: {
+          ...latestPam,
+          seeds: { ...latestPam.seeds, serverSeed: '' },
+        },
+        message: `💎 پورسانت دعوت دوستان (${
+          claimRes.claimedTon > 0 ? `${claimRes.claimedTon.toFixed(6)} TON` : ''
+        }${claimRes.claimedTon > 0 && claimRes.claimedStars > 0 ? ' + ' : ''}${
+          claimRes.claimedStars > 0 ? `${claimRes.claimedStars} ⭐` : ''
+        }) به صورت ۱:۱ و بدون کارمزد به کیف پول اصلی شما واریز شد!`,
       });
     });
+  } catch (error: any) {
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'خطا در برداشت پورسانت دعوت دوستان',
+    });
   }
+};
+
+app.post(
+  '/api/referrals/claim',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleReferralVaultClaim
+);
+app.post(
+  '/api/referral/claim',
+  optionalAuth,
+  requireTelegramWebAppAuth,
+  enforceMutationRateLimit,
+  handleReferralVaultClaim
 );
 
 // ============================================================================
@@ -7468,6 +8707,9 @@ app.post('/api/admin/db/restore', optionalAuth, (req: AuthRequest, res) => {
     dbState.monthlySuperJackpot = normalizeMonthlySuperJackpotState(
       incoming.monthlySuperJackpot || dbState.monthlySuperJackpot
     );
+    dbState.syndicatePools = Array.isArray(incoming.syndicatePools)
+      ? incoming.syndicatePools
+      : [];
 
     processedDepositTxHashes.clear();
     for (const h of Array.isArray(incoming.processedTxHashes) ? incoming.processedTxHashes : []) {

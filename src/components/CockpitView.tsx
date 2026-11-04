@@ -124,6 +124,10 @@ export const CockpitView: React.FC = () => {
     welcomeGrandLottery,
     updateWelcomeLotteryConfig,
     triggerWelcomeLotteryDraw,
+    syndicatePools,
+    referralProfile,
+    growthQuests,
+    referralEvents,
     sseConnected,
   } = useLottery();
 
@@ -1990,6 +1994,161 @@ export const CockpitView: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* TELEGRAM SQUADS & SYNDICATE LOTTERY POOLS MONITOR (مانیتورینگ سندیکاهای گروهی) */}
+          <div
+            data-testid="admin-syndicate-pools-card"
+            className="rounded-2xl p-4 bg-gradient-to-br from-[#140E26]/95 via-[#0B171E]/95 to-[#090612]/95 border border-emerald-400/35 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                  <span>🤝 مانیتورینگ سندیکاهای گروهی (Telegram Squad & Syndicate Pools)</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[10px]">
+                    {syndicatePools.length} Total
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  پایش زنده سهام فروخته‌شده، بلیت‌های مشترک صادرشده (Zero-Escrow) و تسویه خودکار جوایز به نسبت سهم (Pro-Rata 6-Decimal)
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-mono">
+                <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 font-bold">
+                  OPEN/FULL: {syndicatePools.filter((s) => s.status !== 'SETTLED').length}
+                </span>
+                <span className="px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-400/30 text-amber-300 font-bold">
+                  SETTLED: {syndicatePools.filter((s) => s.status === 'SETTLED').length}
+                </span>
+              </div>
+            </div>
+
+            {syndicatePools.length === 0 ? (
+              <div className="p-3 rounded-xl bg-black/40 border border-white/10 text-center text-xs text-slate-400">
+                هنوز هیچ سندیکای گروهی ثبت نشده است.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {syndicatePools.map((syn) => {
+                  const pct = Math.min(
+                    100,
+                    Math.round((syn.filledShares / Math.max(1, syn.targetShares)) * 100)
+                  );
+                  return (
+                    <div
+                      key={syn.id}
+                      data-testid={`admin-syndicate-row-${syn.id}`}
+                      className="rounded-xl p-3 bg-black/50 border border-white/10 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] font-black text-[#FFE066]">
+                            #{syn.id}
+                          </span>
+                          <span className="text-xs font-black text-white">{syn.name}</span>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[9px] font-mono font-black ${
+                            syn.status === 'OPEN'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                              : syn.status === 'FULL'
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                              : 'bg-purple-500/20 text-purple-200 border border-purple-400/40'
+                          }`}
+                        >
+                          {syn.status}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono">
+                        <div className="p-1.5 rounded-lg bg-white/[0.03] border border-white/5">
+                          <div className="text-slate-400">Round</div>
+                          <div className="text-white font-bold">{syn.roundCode}</div>
+                        </div>
+                        <div className="p-1.5 rounded-lg bg-white/[0.03] border border-white/5">
+                          <div className="text-slate-400">Shares / Tickets</div>
+                          <div className="text-emerald-300 font-bold">
+                            {syn.filledShares}/{syn.targetShares} ({syn.ticketIds.length} 🎟️)
+                          </div>
+                        </div>
+                        <div className="p-1.5 rounded-lg bg-white/[0.03] border border-white/5">
+                          <div className="text-slate-400">Prize Won</div>
+                          <div className="text-[#FFE066] font-bold">
+                            {syn.totalPrizeWonTon.toFixed(6)} TON
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-400 to-[#FFE066]"
+                          style={{ width: `${Math.max(5, pct)}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                        <span>Leader: {syn.creatorUsername}</span>
+                        <span>Members: {syn.members.length}</span>
+                        <span>Invite: syn_{syn.inviteCode}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* SELF-FUNDING LIFETIME REFERRAL VAULT & ANTI-SYBIL QUESTS MONITOR */}
+          <div
+            data-testid="admin-referral-quests-card"
+            className="rounded-2xl p-4 bg-gradient-to-br from-[#16102A]/95 via-[#0B171E]/95 to-[#090612]/95 border border-[#fbbf24]/35 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-[#fbbf24] flex items-center gap-2">
+                  <span>🚀 مانیتورینگ باشگاه سفیران و مأموریت‌های ضد-ربات (Referral Vault & Anti-Sybil Quests)</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[10px]">
+                    2% Ticket / 0.5% Games
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  تأمین ۱۰۰٪ پورسانت دعوت از حاشیه سود سایت (۸۵٪ استخر جایزه + ۳٪ کشبک خریدار + ۳٪ ذخیره خوش‌آمدگویی + ۲٪ پورسانت معرف + ۷٪ سود خالص سایت = ۱۰۰٪)
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] font-mono">
+                <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 font-bold">
+                  Invited: {referralProfile?.invitedCount || 0}
+                </span>
+                <span className="px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-400/30 text-amber-300 font-bold">
+                  Active Buyers: {referralProfile?.activeBuyersCount || 0}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono">
+              <div className="p-2 rounded-xl bg-black/50 border border-white/10">
+                <div className="text-slate-400">Admin Claimable TON</div>
+                <div className="text-emerald-300 font-black">
+                  {(referralProfile?.claimableReferralTon || 0).toFixed(6)} TON
+                </div>
+              </div>
+              <div className="p-2 rounded-xl bg-black/50 border border-white/10">
+                <div className="text-slate-400">Lifetime Referral TON</div>
+                <div className="text-[#FFE066] font-black">
+                  {(referralProfile?.lifetimeReferralTon || 0).toFixed(6)} TON
+                </div>
+              </div>
+              <div className="p-2 rounded-xl bg-black/50 border border-white/10">
+                <div className="text-slate-400">Growth Quests Claimed</div>
+                <div className="text-white font-black">
+                  {growthQuests.filter((q) => q.claimed).length} / {growthQuests.length}
+                </div>
+              </div>
+              <div className="p-2 rounded-xl bg-black/50 border border-white/10">
+                <div className="text-slate-400">Referral Ledger Events</div>
+                <div className="text-cyan-300 font-black">{referralEvents.length} Events</div>
+              </div>
+            </div>
           </div>
         </div>
       )}

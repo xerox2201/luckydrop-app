@@ -1076,4 +1076,377 @@ test('18. Monthly VIP Super-Jackpot Strict All-or-Nothing (6/6 Only) & $1,000 We
   assert.equal(userStatusUnlocked.welcomeTicketEntitlement, 1);
 });
 
+test('19. Telegram Squads & Syndicate Lottery Pools: 85%/3%/3%/9% Split, +15 XP Synergy Bonus & Pro-Rata 6-Decimal Prize Distribution with Zero Leakage', async () => {
+  const {
+    calculateSyndicateShareFinancialSplit,
+    validateSyndicateCreationInput,
+    validateSyndicateJoinInput,
+    applySyndicateSharePurchase,
+    calculateSyndicateProRataDistribution,
+    roundTonClean,
+  } = await import('./securityGuard.ts');
+
+  // 1. Validate 85% Pool / 3% Buyer Rakeback / 3% Welcome $1,000 Reserve / 9% Net House Revenue
+  const split = calculateSyndicateShareFinancialSplit({
+    currency: 'TON',
+    totalTon: 10,
+    totalStars: 0,
+    tonUsdRate: 5.0,
+  });
+  assert.equal(split.grossTon, 10);
+  assert.equal(split.distributablePool85Ton, 8.5);
+  assert.equal(split.buyerRakeback3Ton, 0.3);
+  assert.equal(split.welcomeReserve3Ton, 0.3);
+  assert.equal(split.netHouseRevenue9Ton, 0.9);
+  assert.equal(
+    roundTonClean(
+      split.distributablePool85Ton +
+        split.buyerRakeback3Ton +
+        split.welcomeReserve3Ton +
+        split.netHouseRevenue9Ton
+    ),
+    split.grossTon
+  );
+
+  // 2. Validate Creation & Join Inputs + Creator +15 XP Synergy Bonus
+  const createValid = validateSyndicateCreationInput({
+    name: 'نهنگ‌های طلایی TON',
+    targetShares: 10,
+    initialSharesToBuy: 3,
+  });
+  assert.equal(createValid.valid, true);
+  assert.equal(createValid.cleanTargetShares, 10);
+  assert.equal(createValid.cleanInitialShares, 3);
+
+  const initialPool = {
+    id: 'SYN-8492',
+    name: createValid.cleanName,
+    creatorUserKey: '1001',
+    creatorUsername: 'creator_vip',
+    roundCode: '#LDR-8493',
+    targetShares: 10,
+    filledShares: 0,
+    sharePriceUsdt: 5,
+    members: [],
+    ticketIds: [],
+    totalPrizeWonTon: 0,
+    totalPrizeWonUsdt: 0,
+    status: 'OPEN' as const,
+    inviteCode: 'syn_8492',
+  };
+
+  // Creator buys initial 3 shares -> creatorSynergyXpBonus = 0, buyerXpBonus = 75
+  const afterCreator = applySyndicateSharePurchase({
+    syndicate: initialPool,
+    buyerUserKey: '1001',
+    buyerUsername: 'creator_vip',
+    sharesBought: 3,
+    contributedTon: 3,
+    mintedTicketCodes: ['LDR-101', 'LDR-102', 'LDR-103'],
+  });
+  assert.equal(afterCreator.creatorSynergyXpBonus, 0);
+  assert.equal(afterCreator.buyerXpBonus, 75);
+  assert.equal(afterCreator.updatedSyndicate.filledShares, 3);
+  assert.equal(afterCreator.updatedSyndicate.status, 'OPEN');
+
+  // Another user joins with 2 shares -> creatorSynergyXpBonus = +15 XP!
+  const joinCheck = validateSyndicateJoinInput({
+    syndicate: afterCreator.updatedSyndicate,
+    sharesToBuy: 2,
+  });
+  assert.equal(joinCheck.valid, true);
+
+  const afterMember2 = applySyndicateSharePurchase({
+    syndicate: afterCreator.updatedSyndicate,
+    buyerUserKey: '2002',
+    buyerUsername: 'whale_two',
+    sharesBought: 2,
+    contributedTon: 2,
+    mintedTicketCodes: ['LDR-104', 'LDR-105'],
+  });
+  assert.equal(afterMember2.creatorSynergyXpBonus, 15);
+  assert.equal(afterMember2.buyerXpBonus, 50);
+  assert.equal(afterMember2.updatedSyndicate.filledShares, 5);
+
+  // Third user joins with 2 shares (partial fill 7/10 before draw)
+  const afterMember3 = applySyndicateSharePurchase({
+    syndicate: afterMember2.updatedSyndicate,
+    buyerUserKey: '3003',
+    buyerUsername: 'lucky_three',
+    sharesBought: 2,
+    contributedTon: 2,
+    mintedTicketCodes: ['LDR-106', 'LDR-107'],
+  });
+  assert.equal(afterMember3.updatedSyndicate.filledShares, 7);
+  assert.equal(afterMember3.updatedSyndicate.ticketIds.length, 7);
+
+  // 3. Pro-Rata Prize Splitting across prime/odd share counts (3/7, 2/7, 2/7 of 100.000000 TON)
+  const dist7 = calculateSyndicateProRataDistribution({
+    syndicate: afterMember3.updatedSyndicate,
+    totalPrizeTon: 100,
+    tonUsdRate: 5.0,
+  });
+  const sumPayouts7 = roundTonClean(
+    dist7.payouts.reduce((acc, p) => acc + p.payoutTon, 0)
+  );
+  assert.ok(
+    sumPayouts7 <= dist7.totalPrizeTon,
+    `Expected sumPayouts (${sumPayouts7}) <= totalPrizeTon (${dist7.totalPrizeTon})`
+  );
+  assert.equal(dist7.payouts[0].payoutTon, 42.857142); // floor(100 * 3/7, 6)
+  assert.equal(dist7.payouts[1].payoutTon, 28.571428); // floor(100 * 2/7, 6)
+  assert.equal(dist7.payouts[2].payoutTon, 28.571428); // floor(100 * 2/7, 6)
+  assert.equal(sumPayouts7, 99.999998);
+  assert.equal(dist7.payouts[0].descriptionFa, 'سهم برنده سندیکای گروهی (#SYN-8492)');
+
+  // 4. Exhaustive Prime/Odd Ratio Stress Check: 3 equal members (1/3 each) & 6 members (1/6 each) on arbitrary prizes
+  for (const prizeTon of [1, 10.000001, 33.333333, 777.777777, 1234.567891]) {
+    const threeWaySyndicate = {
+      ...initialPool,
+      id: 'SYN-3333',
+      targetShares: 3,
+      filledShares: 3,
+      members: [
+        { userKey: 'u1', username: 'u1', sharesCount: 1, contributedTon: 1, joinedAtMs: 1 },
+        { userKey: 'u2', username: 'u2', sharesCount: 1, contributedTon: 1, joinedAtMs: 2 },
+        { userKey: 'u3', username: 'u3', sharesCount: 1, contributedTon: 1, joinedAtMs: 3 },
+      ],
+    };
+    const res = calculateSyndicateProRataDistribution({
+      syndicate: threeWaySyndicate,
+      totalPrizeTon: prizeTon,
+    });
+    const sumMemberPayouts = roundTonClean(
+      res.payouts.reduce((acc, p) => acc + p.payoutTon, 0)
+    );
+    assert.ok(
+      sumMemberPayouts <= res.totalPrizeTon,
+      `Zero-leakage violated: ${sumMemberPayouts} > ${res.totalPrizeTon}`
+    );
+    for (const p of res.payouts) {
+      assert.equal(p.payoutTon, Number(p.payoutTon.toFixed(6)));
+    }
+  }
+});
+
+test('20. Self-Funding Lifetime Referral Commission Vault & Anti-Sybil Social Quests: 85%/3%/2%/3%/7% Conservation (< 0.000001 TON), 0.5% Mini-Game Commission, Anti-Self-Referral & Duplicate Quest Guard', async () => {
+  const {
+    calculateReferredTicketFinancialSplit,
+    accrueReferralTicketCommission,
+    accrueReferralMiniGameCommission,
+    executeAtomicReferralVaultClaim,
+    evaluateUserGrowthQuests,
+    verifyAndClaimGrowthQuest,
+    roundTonClean,
+  } = await import('./securityGuard.ts');
+
+  // 1. Exact Conservation on Referred Ticket Sales:
+  // 85% Pool + 3% Buyer Cashback + 2% Inviter Referral + 3% Welcome Reserve + 7% Net House = 100.000000% Gross Sales
+  for (const grossTon of [1, 2.5, 5, 13.333333, 47.891234, 100, 999.999999]) {
+    const referredSplit = calculateReferredTicketFinancialSplit({
+      currency: 'TON',
+      grossTon,
+      hasReferrer: true,
+      tonUsdRate: 5.0,
+    });
+    const sumReferred = roundTonClean(
+      referredSplit.distributablePool85Ton +
+        referredSplit.buyerCashback3Ton +
+        referredSplit.inviterReferral2Ton +
+        referredSplit.welcomeReserve3Ton +
+        referredSplit.netHouseProfitTon
+    );
+    assert.ok(
+      Math.abs(referredSplit.grossTon - sumReferred) < 0.000001,
+      `Referred conservation violated for ${grossTon}: sum=${sumReferred}`
+    );
+    assert.equal(referredSplit.conservationDeltaTon, 0);
+
+    const nonReferredSplit = calculateReferredTicketFinancialSplit({
+      currency: 'TON',
+      grossTon,
+      hasReferrer: false,
+      tonUsdRate: 5.0,
+    });
+    assert.equal(nonReferredSplit.inviterReferral2Ton, 0);
+    const sumNonReferred = roundTonClean(
+      nonReferredSplit.distributablePool85Ton +
+        nonReferredSplit.buyerCashback3Ton +
+        nonReferredSplit.inviterReferral2Ton +
+        nonReferredSplit.welcomeReserve3Ton +
+        nonReferredSplit.netHouseProfitTon
+    );
+    assert.ok(
+      Math.abs(nonReferredSplit.grossTon - sumNonReferred) < 0.000001,
+      `Non-referred conservation violated for ${grossTon}: sum=${sumNonReferred}`
+    );
+  }
+
+  // Verify exact percentages on a 10.000000 TON referred ticket purchase
+  const split10 = calculateReferredTicketFinancialSplit({
+    currency: 'TON',
+    grossTon: 10,
+    hasReferrer: true,
+  });
+  assert.equal(split10.distributablePool85Ton, 8.5);
+  assert.equal(split10.buyerCashback3Ton, 0.3);
+  assert.equal(split10.inviterReferral2Ton, 0.2);
+  assert.equal(split10.welcomeReserve3Ton, 0.3);
+  assert.equal(split10.netHouseProfitTon, 0.7);
+  assert.equal(split10.sumCheckTon, 10.0);
+
+  // 2. Anti-Sybil Referral Binding: Self-referral, immutable referrer, and multi-hop circular loop protection
+  const inviter = createCleanZeroUserProfile({
+    telegramUserId: '7001',
+    displayName: 'Inviter Alpha',
+    username: 'alpha_vip',
+  });
+  const friend1 = createCleanZeroUserProfile({
+    telegramUserId: '7002',
+    displayName: 'Friend One',
+    username: 'friend_one',
+  });
+  const friend2 = createCleanZeroUserProfile({
+    telegramUserId: '7003',
+    displayName: 'Friend Two',
+    username: 'friend_two',
+  });
+  const usersMap: Record<string, IsolatedUserAccountRecord> = {
+    '7001': inviter,
+    '7002': friend1,
+    '7003': friend2,
+  };
+
+  // Block self-referral
+  const selfBind = bindUserReferralAntiSybil({
+    userId: '7001',
+    startParam: 'ref_7001',
+    usersMap,
+  });
+  assert.equal(selfBind.bound, false);
+  assert.equal(selfBind.reason, 'SELF_REFERRAL_FORBIDDEN');
+
+  // Valid referral bind: 7002 referred by 7001
+  const validBind = bindUserReferralAntiSybil({
+    userId: '7002',
+    startParam: 'ref_7001',
+    usersMap,
+  });
+  assert.equal(validBind.bound, true);
+  assert.equal(friend1.referredByUserId, '7001');
+  assert.equal(friend1.referralProfile?.referredByUserKey, '7001');
+
+  // Block overwriting an existing referrer (immutable once set)
+  const overwriteBind = bindUserReferralAntiSybil({
+    userId: '7002',
+    startParam: 'ref_7003',
+    usersMap,
+  });
+  assert.equal(overwriteBind.bound, false);
+  assert.equal(overwriteBind.status, 409);
+  assert.equal(overwriteBind.reason, 'ALREADY_REFERRED_IMMUTABLE');
+
+  // Block circular loop (7001 -> 7002 -> 7003 -> 7001)
+  bindUserReferralAntiSybil({
+    userId: '7003',
+    startParam: 'ref_7002',
+    usersMap,
+  });
+  const circularBind = bindUserReferralAntiSybil({
+    userId: '7001',
+    startParam: 'ref_7003',
+    usersMap,
+  });
+  assert.equal(circularBind.bound, false);
+  assert.equal(circularBind.reason, 'CIRCULAR_REFERRAL_FORBIDDEN');
+
+  // 3. Zero-Capital Sybil Immunity: Empty signup pays 0 TON; 2% commission accrues ONLY on real ticket purchase!
+  assert.equal(inviter.referralProfile?.claimableReferralTon, 0);
+  assert.equal(inviter.referralProfile?.activeBuyersCount, 0);
+
+  const ticketComm = accrueReferralTicketCommission({
+    buyerAccount: friend1,
+    usersMap,
+    currency: 'TON',
+    grossTon: 5.0,
+    grossStars: 0,
+  });
+  assert.equal(ticketComm.hasValidReferrer, true);
+  assert.equal(ticketComm.creditedTon, 0.1); // 2% of 5.0 TON
+  assert.equal(inviter.referralProfile?.claimableReferralTon, 0.1);
+  assert.equal(inviter.referralProfile?.lifetimeReferralTon, 0.1);
+  assert.equal(inviter.referralProfile?.activeBuyersCount, 1);
+
+  // 0.5% Mini-Game Turnover Commission (10.0 TON bet -> +0.05 TON to inviter)
+  const mgComm = accrueReferralMiniGameCommission({
+    playerAccount: friend1,
+    usersMap,
+    currency: 'TON',
+    betAmountTon: 10.0,
+    betAmountStars: 0,
+  });
+  assert.equal(mgComm.hasValidReferrer, true);
+  assert.equal(mgComm.creditedTon, 0.05);
+  assert.equal(inviter.referralProfile?.claimableReferralTon, 0.15);
+
+  // 1:1 Atomic Referral Claim into Inviter's PAM Wallet
+  const inviterPam = new PAMSeamlessWalletEngine(inviter.pamState);
+  const claimRes = executeAtomicReferralVaultClaim({
+    userAccount: inviter,
+    userPam: inviterPam,
+  });
+  assert.equal(claimRes.ok, true);
+  assert.equal(claimRes.claimedTon, 0.15);
+  assert.equal(claimRes.tonBalance, 0.15);
+  assert.equal(inviter.referralProfile?.claimableReferralTon, 0);
+  assert.equal(inviter.referralProfile?.lifetimeReferralTon, 0.15);
+
+  // Second claim when empty is rejected with 400
+  const emptyClaim = executeAtomicReferralVaultClaim({
+    userAccount: inviter,
+    userPam: inviterPam,
+  });
+  assert.equal(emptyClaim.ok, false);
+  assert.equal(emptyClaim.status, 400);
+
+  // 4. Growth Quests & Duplicate Claim Protection
+  // Inviter has 1 active buyer (friend1), so QUEST_ACTIVE_REFERRAL_1 is eligible (+200 XP + 1 VIP Super-Ticket)
+  // while QUEST_ACTIVE_REFERRALS_5 (requires 5 active buyers) is blocked
+  const questsBefore = evaluateUserGrowthQuests({
+    userAccount: inviter,
+    syndicatePools: [],
+  });
+  const qRef1 = questsBefore.find((q) => q.id === 'QUEST_ACTIVE_REFERRAL_1');
+  const qRef5 = questsBefore.find((q) => q.id === 'QUEST_ACTIVE_REFERRALS_5');
+  assert.equal(qRef1?.eligibleToClaim, true);
+  assert.equal(qRef5?.eligibleToClaim, false);
+
+  const claimRef5Early = verifyAndClaimGrowthQuest({
+    userAccount: inviter,
+    questId: 'QUEST_ACTIVE_REFERRALS_5',
+    syndicatePools: [],
+  });
+  assert.equal(claimRef5Early.ok, false);
+  assert.equal(claimRef5Early.status, 400);
+
+  const claimRef1 = verifyAndClaimGrowthQuest({
+    userAccount: inviter,
+    questId: 'QUEST_ACTIVE_REFERRAL_1',
+    syndicatePools: [],
+  });
+  assert.equal(claimRef1.ok, true);
+  assert.equal(claimRef1.xpAwarded, 200);
+  assert.equal(claimRef1.vipSuperTicketsAwarded, 1);
+  assert.equal(inviter.xp, 200);
+
+  // Duplicate claim of QUEST_ACTIVE_REFERRAL_1 is strictly blocked with 409 Conflict
+  const duplicateClaimRef1 = verifyAndClaimGrowthQuest({
+    userAccount: inviter,
+    questId: 'QUEST_ACTIVE_REFERRAL_1',
+    syndicatePools: [],
+  });
+  assert.equal(duplicateClaimRef1.ok, false);
+  assert.equal(duplicateClaimRef1.status, 409);
+  assert.equal(inviter.xp, 200);
+});
 

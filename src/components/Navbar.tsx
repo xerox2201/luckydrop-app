@@ -21,6 +21,13 @@ import { useLottery, AppRoute } from '../context/LotteryContext';
 import { HapticEngine } from '../utils/telegramTma';
 import { LuckyDropLogo } from './LuckyDropLogo';
 import { tr } from '../utils/i18n';
+import {
+  TonCrystalIcon,
+  TelegramStarIcon,
+  VipTicketIcon,
+  AmbassadorRocketIcon,
+  CashbackEmeraldVaultIcon,
+} from './ui/LuxuryIcons';
 
 export const Navbar: React.FC = () => {
   const {
@@ -125,25 +132,27 @@ export const Navbar: React.FC = () => {
             >
               <button
                 type="button"
+                aria-label="TON Currency"
                 onClick={() => setActiveTmaCurrency('TON')}
-                className={`px-1.5 py-1 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer ${
+                className={`px-1.5 py-1 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer flex items-center justify-center ${
                   activeTmaCurrency === 'TON'
-                    ? 'bg-[#0098EA] text-white shadow-[inset_0_2px_3px_rgba(255,255,255,0.4),_0_4px_10px_rgba(0,152,234,0.45)]'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-[#0098EA]/30 text-white border border-[#0098EA]/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.35),_0_4px_10px_rgba(0,152,234,0.45)]'
+                    : 'text-slate-400 hover:text-white opacity-70 hover:opacity-100'
                 }`}
               >
-                💎
+                <TonCrystalIcon size={14} />
               </button>
               <button
                 type="button"
+                aria-label="Telegram Stars Currency"
                 onClick={() => setActiveTmaCurrency('STARS')}
-                className={`px-1.5 py-1 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer ${
+                className={`px-1.5 py-1 rounded-xl text-[10px] font-mono font-black transition-all cursor-pointer flex items-center justify-center ${
                   activeTmaCurrency === 'STARS'
-                    ? 'bg-gradient-to-r from-[#FFE066] to-[#B8860B] text-slate-950 shadow-[inset_0_2px_3px_rgba(255,255,255,0.55),_0_4px_10px_rgba(255,215,0,0.45)]'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-[#F59E0B]/25 text-slate-950 border border-[#FDE047]/60 shadow-[inset_0_1px_2px_rgba(255,255,255,0.45),_0_4px_10px_rgba(255,215,0,0.45)]'
+                    : 'text-slate-400 hover:text-white opacity-70 hover:opacity-100'
                 }`}
               >
-                ⭐
+                <TelegramStarIcon size={14} />
               </button>
             </div>
 
@@ -154,6 +163,11 @@ export const Navbar: React.FC = () => {
               data-testid="navbar-balance-pill"
               className="flex items-center gap-1 px-1.5 py-1 rounded-2xl bg-gradient-to-r from-[#140F28] to-[#1C1436] border border-white/15 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_8px_16px_rgba(0,0,0,0.5)] hover:border-[#00F5D4]/50 transition-all cursor-pointer"
             >
+              {activeTmaCurrency === 'TON' ? (
+                <TonCrystalIcon size={13} />
+              ) : (
+                <TelegramStarIcon size={13} />
+              )}
               <div className="text-right leading-none" dir="ltr">
                 <div className="text-[10px] font-mono font-black text-white">
                   {activeTmaCurrency === 'TON'
@@ -181,7 +195,7 @@ export const Navbar: React.FC = () => {
                   : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
               }`}
             >
-              <Ticket className="w-4 h-4" />
+              <VipTicketIcon size={16} />
               {tickets.length > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[#00F5D4] text-slate-950 font-mono text-[9px] font-black flex items-center justify-center">
                   {tickets.length}
@@ -246,7 +260,8 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00F5D4] animate-pulse shrink-0" />
             <span className="text-slate-400">LIVE ORACLE:</span>
-            <span className="text-white font-bold">
+            <span className="text-white font-bold inline-flex items-center gap-1">
+              <TonCrystalIcon size={11} />
               TON ${liveTonUsdPrice.toFixed(2)}
             </span>
             <span
@@ -261,7 +276,9 @@ export const Navbar: React.FC = () => {
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0 text-slate-300">
-            <span>1 TON ≈ {liveStarsPerTon} ⭐</span>
+            <span className="inline-flex items-center gap-1">
+              1 TON ≈ {liveStarsPerTon} <TelegramStarIcon size={11} />
+            </span>
             <span className="text-[#FFE066] font-bold">
               Portfolio ≈ ${portfolioUsdValue.toFixed(2)}
             </span>
@@ -292,7 +309,7 @@ export const Navbar: React.FC = () => {
                 onClick={() => handleTabNav('my-tickets')}
                 className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-bold text-white cursor-pointer"
               >
-                <Ticket className="w-4 h-4 text-[#00F5D4] shrink-0" />
+                <VipTicketIcon size={16} />
                 <span className="truncate">
                   {tr(lang, `بلیت‌های من (${tickets.length})`, `My Tickets (${tickets.length})`)}
                 </span>
@@ -352,12 +369,12 @@ export const Navbar: React.FC = () => {
                 className="col-span-2 flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-gradient-to-r from-[#1A1230] to-[#120D24] hover:brightness-110 border border-[#FFE066]/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] text-xs font-black text-[#FFE066] cursor-pointer"
               >
                 <div className="flex items-center gap-2">
-                  <Headset className="w-4 h-4 text-[#00F5D4] shrink-0" />
+                  <CashbackEmeraldVaultIcon size={16} />
                   <span>
                     {tr(
                       lang,
-                      '💎 کنسیرج VIP و پشتیبانی دوطرفه زنده (چت + تلگرام)',
-                      '💎 24/7 VIP Concierge & Two-Way Live Support'
+                      'کنسیرج VIP و پشتیبانی دوطرفه زنده (چت + تلگرام)',
+                      '24/7 VIP Concierge & Two-Way Live Support'
                     )}
                   </span>
                 </div>
@@ -401,7 +418,7 @@ export const Navbar: React.FC = () => {
           <BottomTabButton
             active={activeRoute === 'lobby' || activeRoute === 'play'}
             onClick={() => handleTabNav('lobby')}
-            icon={<Sparkles className="w-5 h-5" />}
+            icon={<VipTicketIcon size={19} />}
             label={tr(lang, 'لابی لاتاری', 'Lottery')}
             subLabel={tr(lang, 'قرعه‌کشی', 'Draws')}
             accent="gold"
@@ -417,7 +434,7 @@ export const Navbar: React.FC = () => {
           <BottomTabButton
             active={activeRoute === 'earn'}
             onClick={() => handleTabNav('earn')}
-            icon={<Gift className="w-5 h-5" />}
+            icon={<AmbassadorRocketIcon size={19} />}
             label={tr(lang, 'ماموریت و دعوت', 'Earn')}
             subLabel={tr(lang, 'پاداش رایگان', 'Quests')}
             accent="emerald"
@@ -429,7 +446,7 @@ export const Navbar: React.FC = () => {
               activeRoute === 'withdraw'
             }
             onClick={() => handleTabNav('wallet')}
-            icon={<Wallet className="w-5 h-5" />}
+            icon={<TonCrystalIcon size={19} />}
             label={tr(lang, 'کیف پول', 'Wallet')}
             subLabel="TON & Stars"
             accent="blue"
