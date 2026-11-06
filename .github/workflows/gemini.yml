@@ -42,6 +42,7 @@ jobs:
       - name: Run Gemini CLI Agent
         uses: google-github-actions/run-gemini-cli@v0.1.22
         env:
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -53,7 +54,7 @@ jobs:
             1. Preserve 6-decimal PAM accounting (toFixed(6)) and the 5-way revenue split.
             2. Zero Text-Emojis allowed: use only vector components from src/components/ui/LuxuryIcons.tsx.
             3. Maintain 100% 5-language localization (fa, en, ru, ar, es).
-            4. Also fix the esbuild peer dependency conflict in package.json (or add an `.npmrc` file with `legacy-peer-deps=true` so Render.com builds never fail on ERESOLVE).
+            4. Create an `.npmrc` file with `legacy-peer-deps=true` if missing so builds never fail on ERESOLVE.
             5. Run `npx tsc --noEmit` and `npm test` to verify zero errors, then reply directly on the GitHub Issue with your full Persian report.
 
             USER INSTRUCTION:
