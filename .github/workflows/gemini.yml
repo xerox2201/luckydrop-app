@@ -36,13 +36,31 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Ensure .npmrc for Render & GitHub
+        run: |
+          if [ ! -f .npmrc ]; then
+            echo "legacy-peer-deps=true" > .npmrc
+          fi
+
       - name: Install Dependencies Safely
         run: npm install --legacy-peer-deps --no-audit --no-fund
+
+      - name: Run Automated TypeScript & E2E Financial Audit
+        run: |
+          npx tsc --noEmit
+          npm run build
+          npm test --if-present
+
+      - name: Configure Gemini CLI Flash Model (Avoid 503 Overload)
+        run: |
+          mkdir -p ~/.gemini
+          echo '{"model": "gemini-2.5-flash"}' > ~/.gemini/settings.json
 
       - name: Run Gemini CLI Agent
         uses: google-github-actions/run-gemini-cli@v0.1.22
         env:
           GEMINI_CLI_TRUST_WORKSPACE: 'true'
+          GEMINI_MODEL: 'gemini-2.5-flash'
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,8 +72,7 @@ jobs:
             1. Preserve 6-decimal PAM accounting (toFixed(6)) and the 5-way revenue split.
             2. Zero Text-Emojis allowed: use only vector components from src/components/ui/LuxuryIcons.tsx.
             3. Maintain 100% 5-language localization (fa, en, ru, ar, es).
-            4. Create an `.npmrc` file with `legacy-peer-deps=true` if missing so builds never fail on ERESOLVE.
-            5. Run `npx tsc --noEmit` and `npm test` to verify zero errors, then reply directly on the GitHub Issue with your full Persian report.
+            4. Review the repository status and reply directly on the GitHub Issue with your full Persian report.
 
             USER INSTRUCTION:
             ${{ github.event.inputs.prompt || github.event.comment.body || github.event.issue.body }}
