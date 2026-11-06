@@ -34,10 +34,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install Dependencies Safely
-        run: npm install --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Run Gemini CLI Agent
         uses: google-github-actions/run-gemini-cli@v0.1.22
@@ -53,7 +53,8 @@ jobs:
             1. Preserve 6-decimal PAM accounting (toFixed(6)) and the 5-way revenue split.
             2. Zero Text-Emojis allowed: use only vector components from src/components/ui/LuxuryIcons.tsx.
             3. Maintain 100% 5-language localization (fa, en, ru, ar, es).
-            4. Run `npx tsc --noEmit` and `npm test` to verify zero errors, then reply directly on the GitHub Issue with your full Persian report.
+            4. Also fix the esbuild peer dependency conflict in package.json (or add an `.npmrc` file with `legacy-peer-deps=true` so Render.com builds never fail on ERESOLVE).
+            5. Run `npx tsc --noEmit` and `npm test` to verify zero errors, then reply directly on the GitHub Issue with your full Persian report.
 
             USER INSTRUCTION:
             ${{ github.event.inputs.prompt || github.event.comment.body || github.event.issue.body }}
