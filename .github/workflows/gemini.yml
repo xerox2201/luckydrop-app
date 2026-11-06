@@ -3,28 +3,27 @@ name: Gemini Autonomous Agent
 on:
   issue_comment:
     types: [created]
-  pull_request_review_comment:
-    types: [created]
   issues:
-    types: [opened, assigned]
+    types: [opened]
   workflow_dispatch:
     inputs:
       prompt:
-        description: 'دستور مستقیم به جمینای برای بررسی یا ویرایش کل پروژه'
+        description: 'دستور مستقیم به جمینای'
         required: true
-        default: 'کل کدهای پروژه را بررسی کن، تست‌ها را اجرا کن و اگر باگی هست اصلاح کن.'
+        default: 'کل پروژه را اسکن کن، تست‌ها را اجرا کن و گزارش بده.'
 
 permissions:
   contents: write
   issues: write
   pull-requests: write
+  id-token: write
 
 jobs:
   gemini-agent:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.comment.body, '@gemini-cli') ||
-      contains(github.event.issue.body, '@gemini-cli')
+      (github.event.comment && contains(github.event.comment.body, '@gemini-cli')) ||
+      (github.event.issue && contains(github.event.issue.body, '@gemini-cli'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -36,25 +35,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm ci
+      - name: Install Dependencies Safely
+        run: npm install --no-audit --no-fund
 
-      - name: Run Gemini CLI
+      - name: Run Gemini CLI Agent
         uses: google-github-actions/run-gemini-cli@v0.1.22
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             You are the Principal Full-Stack Architect for the LuckyDrop Telegram Mini-App repository.
-            
-            STRICT PROJECT CONSTITUTION:
-            1. Preserve 6-decimal PAM accounting (toFixed(6)) and the 5-way revenue split (85% Pool, 3% Cashback, 2% Referral, 3% Welcome Reserve, 7-9% Net House).
+            1. Preserve 6-decimal PAM accounting (toFixed(6)) and the 5-way revenue split.
             2. Zero Text-Emojis allowed: use only vector components from src/components/ui/LuxuryIcons.tsx.
-            3. Maintain 100% 5-language localization (fa, en, ru, ar, es) with zero hardcoded Persian leaks in non-Persian locales.
-            4. Always run `npx tsc --noEmit` and `npm test` after making changes to verify zero errors.
+            3. Maintain 100% 5-language localization (fa, en, ru, ar, es).
+            4. Run `npx tsc --noEmit` and `npm test` to verify zero errors, then reply directly on the GitHub Issue with your full Persian report.
 
-            USER INSTRUCTION / EVENT CONTEXT:
+            USER INSTRUCTION:
             ${{ github.event.inputs.prompt || github.event.comment.body || github.event.issue.body }}
