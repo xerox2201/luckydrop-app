@@ -14,6 +14,8 @@ import {
   type SyndicatePoolRecord,
 } from './securityGuard.ts';
 
+import { localizeServerText } from '../utils/i18n.ts';
+
 export type SupportedAiLocale = 'fa' | 'en' | 'ru' | 'ar' | 'es';
 
 export function normalizeAiLocale(raw?: string | null): SupportedAiLocale {
@@ -293,19 +295,28 @@ export function buildDeterministicUserConciergeReply(
   const refClaimableTonStr = roundTonClean(input.claimableReferralTon).toFixed(6);
   const refLifetimeTonStr = roundTonClean(input.lifetimeReferralTon).toFixed(6);
   const synContribStr = roundTonClean(input.userSyndicateContributedTon).toFixed(6);
-  const welcomeReserveStr = roundTonClean(input.welcomeGrandLottery.fundedReserveTon).toFixed(6);
-  const welcomeTargetStr = roundTonClean(input.welcomeGrandLottery.targetPoolTon).toFixed(6);
-  const monthlyPoolStr = roundTonClean(input.monthlySuperJackpot.accumulatedPoolTon).toFixed(6);
-  const welcomePctStr = input.welcomeGrandLottery.reserveProgressPercent.toFixed(1);
+  const welcomeReserveStr = roundTonClean(input?.welcomeGrandLottery?.fundedReserveTon ?? 0).toFixed(6);
+  const welcomeTargetStr = roundTonClean(input?.welcomeGrandLottery?.targetPoolTon ?? 200).toFixed(6);
+  const monthlyPoolStr = roundTonClean(input?.monthlySuperJackpot?.accumulatedPoolTon ?? 0).toFixed(6);
+  const welcomePctStr = Number(input?.welcomeGrandLottery?.reserveProgressPercent ?? 0).toFixed(1);
 
-  const welcomeEntitlementText = getLocalizedWelcomeStatusText(locale, input.welcomeTicketStatus);
-  const hashPreview = input.serverSeedHash
+  const safeWelcomeStatus: UserWelcomeTicketStatus = input?.welcomeTicketStatus || {
+    welcomeTicketUnlocked: false,
+    welcomeTicketEntitlement: 0,
+    welcomeTicketClaimed: false,
+    welcomeTicketCode: null,
+    statusCode: 'LOCKED_NEEDS_FIRST_PURCHASE',
+    statusLabelFa: '',
+  };
+  const welcomeEntitlementText = getLocalizedWelcomeStatusText(locale, safeWelcomeStatus);
+  const hashPreview = input?.serverSeedHash
     ? `${input.serverSeedHash.slice(0, 16)}...${input.serverSeedHash.slice(-8)}`
     : 'SHA256-COMMITTED';
-  const clientSeedVal = input.clientSeed || 'luckydrop_vip_client_seed';
-  const nonceVal = input.nonce ?? 1;
-  const vipTierLabel = input.vipTier || 'MEMBER';
-  const vipTicketsCount = input.monthlyVipQualification.vipSuperTicketsEarnedTotal;
+  const clientSeedVal = input?.clientSeed || 'luckydrop_vip_client_seed';
+  const nonceVal = input?.nonce ?? 1;
+  const vipTierLabel = input?.vipTier || 'MEMBER';
+  const vipTicketsCount = input?.monthlyVipQualification?.vipSuperTicketsEarnedTotal ?? 0;
+  const safeDisplayName = localizeServerText(locale, input?.displayName || 'VIP Member');
 
   let replyText = '';
   let escalatedToHuman = false;
@@ -313,7 +324,7 @@ export function buildDeterministicUserConciergeReply(
   if (intent === 'ACCOUNT_STATUS') {
     if (locale === 'en') {
       replyText = [
-        `Greetings ${input.displayName}; here is your live VIP PAM ledger telemetry with strict 6-decimal precision:`,
+        `Greetings ${safeDisplayName}; here is your live VIP PAM ledger telemetry with strict 6-decimal precision:`,
         `• Main Wallet Balance: ${tonBalStr} TON | ${starsBal} Stars (Tier: ${vipTierLabel} • XP: ${input.xp} XP)`,
         `• 3% Instant Cashback Vault: ${cashbackTonStr} TON claimable now (Lifetime earned: ${cashbackLifetimeStr} TON)`,
         `• Your Tickets: ${input.activeTicketsCount} active slip(s) in current round (Total: ${input.totalTicketsCount}) + ${vipTicketsCount} Monthly VIP Super-Jackpot ticket(s)`,
@@ -322,7 +333,7 @@ export function buildDeterministicUserConciergeReply(
       ].join('\n');
     } else if (locale === 'ru') {
       replyText = [
-        `Приветствуем, ${input.displayName}! Актуальный статус вашего VIP-счета PAM с точностью до 6 знаков:`,
+        `Приветствуем, ${safeDisplayName}! Актуальный статус вашего VIP-счета PAM с точностью до 6 знаков:`,
         `• Основной баланс кошелька: ${tonBalStr} TON | ${starsBal} Stars (Уровень: ${vipTierLabel} • Опыт: ${input.xp} XP)`,
         `• Сейф мгновенного кэшбэка 3%: ${cashbackTonStr} TON доступно к выводу (Всего получено: ${cashbackLifetimeStr} TON)`,
         `• Ваши билеты: ${input.activeTicketsCount} активных в текущем раунде (Всего: ${input.totalTicketsCount}) + ${vipTicketsCount} билетов ежемесячного VIP Супер-Джекпота`,
@@ -331,7 +342,7 @@ export function buildDeterministicUserConciergeReply(
       ].join('\n');
     } else if (locale === 'ar') {
       replyText = [
-        `مرحباً بك ${input.displayName}؛ إليك التقرير المباشر لحسابك VIP بدقة 6 أرقام عشرية في دفتر الأستاذ PAM:`,
+        `مرحباً بك ${safeDisplayName}؛ إليك التقرير المباشر لحسابك VIP بدقة 6 أرقام عشرية في دفتر الأستاذ PAM:`,
         `• رصيد المحفظة الرئيسية: ${tonBalStr} TON | ${starsBal} Stars (المستوى: ${vipTierLabel} • النقاط: ${input.xp} XP)`,
         `• خزنة الاسترداد النقدي الفوري 3%: ${cashbackTonStr} TON قابلة للسحب الفوري (إجمالي الأرباح مدى الحياة: ${cashbackLifetimeStr} TON)`,
         `• تذاكرك: ${input.activeTicketsCount} تذكرة نشطة في الجولة الحالية (الإجمالي: ${input.totalTicketsCount}) + ${vipTicketsCount} تذكرة للجائزة الشهرية الكبرى VIP`,
@@ -340,7 +351,7 @@ export function buildDeterministicUserConciergeReply(
       ].join('\n');
     } else if (locale === 'es') {
       replyText = [
-        `Saludos ${input.displayName}; aquí tienes el informe en vivo de tu cuenta VIP PAM con precisión exacta de 6 decimales:`,
+        `Saludos ${safeDisplayName}; aquí tienes el informe en vivo de tu cuenta VIP PAM con precisión exacta de 6 decimales:`,
         `• Saldo de Billetera Principal: ${tonBalStr} TON | ${starsBal} Stars (Nivel: ${vipTierLabel} • XP: ${input.xp} XP)`,
         `• Bóveda de Cashback Instantáneo 3%: ${cashbackTonStr} TON disponibles para reclamo (Total histórico: ${cashbackLifetimeStr} TON)`,
         `• Tus Boletos: ${input.activeTicketsCount} boleto(s) activos en la ronda actual (Total: ${input.totalTicketsCount}) + ${vipTicketsCount} boleto(s) del Súper Jackpot Mensual VIP`,
@@ -524,7 +535,7 @@ export function buildDeterministicUserConciergeReply(
   } else {
     if (locale === 'en') {
       replyText = [
-        `24/7 LuckyDrop VIP AI Concierge Telemetry Report for ${input.displayName} (#${input.userKey}):`,
+        `24/7 LuckyDrop VIP AI Concierge Telemetry Report for ${safeDisplayName} (#${input.userKey}):`,
         `• Live PAM Ledger Balance: ${tonBalStr} TON | ${starsBal} Stars (Claimable Cashback: ${cashbackTonStr} TON • Claimable Referral: ${refClaimableTonStr} TON)`,
         `• Registered Tickets: ${input.activeTicketsCount} active round ticket(s) | ${vipTicketsCount} Monthly VIP ticket(s) (Monthly Pool: ${monthlyPoolStr} TON) | Syndicate Shares: ${input.userSyndicateSharesCount} (${synContribStr} TON)`,
         `• Free $1,000 Welcome Ticket (#LD-WELCOME-1000): ${welcomeEntitlementText} (Current Reserve: ${welcomeReserveStr} / ${welcomeTargetStr} TON)`,
@@ -532,7 +543,7 @@ export function buildDeterministicUserConciergeReply(
       ].join('\n');
     } else if (locale === 'ru') {
       replyText = [
-        `Отчет круглосуточного VIP ИИ-Консьержа LuckyDrop для аккаунта ${input.displayName} (#${input.userKey}):`,
+        `Отчет круглосуточного VIP ИИ-Консьержа LuckyDrop для аккаунта ${safeDisplayName} (#${input.userKey}):`,
         `• Текущий баланс PAM-реестра: ${tonBalStr} TON | ${starsBal} Stars (Кэшбэк к выводу: ${cashbackTonStr} TON • Реферальные к выводу: ${refClaimableTonStr} TON)`,
         `• Зарегистрированные билеты: ${input.activeTicketsCount} активных билетов | ${vipTicketsCount} месячных VIP-билетов (Месячный пул: ${monthlyPoolStr} TON) | Доли синдиката: ${input.userSyndicateSharesCount} (${synContribStr} TON)`,
         `• Бесплатный билет $1,000 (#LD-WELCOME-1000): ${welcomeEntitlementText} (Резерв: ${welcomeReserveStr} / ${welcomeTargetStr} TON)`,
@@ -540,7 +551,7 @@ export function buildDeterministicUserConciergeReply(
       ].join('\n');
     } else if (locale === 'ar') {
       replyText = [
-        `رد كونسيرج الذكاء الاصطناعي VIP 24/7 في LuckyDrop لحساب ${input.displayName} (#${input.userKey}):`,
+        `رد كونسيرج الذكاء الاصطناعي VIP 24/7 في LuckyDrop لحساب ${safeDisplayName} (#${input.userKey}):`,
         `• الرصيد الفوري في دفتر PAM: ${tonBalStr} TON | ${starsBal} Stars (كاش باك جاهز للسحب: ${cashbackTonStr} TON • عمولة إحالة جاهزة للسحب: ${refClaimableTonStr} TON)`,
         `• التذاكر المسجلة: ${input.activeTicketsCount} تذكرة نشطة | ${vipTicketsCount} تذكرة شهرية VIP (المجمع الشهري: ${monthlyPoolStr} TON) | حصص النقابة: ${input.userSyndicateSharesCount} (${synContribStr} TON)`,
         `• حالة تذكرة الترحيب المجانية 1,000$ (#LD-WELCOME-1000): ${welcomeEntitlementText} (الاحتياطي الحالي: ${welcomeReserveStr} / ${welcomeTargetStr} TON)`,
@@ -548,7 +559,7 @@ export function buildDeterministicUserConciergeReply(
       ].join('\n');
     } else if (locale === 'es') {
       replyText = [
-        `Respuesta del Conserje IA VIP 24/7 de LuckyDrop para la cuenta ${input.displayName} (#${input.userKey}):`,
+        `Respuesta del Conserje IA VIP 24/7 de LuckyDrop para la cuenta ${safeDisplayName} (#${input.userKey}):`,
         `• Saldo en Vivo del Libro Mayor PAM: ${tonBalStr} TON | ${starsBal} Stars (Cashback disponible: ${cashbackTonStr} TON • Comisión de referidos: ${refClaimableTonStr} TON)`,
         `• Boletos Registrados: ${input.activeTicketsCount} boleto(s) activos | ${vipTicketsCount} boleto(s) VIP mensuales (Pozo mensual: ${monthlyPoolStr} TON) | Acciones en sindicatos: ${input.userSyndicateSharesCount} (${synContribStr} TON)`,
         `• Boleto Gratis de $1,000 (#LD-WELCOME-1000): ${welcomeEntitlementText} (Reserva actual: ${welcomeReserveStr} / ${welcomeTargetStr} TON)`,
@@ -577,8 +588,8 @@ export function buildDeterministicUserConciergeReply(
       starsBalance: starsBal,
       claimableCashbackTonFormatted: `${cashbackTonStr} TON`,
       claimableReferralTonFormatted: `${refClaimableTonStr} TON`,
-      welcomeTicketStatusCode: input.welcomeTicketStatus.statusCode,
-      activeSyndicateShares: input.userSyndicateSharesCount,
+      welcomeTicketStatusCode: safeWelcomeStatus.statusCode,
+      activeSyndicateShares: input?.userSyndicateSharesCount ?? 0,
       vipSuperTicketsCount: vipTicketsCount,
     },
   };
@@ -598,22 +609,88 @@ const LANGUAGE_PROMPT_NAMES: Record<SupportedAiLocale, string> = {
  * guaranteeing 100% uptime and exact 6-decimal accounting figures.
  */
 export async function generateUserConciergeReply(
-  input: UserConciergeTelemetryInput,
-  message: string,
+  inputOrParams: UserConciergeTelemetryInput | Record<string, any>,
+  message?: string,
   explicitChipId?: string | null,
   rawLocale?: string | null
-): Promise<UserConciergeReplyResult> {
-  const locale = normalizeAiLocale(rawLocale);
+): Promise<UserConciergeReplyResult & { reply: string }> {
+  let effectiveInput: UserConciergeTelemetryInput;
+  let effectiveMessage = message || '';
+  let effectiveChipId = explicitChipId;
+  let effectiveRawLocale = rawLocale;
+
+  if (
+    inputOrParams &&
+    typeof inputOrParams === 'object' &&
+    ('userMessage' in inputOrParams || 'userContext' in inputOrParams)
+  ) {
+    const ctx = inputOrParams.userContext || {};
+    effectiveMessage = String(inputOrParams.userMessage || inputOrParams.message || '');
+    effectiveChipId = inputOrParams.explicitChipId ?? null;
+    effectiveRawLocale = inputOrParams.locale ?? inputOrParams.lang ?? 'fa';
+    effectiveInput = {
+      userKey: String(ctx.telegramUserId || ctx.userKey || 'guest'),
+      displayName: String(ctx.displayName || 'VIP Member'),
+      tonBalance: Number(ctx.tonBalance || 0),
+      starsBalance: Number(ctx.starsBalance || 0),
+      vipTier: String(ctx.vipTier || 'MEMBER'),
+      xp: Number(ctx.xp || 0),
+      activeTicketsCount: Number(ctx.activeTicketsCount || 0),
+      totalTicketsCount: Number(ctx.totalTicketsCount ?? ctx.activeTicketsCount ?? 0),
+      rakebackClaimableTon: Number(ctx.availableRakebackTon ?? ctx.rakebackClaimableTon ?? 0),
+      rakebackClaimableStars: Number(ctx.rakebackClaimableStars || 0),
+      rakebackLifetimeTon: Number(ctx.rakebackLifetimeTon ?? ctx.availableRakebackTon ?? 0),
+      claimableReferralTon: Number(ctx.availableReferralTon ?? ctx.claimableReferralTon ?? 0),
+      claimableReferralStars: Number(ctx.claimableReferralStars || 0),
+      lifetimeReferralTon: Number(ctx.lifetimeReferralTon ?? ctx.availableReferralTon ?? 0),
+      invitedCount: Number(ctx.invitedCount || 0),
+      activeBuyersCount: Number(ctx.activeBuyersCount || 0),
+      referralCode: String(ctx.referralCode || 'LD-VIP'),
+      referredByUserKey: ctx.referredByUserKey || null,
+      welcomeTicketStatus: {
+        welcomeTicketUnlocked: Boolean(ctx.welcomeTicketUnlocked),
+        welcomeTicketEntitlement: ctx.welcomeTicketClaimed ? 0 : 1,
+        welcomeTicketClaimed: Boolean(ctx.welcomeTicketClaimed),
+        welcomeTicketCode: ctx.welcomeTicketCode || null,
+        chosenMainNumbers: [],
+        chosenGoldenBall: 0,
+        statusCode: ctx.welcomeTicketClaimed ? 'CLAIMED_REGISTERED' : 'UNLOCKED_READY_TO_PICK',
+        statusLabelFa: '',
+      },
+      welcomeGrandLottery: {
+        fundedReserveTon: 120,
+        targetPoolTon: 200,
+        reserveProgressPercent: 60,
+      } as any,
+      monthlySuperJackpot: {
+        accumulatedPoolTon: 500,
+      } as any,
+      monthlyVipQualification: {
+        vipSuperTicketsEarnedTotal: Number(ctx.monthlyVipTicketsCount || 0),
+        ticketsNeededForNextVip: 5,
+      } as any,
+      activeSyndicatesCount: 1,
+      userSyndicateSharesCount: 0,
+      userSyndicateContributedTon: 0,
+      serverSeedHash: 'a1b2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123',
+      clientSeed: 'luckydrop_vip_client_seed',
+      nonce: 1,
+    };
+  } else {
+    effectiveInput = inputOrParams as UserConciergeTelemetryInput;
+  }
+
+  const locale = normalizeAiLocale(effectiveRawLocale);
   const deterministic = buildDeterministicUserConciergeReply(
-    input,
-    message,
-    explicitChipId,
+    effectiveInput,
+    effectiveMessage,
+    effectiveChipId,
     locale
   );
 
   const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY' || explicitChipId) {
-    return deterministic;
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY' || effectiveChipId) {
+    return { ...deterministic, reply: deterministic.replyText };
   }
 
   try {
@@ -624,7 +701,7 @@ export async function generateUserConciergeReply(
         model: 'gemini-3.8-flash',
         contents: [
           `You are the 24/7 VIP AI Concierge for the LuckyDrop Telegram Web3 Lottery platform.`,
-          `User (${input.displayName}) message: "${message}"`,
+          `User (${effectiveInput.displayName}) message: "${effectiveMessage}"`,
           `Exact 6-decimal account telemetry that MUST be preserved verbatim in your response:`,
           deterministic.replyText,
           `Respond strictly in ${targetLangName}, using a luxury, polite, concise tone (max 5 lines), with ZERO Unicode text emojis, while preserving exact 6-decimal numbers (${deterministic.telemetrySummary.tonBalanceFormatted}).`,
@@ -637,11 +714,12 @@ export async function generateUserConciergeReply(
       response && typeof (response as any).text === 'string'
         ? (response as any).text.trim()
         : '';
-    if (llmText && llmText.includes(roundTonClean(input.tonBalance).toFixed(6))) {
+    if (llmText && llmText.includes(roundTonClean(effectiveInput.tonBalance).toFixed(6))) {
       return {
         ...deterministic,
         replyTextFa: llmText,
         replyText: llmText,
+        reply: llmText,
         engineMode: 'GEMINI_HYBRID',
       };
     }
@@ -649,7 +727,7 @@ export async function generateUserConciergeReply(
     // Instant fallback to deterministic engine
   }
 
-  return deterministic;
+  return { ...deterministic, reply: deterministic.replyText };
 }
 
 /**

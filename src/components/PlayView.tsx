@@ -7,7 +7,7 @@ import {
   toPersianDigits,
   computeDeterministicHash,
 } from '../utils/lotteryEngine.ts';
-import { tr } from '../utils/i18n.ts';
+import { tr, localizeServerText } from '../utils/i18n.ts';
 
 export const PlayView: React.FC = () => {
   const {
@@ -154,7 +154,11 @@ export const PlayView: React.FC = () => {
     setMinting(false);
 
     if (!result.ok) {
-      setFeedbackError(result.error || tr(lang, 'خطا در صدور بلیت‌ها.', 'Failed to mint tickets.'));
+      setFeedbackError(
+        result.error
+          ? localizeServerText(lang, result.error)
+          : tr(lang, 'خطا در صدور بلیت‌ها.', 'Failed to mint tickets.')
+      );
       return;
     }
     navigateTo('my-tickets');
@@ -221,7 +225,9 @@ export const PlayView: React.FC = () => {
               </div>
 
               <div className="text-xs font-extrabold text-white truncate">
-                {lang === 'EN' ? spec.titleEn : spec.titleFa.split('(')[0].trim()}
+                {lang === 'FA'
+                  ? spec.titleFa.split('(')[0].trim()
+                  : localizeServerText(lang, spec.titleFa)}
               </div>
 
               <div className="pt-1.5 border-t border-purple-500/20 flex flex-col gap-0.5 text-[10px]">
@@ -232,7 +238,7 @@ export const PlayView: React.FC = () => {
                   </strong>
                 </div>
                 <div className="text-[10px] font-semibold text-amber-300 truncate">
-                  {lang === 'EN'
+                  {lang !== 'FA'
                     ? `${spec.mainCount}/${spec.mainMax} Balls${spec.goldenMax > 0 ? ` + 1/${spec.goldenMax} ★` : ''}`
                     : spec.formatLabel}
                 </div>
@@ -246,7 +252,10 @@ export const PlayView: React.FC = () => {
       <div className="rounded-3xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)] space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <span className="px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-[10px] font-bold text-purple-200">
-            {lang === 'EN' ? activeLotterySpec.titleEn : activeLotterySpec.titleFa.split('(')[0].trim()} • {activeLotterySpec.roundCode}
+            {lang === 'FA'
+              ? activeLotterySpec.titleFa.split('(')[0].trim()
+              : localizeServerText(lang, activeLotterySpec.titleFa)}{' '}
+            • {activeLotterySpec.roundCode}
           </span>
           <span className="px-2.5 py-0.5 rounded-full bg-[#070510] border border-purple-500/25 text-[11px] font-mono font-bold text-[#fbbf24] tabular-nums" dir="ltr">
             ⏱ {String(hrs).padStart(2, '0')}:{String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
@@ -290,7 +299,7 @@ export const PlayView: React.FC = () => {
                     : 'bg-[#070510] border border-purple-500/20 shadow-[inset_0_2px_4px_rgba(255,255,255,0.12),_0_6px_14px_rgba(0,0,0,0.45)] text-purple-200 hover:text-white'
                 }`}
               >
-                {lang === 'EN' ? cnt : toPersianDigits(cnt)}x
+                {lang === 'FA' ? toPersianDigits(cnt) : cnt}x
                 {cnt === 5 ? ' (-5%)' : cnt === 10 ? ' (-10%)' : ''}
               </button>
             ))}
@@ -449,7 +458,11 @@ export const PlayView: React.FC = () => {
       <div className="rounded-3xl bg-[#130d24]/90 border border-purple-500/20 p-3.5 space-y-2.5 shadow-[inset_0_2px_4px_rgba(255,255,255,0.2),_0_10px_20px_rgba(0,0,0,0.5)]">
         <div className="flex items-center justify-between text-[11px]">
           <span className="font-bold text-[#00f59b]">
-            🔒 بذر اختصاصی کوپن #{toPersianDigits(activeSlipIndex + 1)} (Client Seed)
+            {tr(
+              lang,
+              `🔒 بذر اختصاصی کوپن #${toPersianDigits(activeSlipIndex + 1)} (Client Seed)`,
+              `🔒 Slip #${activeSlipIndex + 1} Custom Client Seed`
+            )}
           </span>
           <span className="font-mono text-[10px] text-purple-300/60">POST-DRAW VERIFIED</span>
         </div>
@@ -461,7 +474,11 @@ export const PlayView: React.FC = () => {
           dir="ltr"
         />
         <p className="text-[10px] text-purple-200/75 leading-relaxed">
-          جهت امنیت کامل و غیرقابل پیش‌بینی بودن قرعه‌کشی، کد هش (<code className="font-mono text-[#fbbf24]">hash</code>) پس از انجام قرعه‌کشی روی کوپن و در تاریخچه منتشر می‌شود.
+          {tr(
+            lang,
+            'جهت امنیت کامل و غیرقابل پیش‌بینی بودن قرعه‌کشی، کد هش (hash) پس از انجام قرعه‌کشی روی کوپن و در تاریخچه منتشر می‌شود.',
+            'For cryptographic fairness, the Provably Fair hash is revealed on your slip and in Draw History immediately after the draw completes.'
+          )}
         </p>
       </div>
 
@@ -473,7 +490,11 @@ export const PlayView: React.FC = () => {
               MULTI-CHANCE SMART CART
             </span>
             <h3 className="text-sm font-black text-white">
-              خلاصه سبد خرید ({toPersianDigits(bulkSlips.length)} کوپن)
+              {tr(
+                lang,
+                `خلاصه سبد خرید (${toPersianDigits(bulkSlips.length)} کوپن)`,
+                `Smart Cart Summary (${bulkSlips.length} Slips)`
+              )}
             </h3>
           </div>
           <span className="px-2 py-0.5 rounded-xl bg-emerald-500/15 text-emerald-300 text-[10px] font-mono font-bold">
@@ -519,20 +540,26 @@ export const PlayView: React.FC = () => {
         {/* Live Dynamic Price Breakdown (TON & Stars) */}
         <div className="flex flex-col gap-1.5 text-xs">
           <div className="flex items-center justify-between text-purple-200/80">
-            <span>قیمت واحد هر بلیت:</span>
+            <span>{tr(lang, 'قیمت واحد هر بلیت:', 'Unit Ticket Price:')}</span>
             <span className="font-mono font-semibold text-white tabular-nums" dir="ltr">
               {formatAmount(unitPriceUsdt)}
             </span>
           </div>
           <div className="flex items-center justify-between text-purple-200/80">
-            <span>تعداد بلیت در تراکنش:</span>
+            <span>{tr(lang, 'تعداد بلیت در تراکنش:', 'Tickets in Batch:')}</span>
             <span className="font-mono font-semibold text-white tabular-nums" data-testid="cart-ticket-count">
               {bulkSlips.length}x
             </span>
           </div>
           {cartSummary.discountPercent > 0 && (
             <div className="flex items-center justify-between text-[#00f59b] font-semibold">
-              <span>تخفیف خرید دسته‌ای ({toPersianDigits(cartSummary.discountPercent)}٪):</span>
+              <span>
+                {tr(
+                  lang,
+                  `تخفیف خرید دسته‌ای (${toPersianDigits(cartSummary.discountPercent)}٪):`,
+                  `Bulk Discount (${cartSummary.discountPercent}%):`
+                )}
+              </span>
               <span className="font-mono tabular-nums" dir="ltr">
                 -{formatAmount(cartSummary.subtotalUsdt - cartSummary.totalUsdt)}
               </span>

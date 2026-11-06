@@ -50,6 +50,7 @@ export interface PAMLedgerEntry {
   starsBalanceAfter: number;
   status: 'COMPLETED' | 'TOMBSTONED_NOOP' | 'IDEMPOTENT_REPLAY';
   note: string;
+  meta?: Record<string, any>;
 }
 
 export interface PAMTombstoneRecord {
@@ -315,6 +316,7 @@ export class PAMSeamlessWalletEngine {
     amountStars?: number;
     amountUsdt?: number;
     note?: string;
+    meta?: Record<string, any>;
     incrementNonce?: boolean;
   }): PAMOperationResponse {
     const txUuid = (params.transactionUuid || '').trim();
@@ -405,6 +407,7 @@ export class PAMSeamlessWalletEngine {
       starsBalanceAfter: starsAfter,
       status: 'COMPLETED',
       note: params.note || `Debit (${activeCurrency}) for ${params.vertical} (${params.roundId})`,
+      ...(params.meta ? { meta: params.meta } : {}),
     };
 
     this.state.ledger.unshift(entry);
@@ -428,6 +431,7 @@ export class PAMSeamlessWalletEngine {
     amountStars?: number;
     amountUsdt?: number;
     note?: string;
+    meta?: Record<string, any>;
     allowZeroWinRecord?: boolean;
   }): PAMOperationResponse {
     const txUuid = (params.transactionUuid || '').trim();
@@ -510,6 +514,7 @@ export class PAMSeamlessWalletEngine {
       starsBalanceAfter: starsAfter,
       status: 'COMPLETED',
       note: params.note || `Credit (${activeCurrency}) for ${params.vertical} (${params.roundId})`,
+      ...(params.meta ? { meta: params.meta } : {}),
     };
 
     this.state.ledger.unshift(entry);
@@ -528,6 +533,7 @@ export class PAMSeamlessWalletEngine {
     roundId: string;
     vertical: PAMGameVertical | string;
     note?: string;
+    meta?: Record<string, any>;
   }): PAMOperationResponse {
     const txUuid = (params.transactionUuid || '').trim();
     const refUuid = (params.referenceTransactionUuid || '').trim();
@@ -584,6 +590,7 @@ export class PAMSeamlessWalletEngine {
         note:
           params.note ||
           `Preemptive Tombstone registered for unseen Debit (${refUuid}) — Balance untouched`,
+        ...(params.meta ? { meta: params.meta } : {}),
       };
 
       this.state.ledger.unshift(tombstoneEntry);
@@ -633,6 +640,7 @@ export class PAMSeamlessWalletEngine {
       starsBalanceAfter: starsAfter,
       status: 'COMPLETED',
       note: params.note || `Rollback refund of Debit ${refUuid}`,
+      ...(params.meta ? { meta: params.meta } : {}),
     };
 
     this.state.ledger.unshift(rollbackEntry);
@@ -655,6 +663,7 @@ export class PAMSeamlessWalletEngine {
     amountUsdt?: number;
     creditToRealBalance?: boolean;
     note?: string;
+    meta?: Record<string, any>;
   }): PAMOperationResponse {
     const txUuid = (params.transactionUuid || '').trim();
     if (!txUuid) {
@@ -730,6 +739,7 @@ export class PAMSeamlessWalletEngine {
       starsBalanceAfter: starsAfter,
       status: 'COMPLETED',
       note: params.note || `VIP Bonus / Loyalty Credit (${params.roundId})`,
+      ...(params.meta ? { meta: params.meta } : {}),
     };
 
     this.state.ledger.unshift(entry);

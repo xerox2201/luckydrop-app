@@ -15,7 +15,7 @@ import { useLottery } from '../context/LotteryContext';
 import { buildDrawCeremonyPayload } from '../services/securityGuard';
 import { HapticEngine } from '../utils/telegramTma';
 import { LuckyDropLogo } from './LuckyDropLogo';
-import { tr } from '../utils/i18n';
+import { tr, localizeServerText } from '../utils/i18n';
 
 type CeremonyStage = 'MIXING' | 'DROPPING' | 'FINALE';
 
@@ -493,7 +493,9 @@ export const LiveDrawCeremonyModal: React.FC = () => {
               </div>
               <div className="text-[10px] font-mono text-slate-300 truncate" dir="ltr">
                 {ceremonyData.roundCode} •{' '}
-                {lang === 'EN' ? ceremonyData.roundTitleEn : ceremonyData.roundTitleFa}
+                {lang === 'FA'
+                  ? ceremonyData.roundTitleFa
+                  : localizeServerText(lang, ceremonyData.roundTitleFa || ceremonyData.roundTitleEn)}
               </div>
             </div>
           </div>

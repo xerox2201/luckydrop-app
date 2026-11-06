@@ -6,38 +6,13 @@ export const LUXURY_IMAGES = {
   splashBg3d: '/assets/3d/luckydrop-3d-splash-bg.png',
   jackpotHero3d: '/assets/3d/luckydrop-3d-jackpot-hero.png',
   gamesBanner3d: '/assets/3d/luckydrop-3d-games-banner.png',
+  brandCrownLogo: '/assets/3d/luckydrop-3d-logo.png',
 
-  // 1. Hero Centerpiece (#7 Gold Sphere with Royal Crown)
-  heroSphere7: '/assets/aistudio/Gemini_Generated_Image__e0626b6e.jpg',
-  // 2. Hero Wide Casino Vault Background
-  vaultHero: '/assets/aistudio/Gemini_Generated_Image___1__d11543f0.jpg',
-  // 3-6. Four Concurrent Lottery Pool Banners
-  poolMegaVip: '/assets/aistudio/Gemini_Generated_Image___2__d7af2394.jpg',
-  poolDailyBlitz: '/assets/aistudio/Gemini_Generated_Image___3__26d196a1.jpg',
+  // Active Page & Category Banners
   poolHourlyFlash: '/assets/aistudio/Gemini_Generated_Image___4__ce1abd71.jpg',
-  poolTonSpecial: '/assets/aistudio/Gemini_Generated_Image___5__a75b6435.jpg',
-  // 7. Global Seamless Black Onyx Marble Background
-  globalMarbleBg: '/assets/aistudio/Gemini_Generated_Image___6__134e28bc.jpg',
-  // 8-14. Page Header Banners
-  playTicketsBanner: '/assets/aistudio/Gemini_Generated_Image___7__c1677e25.jpg',
-  depositVault: '/assets/aistudio/Gemini_Generated_Image___8__b9a70753.jpg',
-  withdrawVault: '/assets/aistudio/Gemini_Generated_Image___9__962bcc62.jpg',
   userVipBanner: '/assets/aistudio/Gemini_Generated_Image___10__1f6ae709.jpg',
   fairnessAudit: '/assets/aistudio/Gemini_Generated_Image___11__32a4dde5.jpg',
-  cockpitCommandVault: '/assets/aistudio/Gemini_Generated_Image___12__7f974f44.jpg',
-  telegramBot: '/assets/aistudio/Gemini_Generated_Image___13__cf879f0e.jpg',
-  // 15-20. 3D Square Icons & Emblems
-  brandCrownLogo: '/assets/3d/luckydrop-3d-logo.png',
-  vipAvatar: '/assets/aistudio/Gemini_Generated_Image___15__f5bd1004.jpg',
-  trophyIcon3d: '/assets/aistudio/Gemini_Generated_Image___16__d7467a9f.jpg',
-  ticketIcon3d: '/assets/aistudio/Gemini_Generated_Image___17__711d1459.jpg',
-  walletIcon3d: '/assets/aistudio/Gemini_Generated_Image___18__601439ab.jpg',
   shieldIcon3d: '/assets/aistudio/Gemini_Generated_Image___19__500a21a6.jpg',
-  // Aliases for backward compatibility across views
-  goldBalls: '/assets/aistudio/Gemini_Generated_Image___2__d7af2394.jpg',
-  goldCoins: '/assets/aistudio/Gemini_Generated_Image___8__b9a70753.jpg',
-  desktopShowcase: '/assets/aistudio/Gemini_Generated_Image___10__1f6ae709.jpg',
-  mobileShowcase: '/assets/aistudio/Gemini_Generated_Image___13__cf879f0e.jpg',
 };
 
 interface PageHeroBannerProps {

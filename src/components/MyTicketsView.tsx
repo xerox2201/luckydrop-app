@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useLottery } from '../context/LotteryContext';
 import { HapticEngine } from '../utils/telegramTma';
-import { tr } from '../utils/i18n';
+import { tr, localizeServerText } from '../utils/i18n';
 
 export const MyTicketsView: React.FC = () => {
   const {
@@ -187,7 +187,9 @@ export const MyTicketsView: React.FC = () => {
                         ({t.roundCode})
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">{t.createdAt}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">
+                      {localizeServerText(lang, t.createdAt)}
+                    </div>
                   </div>
 
                   <span

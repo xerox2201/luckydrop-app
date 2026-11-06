@@ -1,7 +1,7 @@
 import React from 'react';
 import { Trophy, ShieldCheck, ExternalLink, Sparkles, ArrowLeft, Ticket } from 'lucide-react';
 import { useLottery } from '../context/LotteryContext';
-import { tr } from '../utils/i18n';
+import { tr, localizeServerText } from '../utils/i18n';
 import { HapticEngine } from '../utils/telegramTma';
 
 export const WinnersView: React.FC = () => {
@@ -132,9 +132,11 @@ export const WinnersView: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-xs font-black text-white">
-                    {d.roundTitleFa || d.roundCode}
+                    {localizeServerText(lang, d.roundTitleFa || d.roundCode)}
                   </span>
-                  <div className="text-[10px] font-mono text-slate-400">{d.createdAt}</div>
+                  <div className="text-[10px] font-mono text-slate-400">
+                    {localizeServerText(lang, d.createdAt)}
+                  </div>
                 </div>
                 <span className="px-2.5 py-1 rounded-xl bg-[#00F5D4]/10 border border-[#00F5D4]/30 text-[10px] font-mono font-black text-[#00F5D4]">
                   {formatActiveTmaAmount(d.totalPayoutUsdt || 0)}
@@ -185,9 +187,11 @@ export const WinnersView: React.FC = () => {
               className="p-3 rounded-2xl bg-[#110C22]/85 border border-white/10 flex items-center justify-between gap-2"
             >
               <div className="min-w-0">
-                <div className="text-xs font-black text-white truncate">{tx.winnerName}</div>
+                <div className="text-xs font-black text-white truncate">
+                  {localizeServerText(lang, tx.winnerName)}
+                </div>
                 <div className="text-[10px] text-slate-400 truncate">
-                  {tx.lotteryTitle} • {tx.winningCombo}
+                  {localizeServerText(lang, tx.lotteryTitle)} • {tx.winningCombo}
                 </div>
               </div>
               <div className="text-right shrink-0">
@@ -196,7 +200,7 @@ export const WinnersView: React.FC = () => {
                 </div>
                 <div className="text-[9px] text-slate-500 font-mono flex items-center justify-end gap-1">
                   <ExternalLink className="w-2.5 h-2.5" />
-                  {tx.timeAgoLabel}
+                  {localizeServerText(lang, tx.timeAgoLabel)}
                 </div>
               </div>
             </div>

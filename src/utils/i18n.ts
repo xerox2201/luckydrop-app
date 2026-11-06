@@ -1543,23 +1543,622 @@ export function t5(
 }
 
 /**
- * Localizes dynamic server-generated Persian strings (round titles, quest names, user defaults, syndicate names, PAM notes)
- * into the active language so non-Persian users never see raw Persian strings.
+ * Converts Persian/Arabic-Indic numerals and punctuation to standard ASCII digits.
  */
-export function localizeServerText(lang: Language | string | undefined, rawText: string): string {
-  const locale = normalizeLocale(lang);
-  const text = String(rawText || '').trim();
-  if (!text || locale === 'fa') return text;
+function normalizeAsciiDigits(input: string): string {
+  return String(input || '')
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/٪/g, '%')
+    .replace(/،/g, ',');
+}
 
-  // Default preview user name
-  if (text === 'کاربر' || text === 'کاربر VIP') {
-    if (locale === 'en') return 'VIP Member';
-    if (locale === 'ru') return 'VIP Игрок';
-    if (locale === 'ar') return 'عضو VIP';
-    if (locale === 'es') return 'Miembro VIP';
+/**
+ * Localizes any lottery prize tier label (`tierLabelFa`) into the active language (`fa`, `en`, `ru`, `ar`, `es`).
+ */
+export function localizeTierLabel(lang: Language | string | undefined, rawTierLabel: string): string {
+  const locale = normalizeLocale(lang);
+  const raw = String(rawTierLabel || '').trim();
+  if (!raw || locale === 'fa') return raw;
+
+  const text = normalizeAsciiDigits(raw);
+
+  // Welcome $1,000 wrapper e.g. "🎉 رتبه ششم (۳ گوی اصلی) (لاتاری ۱,۰۰۰ دلاری خوشآمدگویی)"
+  if (text.includes('لاتاری') && (text.includes('1,000') || text.includes('1000') || text.includes('خوشآمدگویی'))) {
+    const innerRaw = raw
+      .replace(/^🎉\s*/, '')
+      .replace(/\s*\(لاتاری[^)]*\)\s*$/u, '')
+      .trim();
+    const innerLocalized = innerRaw && innerRaw !== raw ? localizeTierLabel(locale, innerRaw) : '';
+    if (locale === 'en') return `🎉 ${innerLocalized || 'Welcome Prize'} ($1,000 Welcome Grand Draw)`;
+    if (locale === 'ru') return `🎉 ${innerLocalized || 'Приз'} (Приветственный розыгрыш $1,000)`;
+    if (locale === 'ar') return `🎉 ${innerLocalized || 'جائزة الترحيب'} (يانصيب الترحيب 1,000$)`;
+    if (locale === 'es') return `🎉 ${innerLocalized || 'Premio'} (Gran Sorteo de Bienvenida $1,000)`;
   }
 
-  // Official Brand Title
+  // Monthly VIP Super-Jackpot Tier-1 Winner
+  if (text.includes('برنده مطلق جک‌پات') || text.includes('Tier-1 Monthly VIP Super-Jackpot')) {
+    if (locale === 'en') return '👑 Tier-1 Monthly VIP Super-Jackpot Winner (All 6 Balls)';
+    if (locale === 'ru') return '👑 Победитель Ежемесячного VIP Супер-Джекпота (Все 6 шаров)';
+    if (locale === 'ar') return '👑 الفائز بالجائزة الشهرية الكبرى VIP (تطابق 6 كرات)';
+    if (locale === 'es') return '👑 Ganador del Súper Jackpot Mensual VIP (6 Bolas Exactas)';
+  }
+
+  // Monthly VIP All-or-Nothing Non-Winner
+  if (text.includes('All-or-Nothing') || text.includes('بدون تطابق جک‌پات') || text.includes('عدم تطابق کامل')) {
+    const mMatch = text.match(/\((\d+)\s*اصلی/);
+    const hasGolden = text.includes('+ طلایی');
+    const matchInfoEn = mMatch ? ` (${mMatch[1]} Main${hasGolden ? ' + Golden' : ''})` : '';
+    const matchInfoRu = mMatch ? ` (${mMatch[1]} осн.${hasGolden ? ' + золотой' : ''})` : '';
+    const matchInfoAr = mMatch ? ` (${mMatch[1]} رئيسية${hasGolden ? ' + ذهبية' : ''})` : '';
+    const matchInfoEs = mMatch ? ` (${mMatch[1]} princ.${hasGolden ? ' + dorada' : ''})` : '';
+    if (locale === 'en') return `No Full 6-Ball Jackpot Match${matchInfoEn} (VIP All-or-Nothing Rollover)`;
+    if (locale === 'ru') return `Нет полного совпадения 6 шаров${matchInfoRu} (Правило All-or-Nothing VIP)`;
+    if (locale === 'ar') return `عدم تطابق 6 كرات كاملة${matchInfoAr} (قاعدة الكل أو لا شيء VIP)`;
+    if (locale === 'es') return `Sin acierto total de 6 bolas${matchInfoEs} (Regla Todo o Nada VIP)`;
+  }
+
+  // Tier 1: 5 Main + 1 Golden
+  if (
+    text.includes('جک‌پات الماس') ||
+    text.includes('رده 1') ||
+    (text.includes('5 گوی اصلی') && text.includes('طلایی'))
+  ) {
+    if (locale === 'en') return 'Diamond Grand Jackpot (5 Main + Golden Ball)';
+    if (locale === 'ru') return 'Бриллиантовый Гранд-Джекпот (5 осн. + Золотой шар)';
+    if (locale === 'ar') return 'الجاكبوت الماسي الكبير (5 كرات رئيسية + الكرة الذهبية)';
+    if (locale === 'es') return 'Gran Jackpot Diamante (5 Principales + Bola Dorada)';
+  }
+
+  // Tier 2: 5 Main
+  if (text.includes('رتبه دوم') || text.includes('رده 2') || text.includes('5 گوی اصلی')) {
+    if (locale === 'en') return 'Tier 2 Prize (5 Main Balls)';
+    if (locale === 'ru') return 'Приз 2-й категории (5 основных шаров)';
+    if (locale === 'ar') return 'المستوى الثاني (5 كرات رئيسية)';
+    if (locale === 'es') return 'Premio Nivel 2 (5 Bolas Principales)';
+  }
+
+  // Tier 3: 4 Main + Golden
+  if (
+    text.includes('رتبه سوم') ||
+    text.includes('رده 3') ||
+    (text.includes('4 گوی') && text.includes('طلایی'))
+  ) {
+    if (locale === 'en') return 'Tier 3 Prize (4 Main + Golden Ball)';
+    if (locale === 'ru') return 'Приз 3-й категории (4 осн. + Золотой шар)';
+    if (locale === 'ar') return 'المستوى الثالث (4 كرات رئيسية + الكرة الذهبية)';
+    if (locale === 'es') return 'Premio Nivel 3 (4 Principales + Bola Dorada)';
+  }
+
+  // Tier 4: 4 Main
+  if (text.includes('رتبه چهارم') || text.includes('رده 4') || text.includes('4 گوی اصلی')) {
+    if (locale === 'en') return 'Tier 4 Prize (4 Main Balls)';
+    if (locale === 'ru') return 'Приз 4-й категории (4 основных шара)';
+    if (locale === 'ar') return 'المستوى الرابع (4 كرات رئيسية)';
+    if (locale === 'es') return 'Premio Nivel 4 (4 Bolas Principales)';
+  }
+
+  // Tier 5: 3 Main + Golden
+  if (
+    text.includes('رتبه پنجم') ||
+    text.includes('رده 5') ||
+    (text.includes('3 گوی') && text.includes('طلایی'))
+  ) {
+    if (locale === 'en') return 'Tier 5 Prize (3 Main + Golden Ball)';
+    if (locale === 'ru') return 'Приз 5-й категории (3 осн. + Золотой шар)';
+    if (locale === 'ar') return 'المستوى الخامس (3 كرات رئيسية + الكرة الذهبية)';
+    if (locale === 'es') return 'Premio Nivel 5 (3 Principales + Bola Dorada)';
+  }
+
+  // Tier 6: 3 Main
+  if (text.includes('رتبه ششم') || text.includes('رده 6') || text.includes('3 گوی اصلی')) {
+    if (locale === 'en') return 'Tier 6 Prize (3 Main Balls)';
+    if (locale === 'ru') return 'Приз 6-й категории (3 основных шара)';
+    if (locale === 'ar') return 'المستوى السادس (3 كرات رئيسية)';
+    if (locale === 'es') return 'Premio Nivel 6 (3 Bolas Principales)';
+  }
+
+  // Tier 7: 2 Main + Golden
+  if (
+    text.includes('رتبه هفتم') ||
+    text.includes('رده 7') ||
+    (text.includes('2 گوی اصلی') && text.includes('طلایی'))
+  ) {
+    if (locale === 'en') return 'Tier 7 Prize (2 Main + Golden Ball)';
+    if (locale === 'ru') return 'Приз 7-й категории (2 осн. + Золотой шар)';
+    if (locale === 'ar') return 'المستوى السابع (كرتان رئيسيتان + الكرة الذهبية)';
+    if (locale === 'es') return 'Premio Nivel 7 (2 Principales + Bola Dorada)';
+  }
+
+  // Tier 8: Golden Ball Match or 2 Main Balls
+  if (text.includes('جایزه گوی طلایی') || text.includes('تطابق طلایی')) {
+    if (locale === 'en') return 'Golden Ball Match Prize (★)';
+    if (locale === 'ru') return 'Приз за совпадение Золотого шара (★)';
+    if (locale === 'ar') return 'جائزة تطابق الكرة الذهبية (★)';
+    if (locale === 'es') return 'Premio por Acierto de Bola Dorada (★)';
+  }
+  if (text.includes('جایزه 2 گوی اصلی') || text.includes('2 گوی اصلی')) {
+    if (locale === 'en') return '2 Main Balls Match Prize';
+    if (locale === 'ru') return 'Приз за 2 основных шара';
+    if (locale === 'ar') return 'جائزة تطابق كرتين رئيسيتين';
+    if (locale === 'es') return 'Premio por 2 Bolas Principales';
+  }
+
+  // No match
+  if (text.includes('بدون تطابق')) {
+    if (locale === 'en') return 'No Prize Match in This Draw';
+    if (locale === 'ru') return 'Без выигрышного совпадения в этом тираже';
+    if (locale === 'ar') return 'لا يوجد تطابق فائز في هذه الجولة';
+    if (locale === 'es') return 'Sin combinación ganadora en este sorteo';
+  }
+
+  return stripResidualPersianForNonRtl(locale, text);
+}
+
+function stripResidualPersianForNonRtl(locale: SupportedLocale, input: string): string {
+  if (locale === 'fa' || locale === 'ar') return input;
+  const ascii = normalizeAsciiDigits(input);
+  if (!/[\u0600-\u06FF]/.test(ascii)) return ascii;
+
+  const dictionary: Array<[RegExp, Record<'en' | 'ru' | 'es', string>]> = [
+    [/لاتاری/g, { en: 'Lottery', ru: 'Лотерея', es: 'Lotería' }],
+    [/قرعه‌کشی|قرعه کشی/g, { en: 'Draw', ru: 'Тираж', es: 'Sorteo' }],
+    [/بلیت|کوپن/g, { en: 'Ticket', ru: 'Билет', es: 'Boleto' }],
+    [/جایزه|پاداش/g, { en: 'Prize', ru: 'Приз', es: 'Premio' }],
+    [/برنده|برد/g, { en: 'Winner', ru: 'Выигрыш', es: 'Premio' }],
+    [/سندیکای گروهی|سندیکا/g, { en: 'Syndicate Squad', ru: 'Синдикат', es: 'Sindicato' }],
+    [/سهم|سهام/g, { en: 'Share', ru: 'Доля', es: 'Acción' }],
+    [/کش‌بک|کشبک|ریک‌بک|ریکبک/g, { en: 'VIP Cashback', ru: 'VIP Кэшбэк', es: 'Cashback VIP' }],
+    [/پورسانت|زیرمجموعه‌گیری|دعوت دوستان|معرف/g, { en: 'Referral Commission', ru: 'Реферальная комиссия', es: 'Comisión de Referidos' }],
+    [/واریز|شارژ/g, { en: 'Deposit', ru: 'Депозит', es: 'Depósito' }],
+    [/برداشت/g, { en: 'Withdrawal', ru: 'Вывод', es: 'Retiro' }],
+    [/برگشت وجه/g, { en: 'Refund Rollback', ru: 'Возврат средств', es: 'Reembolso' }],
+    [/کیف پول/g, { en: 'Wallet', ru: 'Кошелек', es: 'Billetera' }],
+    [/کاربر/g, { en: 'VIP User', ru: 'VIP Игрок', es: 'Usuario VIP' }],
+    [/دور/g, { en: 'Round', ru: 'Раунд', es: 'Ronda' }],
+    [/همین الان/g, { en: 'Just now', ru: 'Только что', es: 'Ahora mismo' }],
+    [/بدون کارمزد/g, { en: 'Zero Fee', ru: 'Без комиссии', es: 'Sin comisión' }],
+    [/خوشآمدگویی|خوش‌آمدگویی/g, { en: 'Welcome', ru: 'Приветственный', es: 'Bienvenida' }],
+    [/ماهانه/g, { en: 'Monthly', ru: 'Ежемесячный', es: 'Mensual' }],
+    [/طلایی/g, { en: 'Golden', ru: 'Золотой', es: 'Dorado' }],
+    [/اصلی/g, { en: 'Main', ru: 'Основной', es: 'Principal' }],
+    [/گوی/g, { en: 'Ball', ru: 'Шар', es: 'Bola' }],
+    [/طبقه/g, { en: 'Floor', ru: 'Этаж', es: 'Piso' }],
+    [/مرجع/g, { en: 'Ref', ru: 'Реф', es: 'Ref' }],
+    [/رایگان/g, { en: 'Free', ru: 'Бесплатно', es: 'Gratis' }],
+  ];
+
+  let cleaned = ascii;
+  for (const [regex, map] of dictionary) {
+    cleaned = cleaned.replace(regex, map[locale]);
+  }
+  cleaned = cleaned
+    .replace(/[\u0600-\u06FF\u200C]+/g, ' ')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return cleaned || 'Verified PAM Transaction';
+}
+
+const KNOWN_LOCALE_CODES = new Set(['fa', 'en', 'ru', 'ar', 'es', 'FA', 'EN', 'RU', 'AR', 'ES']);
+
+/**
+ * Universal PAM Wallet Transaction Description Localizer.
+ * Supports both `(description, meta, locale)` and `(locale, description, meta)` call signatures.
+ * Ensures 100% of wallet ledger notes (Deposits, Withdrawals, Rollbacks, Ticket Purchases,
+ * Regular Lottery Wins, Syndicate Pro-Rata Wins, Welcome $1,000 Wins, Monthly VIP Wins,
+ * 3% Cashback Claims, 2% Referral Claims, and Mini-Game bets/wins) render in the active language (`fa`, `en`, `ru`, `ar`, `es`).
+ */
+export function localizeTransactionDescription(
+  descriptionOrLang: string | Language | undefined,
+  metaOrDescription?: Record<string, any> | string | null,
+  maybeLocale?: Language | string
+): string {
+  let rawDescription = '';
+  let meta: Record<string, any> | undefined;
+  let targetLocaleRaw: Language | string | undefined = maybeLocale;
+
+  if (maybeLocale !== undefined) {
+    rawDescription = String(descriptionOrLang || '');
+    meta = typeof metaOrDescription === 'object' && metaOrDescription ? metaOrDescription : undefined;
+    targetLocaleRaw = maybeLocale;
+  } else if (
+    typeof metaOrDescription === 'string' &&
+    KNOWN_LOCALE_CODES.has(metaOrDescription.trim()) &&
+    !KNOWN_LOCALE_CODES.has(String(descriptionOrLang || '').trim())
+  ) {
+    rawDescription = String(descriptionOrLang || '');
+    targetLocaleRaw = metaOrDescription;
+  } else if (
+    typeof descriptionOrLang === 'string' &&
+    KNOWN_LOCALE_CODES.has(descriptionOrLang.trim()) &&
+    typeof metaOrDescription === 'string'
+  ) {
+    targetLocaleRaw = descriptionOrLang;
+    rawDescription = metaOrDescription;
+  } else {
+    rawDescription = String(descriptionOrLang || '');
+    meta = typeof metaOrDescription === 'object' && metaOrDescription ? metaOrDescription : undefined;
+    targetLocaleRaw = 'fa';
+  }
+
+  const locale = normalizeLocale(targetLocaleRaw);
+  const raw = rawDescription.trim();
+  if (!raw && !meta) return '';
+  if (locale === 'fa') return raw;
+
+  const text = normalizeAsciiDigits(raw);
+
+  // 0. Structured Metadata Fast-Path (if meta.txCategory is provided)
+  if (meta && typeof meta.txCategory === 'string') {
+    const cat = meta.txCategory.toUpperCase();
+    const roundCode = meta.roundCode || '#LDR-8493';
+    const ticketCode = meta.ticketCode || '';
+    const ticketCount = meta.ticketCount || 1;
+    const gameName = meta.gameName || meta.gameId || 'Mini-Game';
+    const syndicateId = meta.syndicateId || 'SYN';
+    const tierLocalized = meta.tier ? localizeTierLabel(locale, String(meta.tier)) : '';
+
+    if (cat === 'TICKET_PURCHASE') {
+      if (locale === 'en') return `Lottery Ticket Purchase (${ticketCount} slip(s) • Round ${roundCode})`;
+      if (locale === 'ru') return `Покупка лотерейных билетов (${ticketCount} шт. • Раунд ${roundCode})`;
+      if (locale === 'ar') return `شراء تذاكر يانصيب (${ticketCount} تذكرة • الجولة ${roundCode})`;
+      if (locale === 'es') return `Compra de Boletos de Lotería (${ticketCount} boleto(s) • Ronda ${roundCode})`;
+    }
+    if (cat === 'LOTTERY_WIN') {
+      if (locale === 'en') return `85% Prize Pool Win Payout for Slip ${ticketCode} (${tierLocalized}) in ${roundCode}`;
+      if (locale === 'ru') return `Выплата выигрыша из 85% пула по билету ${ticketCode} (${tierLocalized}) в ${roundCode}`;
+      if (locale === 'ar') return `تسوية جائزة الفوز من مجمع 85% للتذكرة ${ticketCode} (${tierLocalized}) في ${roundCode}`;
+      if (locale === 'es') return `Pago de Premio del Pozo 85% para Boleto ${ticketCode} (${tierLocalized}) en ${roundCode}`;
+    }
+    if (cat === 'SYNDICATE_WIN') {
+      if (locale === 'en') return `Syndicate Squad Pro-Rata Prize Share (#${syndicateId})`;
+      if (locale === 'ru') return `Доля выигрыша группового синдиката (#${syndicateId})`;
+      if (locale === 'ar') return `حصة الفوز في النقابة الجماعية (#${syndicateId})`;
+      if (locale === 'es') return `Cuota de Premio Pro-Rata de Sindicato (#${syndicateId})`;
+    }
+    if (cat === 'WELCOME_WIN') {
+      if (locale === 'en') return `🎉 $1,000 Welcome Grand Lottery Prize for Slip ${ticketCode} (${tierLocalized})`;
+      if (locale === 'ru') return `🎉 Приз Приветственной лотереи $1,000 по билету ${ticketCode} (${tierLocalized})`;
+      if (locale === 'ar') return `🎉 جائزة يانصيب الترحيب 1,000$ للتذكرة ${ticketCode} (${tierLocalized})`;
+      if (locale === 'es') return `🎉 Premio Gran Sorteo de Bienvenida $1,000 para Boleto ${ticketCode} (${tierLocalized})`;
+    }
+    if (cat === 'MONTHLY_VIP_WIN') {
+      if (locale === 'en') return `👑 Monthly VIP Super-Jackpot Prize for Slip ${ticketCode} (${tierLocalized})`;
+      if (locale === 'ru') return `👑 Приз Ежемесячного VIP Супер-Джекпота по билету ${ticketCode} (${tierLocalized})`;
+      if (locale === 'ar') return `👑 جائزة السحب الشهري الكبير VIP للتذكرة ${ticketCode} (${tierLocalized})`;
+      if (locale === 'es') return `👑 Premio Súper Jackpot Mensual VIP para Boleto ${ticketCode} (${tierLocalized})`;
+    }
+    if (cat === 'CASHBACK_CLAIM') {
+      if (locale === 'en') return `Instant 3% VIP Cashback & Rakeback Vault Claim`;
+      if (locale === 'ru') return `Мгновенный вывод 3% VIP кэшбэка и рейкбека`;
+      if (locale === 'ar') return `سحب فوري لخزنة الاسترداد النقدي VIP 3%`;
+      if (locale === 'es') return `Retiro Instantáneo de Bóveda de Cashback VIP 3%`;
+    }
+    if (cat === 'REFERRAL_CLAIM') {
+      if (locale === 'en') return `Instant 2% Referral Commission Claim to Main Wallet (Zero Fee)`;
+      if (locale === 'ru') return `Мгновенный вывод 2% реферальной комиссии на кошелек (Без комиссии)`;
+      if (locale === 'ar') return `سحب فوري لعمولة الإحالة 2% إلى المحفظة (بدون رسوم)`;
+      if (locale === 'es') return `Retiro Instantáneo de Comisión de Referidos 2% (Sin comisión)`;
+    }
+    if (cat === 'MINIGAME_BET') {
+      if (locale === 'en') return `Instant Mini-Game Wager • ${gameName} (${roundCode})`;
+      if (locale === 'ru') return `Ставка в мини-игре • ${gameName} (${roundCode})`;
+      if (locale === 'ar') return `رهان لعبة فورية • ${gameName} (${roundCode})`;
+      if (locale === 'es') return `Apuesta en Mini-Juego • ${gameName} (${roundCode})`;
+    }
+    if (cat === 'MINIGAME_WIN') {
+      const mult = meta.multiplier ? `${meta.multiplier}x` : '';
+      if (locale === 'en') return `Instant Mini-Game Win Payout • ${gameName} ${mult} (${roundCode})`.trim();
+      if (locale === 'ru') return `Выигрыш в мини-игре • ${gameName} ${mult} (${roundCode})`.trim();
+      if (locale === 'ar') return `ربح لعبة فورية • ${gameName} ${mult} (${roundCode})`.trim();
+      if (locale === 'es') return `Premio de Mini-Juego • ${gameName} ${mult} (${roundCode})`.trim();
+    }
+  }
+
+  // 1. Regular Lottery Draw Win Payout:
+  // "تسویه راس تایم استخر ۸۵٪ برای کوپن TKT-123 (رتبه ششم (۳ گوی اصلی)) در دور #LDR-8493"
+  if (text.includes('تسویه راس تایم استخر') || (text.includes('برای کوپن') && text.includes('در دور'))) {
+    const ticketMatch = text.match(/برای کوپن\s+([A-Za-z0-9_-]+)/);
+    const roundMatch = text.match(/در دور\s+(#[A-Za-z0-9_-]+)/);
+    const tierMatch = text.match(/برای کوپن\s+[A-Za-z0-9_-]+\s*\((.+)\)\s*در دور/);
+    const ticketCode = ticketMatch ? ticketMatch[1] : 'SLIP';
+    const roundCode = roundMatch ? roundMatch[1] : '#LDR';
+    const tierLocalized = tierMatch ? localizeTierLabel(locale, tierMatch[1]) : localizeTierLabel(locale, 'جایزه');
+    if (locale === 'en') return `85% Prize Pool Win Payout for Slip ${ticketCode} (${tierLocalized}) in Round ${roundCode}`;
+    if (locale === 'ru') return `Выплата выигрыша (85% пул) по билету ${ticketCode} (${tierLocalized}) в раунде ${roundCode}`;
+    if (locale === 'ar') return `تسوية جائزة الفوز من مجمع 85% للتذكرة ${ticketCode} (${tierLocalized}) في الجولة ${roundCode}`;
+    if (locale === 'es') return `Pago de Premio (Pozo 85%) para Boleto ${ticketCode} (${tierLocalized}) en Ronda ${roundCode}`;
+  }
+
+  // 1B. Generic Lottery Win / Prize Claim:
+  if (
+    text.includes('جایزه برنده لاتاری') ||
+    text.includes('برد قرعه‌کشی') ||
+    text.includes('تسویه جایزه کوپن برنده')
+  ) {
+    const ticketMatch = text.match(/([A-Z]{2,5}-[0-9A-Za-z-]+)/);
+    const roundMatch = text.match(/(#[A-Za-z0-9_-]+)/);
+    const codeStr = ticketMatch ? ` ${ticketMatch[1]}` : roundMatch ? ` ${roundMatch[1]}` : '';
+    if (locale === 'en') return `Lottery Prize Payout${codeStr} Credited to Wallet`;
+    if (locale === 'ru') return `Выплата выигрыша лотереи${codeStr} на кошелек`;
+    if (locale === 'ar') return `إيداع جائزة الفوز في اليانصيب${codeStr} في المحفظة`;
+    if (locale === 'es') return `Premio de Lotería${codeStr} Acreditado en Billetera`;
+  }
+
+  // 2. Syndicate Pro-Rata Win:
+  if (text.includes('سهم برنده سندیکای گروهی') || (text.includes('سهم برنده') && text.includes('سندیکا'))) {
+    const synMatch = text.match(/\((#[A-Za-z0-9_-]+)\)/) || text.match(/(#[A-Za-z0-9_-]+)/);
+    const synId = synMatch ? synMatch[1] : '#SYNDICATE';
+    if (locale === 'en') return `Syndicate Squad Pro-Rata Prize Share (${synId})`;
+    if (locale === 'ru') return `Пропорциональная доля выигрыша синдиката (${synId})`;
+    if (locale === 'ar') return `حصة الفوز النسبية في النقابة الجماعية (${synId})`;
+    if (locale === 'es') return `Cuota de Premio Pro-Rata del Sindicato (${synId})`;
+  }
+
+  // 3. Welcome $1,000 Grand Lottery Win:
+  if (text.includes('جایزه لاتاری ویژه خوشآمدگویی') || (text.includes('خوشآمدگویی') && text.includes('جایزه'))) {
+    const ticketMatch = text.match(/برای بلیت\s+([A-Za-z0-9_-]+)/);
+    const tierMatch = text.match(/برای بلیت\s+[A-Za-z0-9_-]+\s*\((.+)\)$/);
+    const ticketCode = ticketMatch ? ticketMatch[1] : '#LD-WELCOME-1000';
+    const tierLocalized = tierMatch ? ` (${localizeTierLabel(locale, tierMatch[1])})` : '';
+    if (locale === 'en') return `🎉 $1,000 Welcome Grand Lottery Prize for Slip ${ticketCode}${tierLocalized}`;
+    if (locale === 'ru') return `🎉 Приз Приветственной лотереи $1,000 по билету ${ticketCode}${tierLocalized}`;
+    if (locale === 'ar') return `🎉 جائزة يانصيب الترحيب 1,000$ للتذكرة ${ticketCode}${tierLocalized}`;
+    if (locale === 'es') return `🎉 Premio Sorteo de Bienvenida $1,000 para Boleto ${ticketCode}${tierLocalized}`;
+  }
+
+  // 4. Monthly VIP Super-Jackpot Win:
+  if (text.includes('جایزه جک‌پات مطلق ماهانه VIP') || (text.includes('ماهانه VIP') && text.includes('جایزه'))) {
+    const ticketMatch = text.match(/برای بلیت\s+([A-Za-z0-9_-]+)/);
+    const ticketCode = ticketMatch ? ticketMatch[1] : '#LD-MONTHLY-VIP';
+    if (locale === 'en') return `👑 Monthly VIP Super-Jackpot Prize for Slip ${ticketCode} (Tier-1 6-Ball Match)`;
+    if (locale === 'ru') return `👑 Приз Ежемесячного VIP Супер-Джекпота по билету ${ticketCode} (6 из 6 шаров)`;
+    if (locale === 'ar') return `👑 جائزة السحب الشهري الكبير VIP للتذكرة ${ticketCode} (تطابق 6 كرات)`;
+    if (locale === 'es') return `👑 Premio Súper Jackpot Mensual VIP para Boleto ${ticketCode} (6 Bolas Exactas)`;
+  }
+
+  // 5. Syndicate Share Purchase:
+  if (text.includes('سهم در سندیکای گروهی') || (text.includes('خرید') && text.includes('سندیکا'))) {
+    const sharesMatch = text.match(/خرید\s+(\d+)\s+سهم/);
+    const synIdMatch = text.match(/\((#[A-Za-z0-9_-]+)\)/);
+    const roundMatch = text.match(/برای دور\s+(#[A-Za-z0-9_-]+)/);
+    const shares = sharesMatch ? sharesMatch[1] : '1';
+    const synId = synIdMatch ? synIdMatch[1] : '#SYN';
+    const roundCode = roundMatch ? roundMatch[1] : '#LDR-8493';
+    if (locale === 'en') return `Purchased ${shares} Share(s) in Syndicate Squad (${synId}) for Round ${roundCode}`;
+    if (locale === 'ru') return `Покупка ${shares} долей в групповом синдикате (${synId}) для раунда ${roundCode}`;
+    if (locale === 'ar') return `شراء ${shares} حصة في النقابة الجماعية (${synId}) للجولة ${roundCode}`;
+    if (locale === 'es') return `Compra de ${shares} Acción(es) en Sindicato Grupal (${synId}) para Ronda ${roundCode}`;
+  }
+
+  // 6. Regular Lottery Ticket Purchase:
+  if (text.includes('خرید') && (text.includes('بلیت') || text.includes('کوپن'))) {
+    const countMatch = text.match(/خرید\s+(\d+)\s+(?:بلیت|کوپن)/);
+    const roundMatch = text.match(/در دور\s+(#[A-Za-z0-9_-]+)/) || text.match(/(#[A-Za-z0-9_-]+)/);
+    const amtMatch = text.match(/\(([0-9.,]+\s*(?:TON|⭐\s*Stars|Stars|⭐))/i);
+    const count = countMatch ? countMatch[1] : '1';
+    const roundCode = roundMatch ? ` in ${roundMatch[1]}` : '';
+    const amtInfo = amtMatch ? ` (${amtMatch[1]} • 85% Prize Pool)` : ' (85% Prize Pool)';
+    if (locale === 'en') return `Lottery Ticket Purchase (${count} slip(s))${roundCode}${amtInfo}`;
+    if (locale === 'ru') return `Покупка лотерейных билетов (${count} шт.)${roundCode}${amtInfo.replace('Prize Pool', 'в призовой пул')}`;
+    if (locale === 'ar') return `شراء تذاكر يانصيب (${count} تذكرة)${roundCode}${amtInfo.replace('Prize Pool', 'مجمع الجوائز')}`;
+    if (locale === 'es') return `Compra de Boletos de Lotería (${count} boleto(s))${roundCode}${amtInfo.replace('Prize Pool', 'al Pozo')}`;
+  }
+
+  // 7. 3% Cashback & 1.5% Rakeback Vault Claim:
+  if (
+    text.includes('کشبک') ||
+    text.includes('کش‌بک') ||
+    text.includes('ریکبک') ||
+    text.includes('ریک‌بک')
+  ) {
+    const parenMatch = text.match(/\(([^)]+)\)/);
+    const amtSuffix = parenMatch ? ` (${parenMatch[1]})` : '';
+    const icon = text.startsWith('⭐') ? '⭐ ' : '💎 ';
+    if (locale === 'en') return `${icon}Instant VIP Cashback & Rakeback Vault Claim to Wallet${amtSuffix}`;
+    if (locale === 'ru') return `${icon}Мгновенный вывод VIP кэшбэка и рейкбека на кошелек${amtSuffix}`;
+    if (locale === 'ar') return `${icon}سحب فوري لخزنة الاسترداد النقدي VIP إلى المحفظة${amtSuffix}`;
+    if (locale === 'es') return `${icon}Retiro Instantáneo de Bóveda Cashback VIP a Billetera${amtSuffix}`;
+  }
+
+  // 8. 2% Referral Commission Claim:
+  if (
+    text.includes('پورسانت دعوت') ||
+    text.includes('پورسانت زیرمجموعه') ||
+    text.includes('پورسانت رفرال') ||
+    text.includes('برداشت پورسانت')
+  ) {
+    const amtMatch = text.match(/([0-9.,]+\s*(?:TON|⭐\s*Stars|Stars|⭐))/i);
+    const amtStr = amtMatch ? ` (${amtMatch[1]} • Zero Fee)` : ' (Zero Fee)';
+    if (locale === 'en') return `Instant Referral Commission Claim to Wallet${amtStr}`;
+    if (locale === 'ru') return `Мгновенный вывод реферальной комиссии на кошелек${amtStr.replace('Zero Fee', 'Без комиссии')}`;
+    if (locale === 'ar') return `سحب فوري لعمولة الإحالة إلى المحفظة${amtStr.replace('Zero Fee', 'بدون رسوم')}`;
+    if (locale === 'es') return `Retiro Instantáneo de Comisión de Referidos a Billetera${amtStr.replace('Zero Fee', 'Sin comisión')}`;
+  }
+
+  // 9. Mini-Game Bet / Session Start:
+  if (text.includes('شرط بازی آنی') || text.includes('شروع نشست بازی')) {
+    const isSession = text.includes('شروع نشست بازی');
+    const match = text.match(/(?:شرط بازی آنی|شروع نشست بازی)\s+([A-Za-z0-9_]+)\s*\(([^)]+)\)/);
+    if (match) {
+      const gameId = match[1];
+      const details = match[2];
+      if (locale === 'en') return `${isSession ? 'Game Session Start' : 'Instant Game Wager'} • ${gameId} (${details})`;
+      if (locale === 'ru') return `${isSession ? 'Старт игровой сессии' : 'Ставка в быстрой игре'} • ${gameId} (${details})`;
+      if (locale === 'ar') return `${isSession ? 'بدء جلسة لعبة' : 'رهان لعبة فورية'} • ${gameId} (${details})`;
+      if (locale === 'es') return `${isSession ? 'Inicio de Sesión de Juego' : 'Apuesta en Juego Instantáneo'} • ${gameId} (${details})`;
+    }
+  }
+
+  // 10. Mini-Game Win / Cashout:
+  if (text.includes('تسویه ضریب')) {
+    const match = text.match(/تسویه ضریب\s+([A-Za-z0-9_]+)\s*\(([^)]+)\)(?:\s*—\s*مرجع:\s*([A-Za-z0-9_-]+))?/);
+    if (match) {
+      const gameId = match[1];
+      const details = match[2];
+      const ref = match[3] ? ` — Ref: ${match[3]}` : '';
+      if (locale === 'en') return `Multiplier Win Payout • ${gameId} (${details})${ref}`;
+      if (locale === 'ru') return `Выплата по множителю • ${gameId} (${details})${ref.replace('Ref:', 'Реф:')}`;
+      if (locale === 'ar') return `تسوية مضاعف الفوز • ${gameId} (${details})${ref.replace('Ref:', 'مرجع:')}`;
+      if (locale === 'es') return `Pago de Multiplicador • ${gameId} (${details})${ref}`;
+    }
+  }
+
+  if (text.includes('برد کامل Mines') || text.includes('برداشت موفق Mines')) {
+    const isFull = text.includes('برد کامل');
+    const parenMatch = text.match(/\(([^)]+)\)/);
+    const details = parenMatch ? ` (${parenMatch[1]})` : '';
+    if (locale === 'en') return `${isFull ? 'Mines Full Board Clear Win' : 'Mines Successful Cashout'}${details}`;
+    if (locale === 'ru') return `${isFull ? 'Полная победа в Mines' : 'Успешный кэшаут в Mines'}${details}`;
+    if (locale === 'ar') return `${isFull ? 'فوز كامل في Mines' : 'سحب أرباح ناجح في Mines'}${details}`;
+    if (locale === 'es') return `${isFull ? 'Victoria Total en Mines' : 'Retiro Exitoso en Mines'}${details}`;
+  }
+
+  if (text.includes('Tower 3D')) {
+    const isFull = text.includes('فتح کامل');
+    const parenMatch = text.match(/\(([^)]+)\)/);
+    const details = parenMatch
+      ? ` (${parenMatch[1].replace('طبقه', locale === 'ru' ? 'Этаж' : locale === 'ar' ? 'طابق' : locale === 'es' ? 'Piso' : 'Floor')})`
+      : '';
+    if (locale === 'en') return `${isFull ? 'Tower 3D Full Summit Clear' : 'Tower 3D Cashout Win'}${details}`;
+    if (locale === 'ru') return `${isFull ? 'Покорение вершины Tower 3D' : 'Успешный кэшаут Tower 3D'}${details}`;
+    if (locale === 'ar') return `${isFull ? 'إتمام برج الكريستال Tower 3D' : 'سحب أرباح Tower 3D'}${details}`;
+    if (locale === 'es') return `${isFull ? 'Cima Completa en Tower 3D' : 'Retiro Exitoso en Tower 3D'}${details}`;
+  }
+
+  // 11. Deposits (TON On-Chain & Stars & Admin Approved):
+  if (
+    text.includes('شارژ آنی تاییدشده بلاکچین TON') ||
+    text.includes('واریز آن‌چین تاییدشده TON') ||
+    text.includes('تایید حواله واریز')
+  ) {
+    const parenMatch = text.match(/\(([^)]+)\)/);
+    const details = parenMatch ? ` (${parenMatch[1]})` : '';
+    if (locale === 'en') return `Verified On-Chain TON Deposit${details}`;
+    if (locale === 'ru') return `Подтвержденный ончейн-депозит TON${details}`;
+    if (locale === 'ar') return `إيداع TON موثق عبر البلوكتشين${details}`;
+    if (locale === 'es') return `Depósito TON On-Chain Verificado${details}`;
+  }
+  if (text.includes('شارژ خودکار') && text.includes('Stars')) {
+    const starsMatch = text.match(/(\d+)\s*⭐/);
+    const parenMatch = text.match(/\(([^)]+)\)/);
+    const starsCount = starsMatch ? starsMatch[1] : '';
+    const code = parenMatch ? ` (${parenMatch[1]})` : '';
+    if (locale === 'en') return `Instant Telegram Stars Deposit (${starsCount} ⭐)${code}`;
+    if (locale === 'ru') return `Мгновенное пополнение Telegram Stars (${starsCount} ⭐)${code}`;
+    if (locale === 'ar') return `شحن فوري لنجوم تلغرام (${starsCount} ⭐)${code}`;
+    if (locale === 'es') return `Recarga Instantánea de Telegram Stars (${starsCount} ⭐)${code}`;
+  }
+
+  // 12. Withdrawals & Rollbacks:
+  if (text.includes('برگشت وجه درخواست برداشت') || text.includes('برگشت وجه برداشت ردشده')) {
+    const codeMatch = text.match(/\(([^)]+)\)/);
+    const code = codeMatch ? ` (${codeMatch[1]})` : '';
+    if (locale === 'en') return `Atomic Refund Rollback for Rejected Withdrawal${code}`;
+    if (locale === 'ru') return `Атомарный возврат средств по отклоненной заявке на вывод${code}`;
+    if (locale === 'ar') return `استرداد تلقائي لطلب السحب المرفوض${code}`;
+    if (locale === 'es') return `Reembolso Atómico por Retiro Rechazado${code}`;
+  }
+  if (text.includes('برداشت اتوماتیک آنی شبکه TON') || text.includes('برداشت مبلغ بالا')) {
+    const isPending = text.includes('در انتظار تایید ادمین');
+    const matches = [...text.matchAll(/\(([^)]+)\)/g)].map((m) => m[1]);
+    const info = matches.length > 0 ? ` (${matches.join(' • ')})` : '';
+    if (locale === 'en') {
+      return isPending
+        ? `High-Value TON Withdrawal — Pending Security Review${info}`
+        : `Instant On-Chain TON Withdrawal${info}`;
+    }
+    if (locale === 'ru') {
+      return isPending
+        ? `Крупный вывод TON — На проверке безопасности${info}`
+        : `Мгновенный ончейн-вывод TON${info}`;
+    }
+    if (locale === 'ar') {
+      return isPending
+        ? `سحب TON بمبلغ كبير — قيد مراجعة الأمان${info}`
+        : `سحب فوري عبر شبكة TON${info}`;
+    }
+    if (locale === 'es') {
+      return isPending
+        ? `Retiro TON de Alto Valor — En Revisión de Seguridad${info}`
+        : `Retiro TON On-Chain Instantáneo${info}`;
+    }
+  }
+  if (text.includes('برداشت آنی ستاره تلگرام')) {
+    const starsMatch = text.match(/([0-9,]+\s*⭐)/);
+    const destMatch = text.match(/به مقصد\s+([^\s)]+)/);
+    const wdMatch = text.match(/\((WDS?-[^)]+)\)/);
+    const detail = `${starsMatch ? starsMatch[1] : 'Stars'}${destMatch ? ` -> ${destMatch[1]}` : ''}${wdMatch ? ` • ${wdMatch[1]}` : ''}`;
+    if (locale === 'en') return `Instant Telegram Stars Withdrawal (${detail})`;
+    if (locale === 'ru') return `Мгновенный вывод Telegram Stars (${detail})`;
+    if (locale === 'ar') return `سحب فوري لنجوم تلغرام (${detail})`;
+    if (locale === 'es') return `Retiro Instantáneo de Telegram Stars (${detail})`;
+  }
+
+  // 13. Loyalty Chest & Welcome Bonus & Admin Adjustments:
+  if (text.includes('پاداش صندوقچه وفاداری طلایی')) {
+    if (locale === 'en') return 'Golden VIP Loyalty Chest Reward (3% Rollover Reserve)';
+    if (locale === 'ru') return 'Награда Золотого VIP сундука лояльности (3% резерв)';
+    if (locale === 'ar') return 'مكافأة صندوق الولاء الذهبي VIP (احتياطي 3%)';
+    if (locale === 'es') return 'Premio Cofre de Lealtad Dorado VIP (Reserva 3%)';
+  }
+  if (text.includes('پاداش خوش‌آمدگویی') || text.includes('موجودی اولیه')) {
+    if (locale === 'en') return 'Welcome Bonus & Initial TMA Balance';
+    if (locale === 'ru') return 'Приветственный бонус и начальный баланс TMA';
+    if (locale === 'ar') return 'مكافأة الترحيب والرصيد الابتدائي';
+    if (locale === 'es') return 'Bono de Bienvenida y Saldo Inicial TMA';
+  }
+  if (text.startsWith('ADMIN_ADJUSTMENT')) {
+    const cleaned = text.replace(/توسط ادمین/g, 'by Admin');
+    return stripResidualPersianForNonRtl(locale, cleaned);
+  }
+
+  return stripResidualPersianForNonRtl(locale, text);
+}
+
+/**
+ * Localizes dynamic server-generated Persian strings (round titles, quest names, user defaults, syndicate names,
+ * PAM ledger notes, prize tier labels, draw winner summaries, and API messages/errors)
+ * into the active language so non-Persian users never see raw Persian strings.
+ */
+export function localizeServerText(
+  lang: Language | string | undefined,
+  rawText: string,
+  meta?: Record<string, any>
+): string {
+  const locale = normalizeLocale(lang);
+  const raw = String(rawText || '').trim();
+  if (!raw || locale === 'fa') return raw;
+
+  const text = normalizeAsciiDigits(raw);
+
+  // 1. Default preview & server user names
+  if (
+    text === 'کاربر' ||
+    text === 'کاربر VIP' ||
+    text === 'کاربر تلگرام' ||
+    text === 'کاربر خوش‌شانس LuckyDrop' ||
+    text === 'کاربر وفادار VIP' ||
+    text === 'کاربر برنده LuckyDrop' ||
+    /^کاربر\s*#?\d+$/.test(text)
+  ) {
+    const numMatch = text.match(/#?(\d+)/);
+    const suffix = numMatch ? ` #${numMatch[1]}` : '';
+    if (locale === 'en') return `VIP Member${suffix}`;
+    if (locale === 'ru') return `VIP Игрок${suffix}`;
+    if (locale === 'ar') return `عضو VIP${suffix}`;
+    if (locale === 'es') return `Miembro VIP${suffix}`;
+  }
+
+  if (text === 'همین الان' || text.startsWith('همین الان')) {
+    if (locale === 'en') return 'Just now';
+    if (locale === 'ru') return 'Только что';
+    if (locale === 'ar') return 'الآن';
+    if (locale === 'es') return 'Ahora mismo';
+  }
+
+  // 2. Official Brand Title
   if (text.includes('لاتاری و بازی‌های آنی اثبات‌پذیر بلاکچین TON') || text.includes('لاتاری بلاکچینی')) {
     if (locale === 'en') return 'LuckyDrop Official • Provably Fair TON Blockchain Lottery & Games';
     if (locale === 'ru') return 'LuckyDrop Official • Честная лотерея и игры в блокчейне TON';
@@ -1567,7 +2166,19 @@ export function localizeServerText(lang: Language | string | undefined, rawText:
     if (locale === 'es') return 'LuckyDrop Official • Lotería y Juegos Provably Fair en TON';
   }
 
-  // Round titles (covering both MULTI_LOTTERY_SPECS and server DB titles)
+  // 3. Round titles (including Monthly VIP & Welcome $1,000)
+  if (text.includes('ابر جک‌پات ماهانه وفاداری') || text.includes('Monthly VIP Super-Jackpot')) {
+    if (locale === 'en') return '👑 Monthly VIP Super-Jackpot Vault';
+    if (locale === 'ru') return '👑 Ежемесячный VIP Супер-Джекпот';
+    if (locale === 'ar') return '👑 خزنة الجائزة الشهرية الكبرى VIP';
+    if (locale === 'es') return '👑 Bóveda Súper Jackpot Mensual VIP';
+  }
+  if (text.includes('لاتاری ویژه خوشآمدگویی') || text.includes('Welcome $1,000 Grand Draw')) {
+    if (locale === 'en') return '🎉 Welcome $1,000 Grand Lottery';
+    if (locale === 'ru') return '🎉 Приветственный Гранд-розыгрыш $1,000';
+    if (locale === 'ar') return '🎉 يانصيب الترحيب الكبير 1,000$';
+    if (locale === 'es') return '🎉 Gran Sorteo de Bienvenida $1,000';
+  }
   if (
     text.includes('مگا جک‌پات هفتگی') ||
     text.includes('جک‌پات بزرگ TON') ||
@@ -1604,7 +2215,7 @@ export function localizeServerText(lang: Language | string | undefined, rawText:
     if (locale === 'es') return 'Pozo Especial Ballenas TON';
   }
 
-  // Syndicate Squad Names
+  // 4. Syndicate Squad Names
   if (text.includes('نهنگ‌های طلایی TON')) {
     if (locale === 'en') return 'Golden TON Whales';
     if (locale === 'ru') return 'Золотые Киты TON';
@@ -1618,41 +2229,121 @@ export function localizeServerText(lang: Language | string | undefined, rawText:
     if (locale === 'es') return 'Sindicato Diamante VIP';
   }
 
-  // PAM Ledger notes
-  if (text.includes('پاداش خوش‌آمدگویی') || text.includes('موجودی اولیه')) {
-    if (locale === 'en') return 'Welcome Bonus & Initial TMA Balance';
-    if (locale === 'ru') return 'Приветственный бонус и начальный баланс TMA';
-    if (locale === 'ar') return 'مكافأة الترحيب والرصيد الابتدائي';
-    if (locale === 'es') return 'Bono de Bienvenida y Saldo Inicial TMA';
-  }
-  if (text.includes('خرید') && text.includes('بلیت')) {
-    if (locale === 'en') return 'Lottery Ticket Mint (85% Prize Pool)';
-    if (locale === 'ru') return 'Покупка лотерейного билета (85% в пул)';
-    if (locale === 'ar') return 'شراء تذكرة يانصيب (85% لمجمع الجوائز)';
-    if (locale === 'es') return 'Compra de Boleto de Lotería (85% al Pozo)';
-  }
-  if (text.includes('کش‌بک') || text.includes('ریک‌بک')) {
-    if (locale === 'en') return 'Instant VIP Cashback Vault Claim';
-    if (locale === 'ru') return 'Вывод мгновенного VIP кэшбэка';
-    if (locale === 'ar') return 'سحب الاسترداد النقدي الفوري VIP';
-    if (locale === 'es') return 'Retiro de Bóveda de Reembolso VIP';
-  }
-
-  // Growth Quests
+  // 5. Growth Quests
   if (text.includes('عضویت در کانال رسمی')) {
-    return tr(lang, text, 'Join Official LuckyDrop Telegram Channel');
+    return tr(lang, raw, 'Join Official LuckyDrop Telegram Channel');
   }
   if (text.includes('اولین مشارکت در سندیکای گروهی')) {
-    return tr(lang, text, 'First Syndicate Squad Share');
+    return tr(lang, raw, 'First Syndicate Squad Share');
   }
   if (text.includes('سفیر فعال')) {
-    return tr(lang, text, 'Active Ambassador (Invite 1 Active Buyer)');
+    return tr(lang, raw, 'Active Ambassador (Invite 1 Active Buyer)');
   }
   if (text.includes('لیدر VIP')) {
-    return tr(lang, text, 'VIP Referral Leader (Invite 5 Active Buyers)');
+    return tr(lang, raw, 'VIP Referral Leader (Invite 5 Active Buyers)');
   }
 
-  return text;
+  // 6. Draw Winner Summaries (`lastWinnerSummary`)
+  if (text.includes('بدون برنده جک‌پات 6 گوی') || text.includes('به ماه بعد منتقل شد')) {
+    const tonMatch = text.match(/([0-9.,]+\s*TON)/);
+    const tonStr = tonMatch ? tonMatch[1] : 'Pool';
+    if (locale === 'en') return `No 6-Ball Jackpot Winner (All-or-Nothing) — 100% of Pool (${tonStr}) Rolled Over to Next Month!`;
+    if (locale === 'ru') return `Нет победителя 6 шаров (All-or-Nothing) — 100% пула (${tonStr}) перенесено на следующий месяц!`;
+    if (locale === 'ar') return `لا يوجد فائز بـ 6 كرات (الكل أو لا شيء) — تم ترحيل 100% من المجمع (${tonStr}) للشهر القادم!`;
+    if (locale === 'es') return `Sin ganador de 6 bolas (Todo o Nada) — ¡El 100% del pozo (${tonStr}) pasa al próximo mes!`;
+  }
+  if (text.includes('برنده جک‌پات مطلق 6 گوی VIP')) {
+    const winMatch = text.match(/(\d+)\s*برنده/);
+    const tonMatch = text.match(/([0-9.,]+\s*TON)/);
+    const cnt = winMatch ? winMatch[1] : '1';
+    const tonStr = tonMatch ? tonMatch[1] : '';
+    if (locale === 'en') return `👑 ${cnt} Tier-1 Monthly VIP Jackpot Winner(s) (${tonStr} Paid Out)`;
+    if (locale === 'ru') return `👑 ${cnt} победителей Ежемесячного VIP Джекпота (выплачено ${tonStr})`;
+    if (locale === 'ar') return `👑 ${cnt} فائز بالجاكبوت الشهري VIP (تم دفع ${tonStr})`;
+    if (locale === 'es') return `👑 ${cnt} Ganador(es) del Jackpot Mensual VIP (${tonStr} Pagados)`;
+  }
+  if (text.includes('برنده لاتاری خوشآمدگویی')) {
+    const winMatch = text.match(/(\d+)\s*برنده/);
+    const tonMatch = text.match(/([0-9.,]+\s*TON)/);
+    const cnt = winMatch ? winMatch[1] : '1';
+    const tonStr = tonMatch ? tonMatch[1] : '';
+    if (locale === 'en') return `🎉 ${cnt} Welcome $1,000 Lottery Winner(s) (${tonStr} Paid Out)`;
+    if (locale === 'ru') return `🎉 ${cnt} победителей Приветственной лотереи $1,000 (выплачено ${tonStr})`;
+    if (locale === 'ar') return `🎉 ${cnt} فائز في يانصيب الترحيب 1,000$ (تم دفع ${tonStr})`;
+    if (locale === 'es') return `🎉 ${cnt} Ganador(es) del Sorteo de Bienvenida $1,000 (${tonStr} Pagados)`;
+  }
+  if (text.includes('قرعه‌کشی انجام شد — بدون برنده جک‌پات')) {
+    const tonMatch = text.match(/([0-9.,]+\s*TON)/);
+    const tonStr = tonMatch ? tonMatch[1] : '0 TON';
+    if (locale === 'en') return `Draw Completed — No Jackpot Winner (${tonStr} Remaining Reserve)`;
+    if (locale === 'ru') return `Розыгрыш завершен — Без джекпота (Остаток резерва: ${tonStr})`;
+    if (locale === 'ar') return `اكتمل السحب — بدون فائز بالجاكبوت (الاحتياطي المتبقي: ${tonStr})`;
+    if (locale === 'es') return `Sorteo Completado — Sin Ganador de Jackpot (${tonStr} Reserva Restante)`;
+  }
+
+  // 7. Server API Toasts, Messages & Errors
+  if (text.includes('پاداش کشبک و ریکبک شما') || text.includes('به کیف پول اصلی شما منتقل شد')) {
+    if (locale === 'en') return '🎉 Your VIP Cashback & Rakeback reward has been credited to your main wallet!';
+    if (locale === 'ru') return '🎉 Ваш VIP кэшбэк и рейкбек успешно зачислены на основной кошелек!';
+    if (locale === 'ar') return '🎉 تمت إضافة مكافأة الاسترداد النقدي VIP إلى محفظتك الرئيسية بنجاح!';
+    if (locale === 'es') return '🎉 ¡Tu recompensa de Cashback y Rakeback VIP se acreditó en tu billetera!';
+  }
+  if (text.includes('پورسانت دعوت دوستان') && text.includes('به کیف پول اصلی شما واریز شد')) {
+    const parenMatch = text.match(/\(([^)]+)\)/);
+    const amt = parenMatch ? ` (${parenMatch[1]})` : '';
+    if (locale === 'en') return `💎 Referral Commission${amt} credited to your main wallet (Zero Fee)!`;
+    if (locale === 'ru') return `💎 Реферальная комиссия${amt} зачислена на ваш основной кошелек!`;
+    if (locale === 'ar') return `💎 تم إيداع عمولة الإحالة${amt} في محفظتك الرئيسية بنجاح!`;
+    if (locale === 'es') return `💎 ¡Comisión de referidos${amt} acreditada en tu billetera principal!`;
+  }
+  if (text.includes('بلیت رایگان لاتاری') && text.includes('خوشآمدگویی') && text.includes('ثبت شد')) {
+    const codeMatch = text.match(/\(([A-Za-z0-9_-]+)\)/);
+    const code = codeMatch ? ` (${codeMatch[1]})` : '';
+    if (locale === 'en') return `🎉 Your Free $1,000 Welcome Lottery Ticket${code} has been minted!`;
+    if (locale === 'ru') return `🎉 Ваш бесплатный билет Приветственной лотереи $1,000${code} успешно выпущен!`;
+    if (locale === 'ar') return `🎉 تم إصدار تذكرتك المجانية ليانصيب الترحيب 1,000$${code} بنجاح!`;
+    if (locale === 'es') return `🎉 ¡Tu boleto gratis del Sorteo de Bienvenida de $1,000${code} ha sido emitido!`;
+  }
+  if (text.includes('سندیکای گروهی') && text.includes('ساخته شد')) {
+    if (locale === 'en') return '🤝 Syndicate Squad created and official lottery tickets minted!';
+    if (locale === 'ru') return '🤝 Групповой синдикат создан, официальные билеты выпущены!';
+    if (locale === 'ar') return '🤝 تم إنشاء النقابة الجماعية وإصدار التذاكر الرسمية بنجاح!';
+    if (locale === 'es') return '🤝 ¡Sindicato grupal creado y boletos oficiales emitidos!';
+  }
+  if (text.includes('سهم در سندیکای گروهی') && text.includes('خریداری کردید')) {
+    if (locale === 'en') return '⚡ Syndicate Squad shares purchased and official tickets minted!';
+    if (locale === 'ru') return '⚡ Доли в синдикате успешно куплены, билеты выпущены!';
+    if (locale === 'ar') return '⚡ تم شراء حصص النقابة وإصدار التذاكر الرسمية بنجاح!';
+    if (locale === 'es') return '⚡ ¡Acciones del sindicato compradas y boletos emitidos!';
+  }
+  if (text.includes('مأموریت تکمیل شد')) {
+    const xpMatch = text.match(/\+(\d+)\s*XP/);
+    const xp = xpMatch ? `+${xpMatch[1]} XP` : '+XP';
+    if (locale === 'en') return `🎉 Quest Completed! ${xp} credited to your VIP account!`;
+    if (locale === 'ru') return `🎉 Задание выполнено! ${xp} начислено на ваш VIP-аккаунт!`;
+    if (locale === 'ar') return `🎉 اكتملت المهمة! تمت إضافة ${xp} إلى حسابك VIP!`;
+    if (locale === 'es') return `🎉 ¡Misión completada! ¡${xp} acreditados en tu cuenta VIP!`;
+  }
+  if (text.includes('موجودی') && text.includes('کافی نیست')) {
+    if (locale === 'en') return '⚠️ Insufficient wallet balance for this transaction.';
+    if (locale === 'ru') return '⚠️ Недостаточно средств на балансе кошелька.';
+    if (locale === 'ar') return '⚠️ رصيد المحفظة غير كافٍ لإتمام هذه العملية.';
+    if (locale === 'es') return '⚠️ Saldo de billetera insuficiente para esta operación.';
+  }
+
+  // 8. Check if it's a prize tier label
+  if (
+    text.includes('رتبه ') ||
+    text.includes('رده ') ||
+    text.includes('جک‌پات الماس') ||
+    text.includes('بدون تطابق') ||
+    text.includes('جایزه گوی طلایی')
+  ) {
+    return localizeTierLabel(locale, raw);
+  }
+
+  // 9. Delegate to universal PAM transaction description localizer
+  return localizeTransactionDescription(raw, meta, locale);
 }
 
 export function detectInitialLanguage(): LanguageCodeUpper {

@@ -790,16 +790,23 @@ function requireTelegramWebAppAuth(
   res: express.Response,
   next: express.NextFunction
 ) {
+  const liveSecurityCfg = loadServerSecurityConfig(process.env);
   const initDataHeader =
     (req.headers['x-telegram-init-data'] as string | undefined) ||
     (req.body?.initData as string | undefined) ||
     '';
+  const activeBotToken = getEffectiveBotToken();
+  const envBotToken = !isMaskedOrPlaceholderBotToken(liveSecurityCfg.telegramBotToken)
+    ? liveSecurityCfg.telegramBotToken
+    : '';
+  const hasSignedHashParam = initDataHeader.includes('hash=');
+  const authBotToken = hasSignedHashParam ? activeBotToken || envBotToken : envBotToken;
   const expectedUserId = req.body?.telegramUserId ?? undefined;
   const verification = verifyTelegramWebAppInitData({
     initDataRaw: initDataHeader,
-    botToken: getEffectiveBotToken(),
+    botToken: authBotToken,
     expectedUserId,
-    strictMode: serverSecurityConfig.strictTelegramInitDataAuth,
+    strictMode: liveSecurityCfg.strictTelegramInitDataAuth,
   });
 
   if (!verification.valid) {
@@ -7901,9 +7908,10 @@ app.post(
         });
 
         if (!debitRes.ok) {
-          return res
-            .status(400)
-            .json({ error: debitRes.error || 'موجودی کیف پول برای این برداشت کافی نیست.' });
+          return res.status(400).json({
+            ok: false,
+            error: debitRes.error || 'موجودی کیف پول برای این برداشت کافی نیست.',
+          });
         }
 
         const netNanoTon = Math.max(10_000_000, Math.round(netTon * 1e9));
@@ -8006,11 +8014,16 @@ app.post('/api/admin/withdrawals/action', optionalAuth, async (req: AuthRequest,
     const ownerAcc = dbState.users?.[ownerKey];
     if (ownerAcc) {
       const ownerPam = new PAMSeamlessWalletEngine(ownerAcc.pamState);
+      const refTxUuid = target.withdrawalCode.startsWith('WDS-')
+        ? `tx_wd_stars_${target.withdrawalCode}`
+        : `tx_wd_${target.withdrawalCode}`;
       ownerPam.rollback({
         transactionUuid: `tx_rb_wd_${target.withdrawalCode}`,
-        referenceTransactionUuid: `tx_wd_${target.withdrawalCode}`,
+        referenceTransactionUuid: refTxUuid,
         roundId: target.withdrawalCode,
-        vertical: 'CRYPTO_TREASURY',
+        vertical: target.withdrawalCode.startsWith('WDS-')
+          ? 'TELEGRAM_STARS_TREASURY'
+          : 'CRYPTO_TREASURY',
         note: `برگشت وجه درخواست برداشت ردشده (${target.withdrawalCode})`,
       });
       ownerAcc.pamState = ownerPam.getState();
